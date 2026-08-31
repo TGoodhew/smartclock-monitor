@@ -71,5 +71,11 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
           cache: pip
+      # PySide6 will not import without these, and the UI tests skip themselves when it cannot.
+      # Installing them is what makes the difference between the widget tests running and the
+      # suite quietly reporting green while never having drawn anything.
+      - name: Qt runtime libraries
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0
       - run: pip install -e ".[dev]"
       - run: pytest -v

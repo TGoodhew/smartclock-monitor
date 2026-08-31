@@ -4,11 +4,16 @@ A cross-platform monitor and controller for HP/Symmetricom **SmartClock** GPS-di
 oscillators — the Z3805A and its siblings (Z3801A, 58503A/B, 59551A, Z3816A) — over RS-232.
 Python 3 and Qt, so it runs on Linux, Windows and macOS.
 
-> **Status: early. Nothing works yet.**
-> This repository currently holds the specification, the parser fixtures, the colour
-> derivation and the project scaffolding. The application is being built from them.
-> See [the port plan](https://github.com/TGoodhew/WinZ3805A/blob/main/docs/porting-to-python-qt.md)
-> for what is being built and in what order.
+> **Status: early, but it runs.** Phases 1 to 7 of
+> [the port plan](https://github.com/TGoodhew/WinZ3805A/blob/main/docs/porting-to-python-qt.md)
+> are in: the models, the status-screen parser, the line protocol, the §8.4 safety model, the
+> command allowlist, the session and poll loop, the design tokens, and a main window.
+>
+> **You can look at it without a receiver** — `smartclock-monitor --demo` replays the ten
+> captured status screens through the real protocol and poll loop. See *Running it* below.
+>
+> Still to come: the details window and its pages, the sky plot and trend chart, the tray and
+> notifications, and every screenshot in the guide.
 
 ---
 
@@ -52,14 +57,42 @@ they do not exist as data, and no free-text path can emit them. §8.4 says which
 Any port that expects to be pointed at real hardware inherits that design whole. If you fork
 this, keep it.
 
-## Building
-
-Nothing to build yet. The scaffolding runs:
+## Running it
 
 ```bash
 python -m venv .venv && . .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-ruff check . && mypy && pytest
+```
+
+**Without hardware.** The ten captured status screens, replayed through the real line protocol,
+session and poll loop — the same code path a receiver drives, with only the source of the bytes
+changed. It walks power-up, acquisition, lock, survey, three depths of holdover and recovery, so
+the whole state matrix goes past in a couple of minutes.
+
+```bash
+smartclock-monitor --demo
+```
+
+**With a receiver.** §7.1's line parameters are all settable, because the family is not consistent
+about them: a Z3805A ships 9600-8-N-1 and a Z3801A leaves the factory at 19200-7-O-1.
+
+```bash
+smartclock-monitor --list-ports
+smartclock-monitor --port /dev/ttyUSB0                       # Z3805A defaults
+smartclock-monitor --port /dev/ttyUSB0 --baud 19200 --data-bits 7 --parity O
+```
+
+`--theme light|dark|high-contrast` picks the token set to start in; the window has a picker too.
+
+> **Linux serial access** is the first thing that will go wrong. Your user needs to be in the
+> `dialout` group (`sudo usermod -aG dialout $USER`, then log out and back in). Under WSL, a USB
+> adapter needs `usbipd attach` from an elevated Windows prompt before it appears at all — only
+> real motherboard ports show up as `/dev/ttyS*` without it.
+
+## Building
+
+```bash
+ruff check . && ruff format --check . && mypy && pytest
 python build/palette/validate.py
 ```
 
