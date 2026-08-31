@@ -103,10 +103,18 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF", "ASYNC", 
 # The typographic point is the same one PRIME makes - a hyphen is not a minus,
 # and next to a signed sibling the difference is legible.
 #
-# Deliberately just these three. The rule is worth keeping for everything else -
+# SIGMA and TAU are the notation of the measurements themselves. Sigma is the
+# standard deviation §10.7's Timing card prints beside the current reading
+# ("Current -33.1 ns · σ 12.4 ns", and ruff would have that be a Latin 'o');
+# tau is the averaging time in §10.7.2's Allan deviation table, whose columns are
+# headed "Averaging time τ" and "σy(τ)". Both are user-visible strings and
+# neither has a spelling in ASCII that an instrument engineer would recognise -
+# "sigma" in a column heading is a different claim from the symbol.
+#
+# Deliberately just these five. The rule is worth keeping for everything else -
 # a Cyrillic 'a' in an identifier is exactly the defect it is looking for.
 # ---------------------------------------------------------------------------
-allowed-confusables = ["–", "′", "−"]
+allowed-confusables = ["–", "′", "−", "σ", "τ"]
 
 # ---------------------------------------------------------------------------
 # The clock is injected, everywhere, without exception.
