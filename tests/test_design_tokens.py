@@ -16,6 +16,7 @@ on this platform; these figures are computed from the tokens themselves.
 
 from __future__ import annotations
 
+import ast
 import re
 from pathlib import Path
 from typing import Final
@@ -42,6 +43,48 @@ def _application_sources() -> list[Path]:
     return sorted(path for path in APPLICATION.rglob("*.py") if path.is_file())
 
 
+def _docstring_nodes(tree: ast.Module) -> set[int]:
+    """The string constants that are docstrings, by identity."""
+    found: set[int] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Module | ast.ClassDef | ast.FunctionDef | ast.AsyncFunctionDef):
+            continue
+        first = node.body[0] if node.body else None
+        if (
+            isinstance(first, ast.Expr)
+            and isinstance(first.value, ast.Constant)
+            and isinstance(first.value.value, str)
+        ):
+            found.add(id(first.value))
+    return found
+
+
+def colours_named_in(source: str) -> list[tuple[int, str]]:
+    """Every hex colour written into a string literal, with its line number.
+
+    **Prose is not scanned, and that is the whole design of this check.** A line-by-line regex
+    reads ``#183`` — an issue reference, of which the specification and this codebase are full —
+    as the three-digit colour ``#RGB``, and a gate that fires on a comment citing the issue that
+    justifies the code beside it is one people learn to scroll past. So the scan walks the parsed
+    module and looks only where a colour could actually reach a widget: comments are absent from
+    the tree, and docstrings are skipped by identity.
+
+    The trade is deliberate and narrow. A colour written inside a docstring escapes — and a colour
+    in a docstring is not a colour anything renders.
+    """
+    tree = ast.parse(source)
+    docstrings = _docstring_nodes(tree)
+
+    return [
+        (node.lineno, match.group(0))
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Constant)
+        and isinstance(node.value, str)
+        and id(node) not in docstrings
+        for match in _HEX.finditer(node.value)
+    ]
+
+
 # ---- §9.13, rule 1: no colour outside the token table ------------------------------------------
 
 
@@ -63,9 +106,8 @@ def test_no_hex_literal_outside_the_token_file() -> None:
     for path in _application_sources():
         if path.resolve() == TOKEN_FILE.resolve():
             continue
-        for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
-            if _HEX.search(line):
-                offenders.append(f"{path.relative_to(ROOT)}:{number}")
+        for number, colour in colours_named_in(path.read_text(encoding="utf-8")):
+            offenders.append(f"{path.relative_to(ROOT)}:{number} ({colour})")
 
     assert not offenders, "Hard-coded colour outside the token table at: " + ", ".join(offenders)
 
@@ -76,12 +118,34 @@ def test_the_gate_catches_a_deliberate_violation(tmp_path: Path) -> None:
     offender = tmp_path / "widget.py"
     offender.write_text('BACKGROUND = "#FF00FF"\n')
 
-    assert _HEX.search(offender.read_text())
+    assert colours_named_in(offender.read_text()) == [(1, "#FF00FF")]
 
     innocent = tmp_path / "clean.py"
     innocent.write_text("from smartclock_monitor.themes.tokens import LIGHT\n")
 
-    assert not _HEX.search(innocent.read_text())
+    assert colours_named_in(innocent.read_text()) == []
+
+
+def test_the_gate_still_catches_a_colour_hidden_inside_a_longer_string() -> None:
+    """The case that argues against matching whole strings only: a colour spliced into generated
+    QSS is exactly where one would do the most damage and be least visible."""
+    source = 'STYLE = f"QLabel {{ color: #B22B2B; }}"\n'
+
+    assert colours_named_in(source) == [(1, "#B22B2B")]
+
+
+def test_the_gate_does_not_fire_on_an_issue_reference() -> None:
+    """#183 is three hex digits, so a line-by-line regex reads it as the colour ``#RGB``. The
+    specification cites issues by number constantly and so do the comments that explain why a
+    given piece of code is the shape it is — a gate firing on those is one people learn to scroll
+    past, which is worse than no gate because it reads as coverage."""
+    source = (
+        '"""Framed on the window\'s own data — see #183 and #218."""\n'
+        "# The EFC axis was zero-anchored until #183; #316 corrected the figures.\n"
+        "SPAN = 0.01  # about 55 codes, per #183\n"
+    )
+
+    assert colours_named_in(source) == []
 
 
 def test_the_generated_stylesheet_carries_only_token_colours() -> None:
