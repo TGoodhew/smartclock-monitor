@@ -38,6 +38,7 @@ from smartclock_device.models.receiver_status import (
     SmartClockMode,
 )
 from smartclock_monitor.services.polling import Reading
+from smartclock_monitor.services.trend_store import TrendStore
 from smartclock_monitor.themes.qss import stylesheet
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
@@ -150,6 +151,10 @@ class MainWindow(QMainWindow):
         self._detail.setWordWrap(True)
 
         self._details: DetailsWindow | None = None
+        # Held here rather than in the details window because the details window is created on
+        # demand and the store is opened at startup — and because a run whose store failed to open
+        # must reach the page as None rather than as an absent attribute.
+        self._store: TrendStore | None = None
         self._details_button = QPushButton("Details…")
         self._details_button.setAccessibleName("Open the details window")
         self._details_button.setToolTip("Satellites, position and timing (Ctrl+D)")
@@ -285,12 +290,20 @@ class MainWindow(QMainWindow):
         if self._details is None:
             self._details = DetailsWindow(self._theme, self)
             self._details.setWindowFlag(Qt.WindowType.Window, True)
+            self._details.set_trend_store(self._store)
             if self._last_reading is not None:
                 self._details.show_reading(self._last_reading)
 
         self._details.show()
         self._details.raise_()
         self._details.activateWindow()
+
+    def set_trend_store(self, store: TrendStore | None) -> None:
+        """Hand the window its history. Forwarded to the details window if one is already open,
+        and remembered for one opened later."""
+        self._store = store
+        if self._details is not None:
+            self._details.set_trend_store(store)
 
     @property
     def details(self) -> DetailsWindow | None:

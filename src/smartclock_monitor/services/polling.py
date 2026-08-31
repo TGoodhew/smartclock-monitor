@@ -16,6 +16,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from datetime import datetime
 
 from smartclock_device.clock import Clock
 from smartclock_device.commands import catalog
@@ -35,6 +36,20 @@ class Reading:
     """
 
     status: ReceiverStatus
+
+    #: When **this sweep** completed, from the injected clock.
+    #:
+    #: Distinct from ``status.captured_at``, and the difference is load-bearing rather than
+    #: pedantic. §11.2 defines the status as what the *screen* reports, so its timestamp is when
+    #: the screen was read — but the fast tier folds fresh figures of merit and a fresh 1 PPS
+    #: interval into that object once a second through ``dataclasses.replace``, which keeps the
+    #: original timestamp. A consumer that took ``status.captured_at`` as "when this reading was
+    #: taken" would see one instant repeated for a whole full-poll interval: the trend store filed
+    #: ten seconds of readings under a single timestamp, and the details window's "Updated" line
+    #: advanced once every ten seconds while the numbers beside it changed every one.
+    #:
+    #: ``None`` only for a Reading built by hand in a test that does not care.
+    captured_at: datetime | None = None
 
     #: Oscillator electronic frequency control, relative, as a percentage.
     efc_percent: float | None = None
@@ -179,6 +194,7 @@ class PollingService:
 
         reading = Reading(
             status=self._status,
+            captured_at=self.clock.utc_now(),
             efc_percent=efc,
             tracked_count=tracked,
             sync_state=sync,

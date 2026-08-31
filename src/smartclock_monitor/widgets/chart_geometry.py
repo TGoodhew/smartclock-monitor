@@ -15,6 +15,7 @@ of surviving a sampled decimation and a certainty of surviving this one.
 from __future__ import annotations
 
 import math
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Final
 
@@ -147,12 +148,12 @@ def _next_nice(step: float) -> float:
     return 10.0 * base
 
 
-def _finite(values: tuple[float, ...] | list[float]) -> list[float]:
+def _finite(values: Sequence[float]) -> list[float]:
     return [value for value in values if math.isfinite(value)]
 
 
 def zero_anchored_axis(
-    values: list[float],
+    values: Sequence[float],
     *,
     floor: float = TI_FLOOR_NANOSECONDS,
     decimals: int = TI_DECIMALS,
@@ -172,7 +173,7 @@ def zero_anchored_axis(
 
 
 def framed_axis(
-    values: list[float],
+    values: Sequence[float],
     *,
     minimum_span: float = EFC_MINIMUM_SPAN_PERCENT,
     decimals: int = EFC_DECIMALS,
@@ -209,8 +210,8 @@ def framed_axis(
 
 
 def decimate(
-    at: list[float] | tuple[float, ...],
-    values: list[float] | tuple[float, ...],
+    at: Sequence[float],
+    values: Sequence[float],
     columns: int,
     *,
     start: float | None = None,
@@ -239,7 +240,7 @@ def decimate(
 
     if span <= 0:
         # Every sample at one instant — a single reading, or a window one poll wide.
-        finite = _finite(list(values))
+        finite = _finite(values)
         if not finite:
             return ()
         return (Column(index=0, at=lower, low=min(finite), high=max(finite), count=len(finite)),)
