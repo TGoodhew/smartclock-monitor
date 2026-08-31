@@ -34,6 +34,7 @@ from smartclock_monitor.widgets.sky_plot_geometry import (
     elevation_ring,
     marker_size,
     position,
+    sequential_step,
 )
 
 #: The elevations that get a gridline, besides the rim and the mask.
@@ -117,6 +118,11 @@ class SatelliteMarker(QWidget):
     def marker(self) -> Marker:
         return self._marker
 
+    def _step(self) -> int:
+        """Which step of the sequential ramp this marker's fill takes. Read by the tests, which
+        should assert the mapping rather than the pixels it produces."""
+        return sequential_step(self._marker.strength, self._kind)
+
     def set_selected(self, selected: bool) -> None:
         self._is_selected = selected
         self.update()
@@ -156,10 +162,16 @@ class SatelliteMarker(QWidget):
 
         # Tracked is filled; predicted is an outline. A second channel beside the colour, so the
         # two groups stay distinguishable in greyscale and under every theme.
-        colour = QColor(self._palette.series[self._marker.prn % len(self._palette.series)])
         if self._marker.tracked:
-            painter.setBrush(colour)
-            painter.setPen(QPen(colour, 1))
+            # §9.10.2: the fill comes from the sequential ramp, so it encodes signal strength — the
+            # same quantity the marker's area encodes. It was the categorical ramp indexed by
+            # prn % 8, which is the assignment-by-hash §9.4.4 forbids: it made colour mean identity
+            # rather than magnitude, and gave two satellites eight apart the same colour anyway.
+            painter.setBrush(QColor(self._palette.sequential[self._step()]))
+            # The ramp's weak end is deliberately close to the surface — a faint reading is meant
+            # to recede — so the outline, not the fill, is what carries §9.4.5's 3:1 for the marker
+            # as a graphic. Without it the lowest step is a disc of very nearly nothing.
+            painter.setPen(QPen(QColor(self._palette.text_secondary), 1))
         else:
             painter.setBrush(Qt.BrushStyle.NoBrush)
             pen = QPen(QColor(self._palette.text_secondary), 1.5)
