@@ -14,11 +14,12 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
+import serial
 
 from smartclock_device.clock import FixedClock
 from smartclock_device.transport import timeouts
 from smartclock_device.transport.fake import FakeTransport, error_prompt
-from smartclock_device.transport.faults import TransportFault
+from smartclock_device.transport.faults import TransportFault, classify, describe
 from smartclock_device.transport.line_protocol import CONNECT_LABEL, LineProtocol
 from smartclock_device.transport.transaction import ScpiError, TransactionOutcome
 
@@ -449,3 +450,85 @@ def test_an_unquoted_message_is_still_readable() -> None:
 def test_an_undecomposable_error_reply_is_none(reply: str | None) -> None:
     """§11.1. The caller reports the raw text, which is more useful than a fabricated code."""
     assert ScpiError.parse(reply) is None
+
+
+# ---- Fault classification ----------------------------------------------------------------------
+#
+# These use the exact shapes pyserial produces. The permission case is a regression test: it was
+# found by pointing the application at a real Z3805A on a machine whose user was not in `dialout`.
+
+
+def test_a_permission_failure_is_not_reported_as_a_missing_port() -> None:
+    """**The regression**, and it has to be built from ``serial.SerialException`` to bite.
+
+    pyserial wraps a permission failure in a ``SerialException`` whose message reads *"[Errno 13]
+    could not open port /dev/ttyUSB0: [Errno 13] Permission denied"*. A classifier that matched
+    "could not open port" first called that a missing port and told the user their adapter might
+    be unplugged — sending them to check a cable when the fix is ``usermod -aG dialout``. §9.11
+    requires the copy to be actionable, and that copy was worse than silence because it was
+    confidently wrong.
+
+    **The first version of this test used ``OSError(13, ...)`` and passed against the broken
+    code.** Python's ``OSError.__new__`` maps errno 13 to ``PermissionError``, which the old
+    classifier caught by type — so the synthetic case never reached the message-matching branch
+    where the bug lived. ``SerialException`` is a user subclass and gets no such remapping: it
+    carries ``errno == 13`` and is *not* a ``PermissionError``, which is the entire defect.
+
+    A regression test that does not reproduce the regression is worse than none, because it reads
+    as coverage.
+    """
+    raised = serial.SerialException(
+        13, "could not open port /dev/ttyUSB0: [Errno 13] Permission denied"
+    )
+
+    assert not isinstance(raised, PermissionError), "The premise of this test has changed."
+    assert classify(raised) is TransportFault.ACCESS_DENIED
+    assert "dialout" in describe(TransportFault.ACCESS_DENIED, "/dev/ttyUSB0")
+
+
+def test_the_errno_is_believed_over_the_message() -> None:
+    """The message is prose that has changed between pyserial releases; the errno has not."""
+    misleading = serial.SerialException(13, "could not open port: does not exist")
+
+    assert classify(misleading) is TransportFault.ACCESS_DENIED
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        (13, TransportFault.ACCESS_DENIED),  # EACCES
+        (1, TransportFault.ACCESS_DENIED),  # EPERM
+        (2, TransportFault.PORT_NOT_FOUND),  # ENOENT
+        (19, TransportFault.DEVICE_REMOVED),  # ENODEV
+        (6, TransportFault.DEVICE_REMOVED),  # ENXIO
+        (5, TransportFault.IO),  # EIO
+    ],
+)
+def test_each_errno_maps_to_its_fault(code: int, expected: TransportFault) -> None:
+    """Raised as pyserial raises them, so the type mapping ``OSError`` does for some errnos cannot
+    make one of these pass for the wrong reason."""
+    assert classify(serial.SerialException(code, "something")) is expected
+
+
+def test_an_oserror_with_no_errno_falls_back_to_its_message() -> None:
+    """pyserial does not always set one."""
+    nothing = serial.SerialException
+    assert classify(nothing("could not open port /dev/ttyUSB9")) is TransportFault.PORT_NOT_FOUND
+    assert classify(nothing("Permission denied")) is TransportFault.ACCESS_DENIED
+    assert classify(nothing("something odd")) is TransportFault.IO
+
+
+def test_a_port_used_after_close_reads_as_a_removal() -> None:
+    """pyserial raises ValueError there. The handle outlives the hardware behind it, which is the
+    surprise-removal shape rather than a programming error."""
+    assert classify(ValueError("Port is closed")) is TransportFault.DEVICE_REMOVED
+
+
+def test_every_fault_has_copy_a_user_can_act_on() -> None:
+    """§9.11. A fault with no sentence behind it reaches the status bar as an enum name."""
+    for fault in TransportFault:
+        if fault is TransportFault.NONE:
+            continue
+        sentence = describe(fault, "/dev/ttyUSB0")
+        assert sentence.endswith(".")
+        assert "/dev/ttyUSB0" in sentence
