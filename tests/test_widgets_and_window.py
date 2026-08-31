@@ -28,6 +28,7 @@ from conftest import NOW  # noqa: E402
 from smartclock_device.models.receiver_status import (  # noqa: E402
     OutputValidity,
     ReceiverStatus,
+    SignalStrengthKind,
     SmartClockMode,
 )
 from smartclock_monitor.services.polling import Reading  # noqa: E402
@@ -39,6 +40,14 @@ from smartclock_monitor.widgets.medallion import (  # noqa: E402
     tick_positions,
 )
 from smartclock_monitor.widgets.severity_pill import SeverityPill, shape_path  # noqa: E402
+from smartclock_monitor.widgets.sky_plot import Marker, SatelliteMarker  # noqa: E402
+from smartclock_monitor.widgets.sky_plot_geometry import (  # noqa: E402
+    MAX_MARKER,
+    MIN_MARKER,
+    SEQUENTIAL_STEPS,
+    marker_size,
+    sequential_step,
+)
 
 
 @pytest.fixture(scope="module")
@@ -255,3 +264,104 @@ def test_the_application_name_is_read_from_one_constant() -> None:
 
     assert main_window.APPLICATION_NAME
     assert main_window.APPLICATION_NAME.strip() == main_window.APPLICATION_NAME
+
+
+# ---- The sky plot's strength encodings (§9.4.4, §9.10.2) ----------------------------------------
+
+
+def test_the_ramp_step_count_matches_every_theme_s_ramp() -> None:
+    """``sky_plot_geometry`` names the step count so it can answer without a palette. That is only
+    safe while the number agrees with the ramp it indexes — and disagreeing costs an IndexError on
+    a marker, i.e. at paint time, in one theme."""
+    for theme in ALL_THEMES:
+        assert len(palette_for(theme).sequential) == SEQUENTIAL_STEPS, theme.value
+
+
+@pytest.mark.parametrize(
+    ("strength", "expected"),
+    [(26, 0), (30, 0), (35, 2), (40, 3), (45, 4), (50, 5), (55, 6), (99, 6), (0, 0)],
+)
+def test_carrier_to_noise_maps_across_the_whole_ramp(strength: int, expected: int) -> None:
+    """C/N 26–55 spans the seven steps. The top of the scale takes the last step rather than
+    falling off the end, which is what an unclamped ``int(fraction * steps)`` would do."""
+    assert sequential_step(strength, SignalStrengthKind.CARRIER_TO_NOISE) == expected
+
+
+def test_the_two_scales_are_not_interchangeable() -> None:
+    """A 30 is weak on C/N and almost nothing on SS. A plot that guessed the scale would colour
+    half the family backwards — the same reason ``marker_size`` takes the kind."""
+    assert sequential_step(30, SignalStrengthKind.CARRIER_TO_NOISE) == 0
+    assert sequential_step(200, SignalStrengthKind.SIGNAL_STRENGTH) == 5
+    assert sequential_step(30, SignalStrengthKind.SIGNAL_STRENGTH) == 0
+
+
+def test_an_unreadable_strength_takes_the_weakest_step_not_a_crash() -> None:
+    """§11.1: the parser hands ``None`` for a field it could not read, and every consumer takes
+    it. The satellite is still up there, so it is drawn — as the least assertive mark on the plot,
+    matching the smallest marker ``marker_size`` gives it."""
+    assert sequential_step(None, SignalStrengthKind.CARRIER_TO_NOISE) == 0
+    assert sequential_step(40, SignalStrengthKind.UNKNOWN) == 0
+    assert marker_size(None, SignalStrengthKind.CARRIER_TO_NOISE) == marker_size(
+        26, SignalStrengthKind.CARRIER_TO_NOISE
+    )
+
+
+def test_the_ramp_step_rises_with_strength_and_never_falls() -> None:
+    """The encoding is a magnitude. Monotonicity is the one property it must have, and a
+    transposed bound inside ``strength_fraction`` would still produce plausible-looking colours."""
+    steps = [sequential_step(v, SignalStrengthKind.CARRIER_TO_NOISE) for v in range(20, 60)]
+    assert steps == sorted(steps)
+    assert steps[0] == 0
+    assert steps[-1] == SEQUENTIAL_STEPS - 1
+
+
+def test_the_two_encodings_agree_about_where_the_middle_is() -> None:
+    """Size is linear in *area* and the ramp is linear in *strength*, which is deliberate — but
+    they encode one quantity, so a reader compares them without being told. Both must put the
+    midpoint of the scale at the middle of their own range.
+
+    This is the assertion that would have caught running the ramp through ``marker_size``'s square
+    root as well, which puts the ramp's midpoint at a quarter of the scale."""
+    middle = 26 + (55 - 26) // 2
+    assert sequential_step(middle, SignalStrengthKind.CARRIER_TO_NOISE) == SEQUENTIAL_STEPS // 2
+
+    area_fraction = (marker_size(middle, SignalStrengthKind.CARRIER_TO_NOISE) - MIN_MARKER) / (
+        MAX_MARKER - MIN_MARKER
+    )
+    assert 0.65 < area_fraction < 0.75  # sqrt(0.5), i.e. half the area
+
+
+def test_a_marker_takes_its_fill_from_the_sequential_ramp_not_the_categorical_one() -> None:
+    """§9.10.2 puts the marker fill on the sequential ramp, and §9.4.4 forbids assigning a
+    categorical colour by hash. It was ``series[prn % 8]``, which made the fill mean identity
+    rather than magnitude and collided every eighth PRN regardless."""
+    palette = palette_for(Theme.DARK)
+    strong = SatelliteMarker(
+        Marker(prn=1, elevation=45, azimuth=90, strength=54, tracked=True),
+        SignalStrengthKind.CARRIER_TO_NOISE,
+        palette,
+    )
+    weak = SatelliteMarker(
+        Marker(prn=9, elevation=45, azimuth=90, strength=27, tracked=True),
+        SignalStrengthKind.CARRIER_TO_NOISE,
+        palette,
+    )
+
+    # Eight apart, so the old mapping gave these two the same colour.
+    assert strong._step() != weak._step()
+    assert palette.sequential[strong._step()] != palette.sequential[weak._step()]
+
+
+def test_two_satellites_of_equal_strength_are_drawn_alike() -> None:
+    """The corollary, and the property the categorical ramp could not have: the fill says how
+    strong the signal is and nothing else, so two equal readings look equal."""
+    palette = palette_for(Theme.LIGHT)
+    markers = [
+        SatelliteMarker(
+            Marker(prn=prn, elevation=30, azimuth=10, strength=44, tracked=True),
+            SignalStrengthKind.CARRIER_TO_NOISE,
+            palette,
+        )
+        for prn in (2, 17, 31)
+    ]
+    assert len({marker._step() for marker in markers}) == 1

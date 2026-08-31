@@ -29,6 +29,13 @@ MAX_MARKER = 18.0
 #: size still gets a target big enough to click.
 MIN_MARKER = 8.0
 
+#: How many steps §9.4.4's sequential ramp has.
+#:
+#: Named here rather than read from ``len(palette.sequential)`` so this module stays free of the
+#: theme as well as of Qt: which step a reading falls in is a fact about the reading, and it should
+#: be answerable without a palette to hand. The token gate asserts the two agree.
+SEQUENTIAL_STEPS: Final = 7
+
 #: The two signal-strength scales, as §11.1 gives them.
 #:
 #: **They are not interchangeable**, which is why the kind travels with the reading and this takes
@@ -83,6 +90,24 @@ def elevation_ring(disc: Disc, elevation_degrees: float) -> float:
     return disc.radius * (90.0 - elevation) / 90.0
 
 
+def strength_fraction(strength: int | None, kind: SignalStrengthKind) -> float | None:
+    """Where a reading sits on its own scale, 0.0 to 1.0, or ``None`` if it has no scale.
+
+    Shared by the two encodings — marker size and ramp step — so that they cannot disagree about
+    where a reading falls. They apply different transfer functions to it, and that is the whole of
+    the difference between them.
+    """
+    if strength is None or kind is SignalStrengthKind.UNKNOWN:
+        return None
+
+    low, high = _SCALES[kind]
+    span = high - low
+    if span <= 0:
+        return 0.0
+
+    return min(1.0, max(0.0, (strength - low) / span))
+
+
 def marker_size(strength: int | None, kind: SignalStrengthKind) -> float:
     """How large to draw a marker, from its signal strength.
 
@@ -93,14 +118,32 @@ def marker_size(strength: int | None, kind: SignalStrengthKind) -> float:
     A satellite with no reading gets the smallest marker rather than none: it is still up there,
     and omitting it would put a hole in the plot that reads as an obstruction.
     """
-    if strength is None or kind is SignalStrengthKind.UNKNOWN:
+    fraction = strength_fraction(strength, kind)
+    if fraction is None:
         return MIN_MARKER
 
-    low, high = _SCALES[kind]
-    span = high - low
-    fraction = 0.0 if span <= 0 else min(1.0, max(0.0, (strength - low) / span))
-
     return MIN_MARKER + (MAX_MARKER - MIN_MARKER) * math.sqrt(fraction)
+
+
+def sequential_step(
+    strength: int | None, kind: SignalStrengthKind, steps: int = SEQUENTIAL_STEPS
+) -> int:
+    """Which step of §9.4.4's sequential ramp a reading falls in, 0 for the weakest.
+
+    **Linear in the strength, where the marker size is linear in the area.** The two encode one
+    quantity and a reader compares them without being told; running the ramp through
+    :func:`marker_size`'s square root as well would place the ramp's midpoint at a quarter of the
+    scale and make the two encodings disagree about where "middling" is.
+
+    A reading with no scale takes the lowest step, matching :func:`marker_size`'s smallest marker.
+    The satellite is still drawn — it is up there — and drawn as the least assertive thing on the
+    plot rather than as an absence.
+    """
+    fraction = strength_fraction(strength, kind)
+    if fraction is None:
+        return 0
+
+    return min(steps - 1, int(fraction * steps))
 
 
 def describe(
