@@ -256,6 +256,104 @@ def test_the_series_ramp_has_eight_entries_in_every_theme() -> None:
         assert len(palette_for(theme).series) == 8
 
 
+def test_the_two_data_ramps_have_the_lengths_the_spec_gives() -> None:
+    """Seven sequential steps, five diverging stops, in every theme. §9.4.4 names the token keys
+    ``WzSequential1..7`` and ``WzDiverging{NegativeStrong,Negative,Zero,Positive,PositiveStrong}``,
+    and code indexes them — a short ramp in one theme is an IndexError on theme change."""
+    for theme in ALL_THEMES:
+        palette = palette_for(theme)
+        assert len(palette.sequential) == 7, f"{theme.value} sequential"
+        assert len(palette.diverging) == 5, f"{theme.value} diverging"
+
+
+def test_the_sequential_ramp_rises_monotonically_in_prominence() -> None:
+    """§9.4.4: a sequential ramp is *read by lightness*, which is why its adjacent steps measuring
+    low under simulated dichromacy is correct rather than a defect. That argument only holds while
+    the order holds, and nothing else in the suite would notice a transposed step — the colours
+    would still all be teal.
+
+    **The invariant is contrast against the surface, not lightness in a fixed direction.** §9.4.4's
+    ramp runs pale to dark because it was drawn for a light surface: the low end recedes and the
+    high end asserts itself. On the black high-contrast surface the same intent inverts, and a gate
+    written as "light to dark" would demand a ramp whose strongest signals were nearly invisible —
+    #218's defect, arrived at by way of a test."""
+    for theme in ALL_THEMES:
+        palette = palette_for(theme)
+        steps = [contrast(colour, palette.card_fill) for colour in palette.sequential]
+        assert steps == sorted(steps), (
+            f"{theme.value} sequential does not rise in prominence: "
+            f"{[f'{s:.2f}' for s in steps]} for {palette.sequential}"
+        )
+
+
+def test_the_diverging_ramp_is_symmetric_about_its_middle_stop() -> None:
+    """The middle stop maps to exactly zero (§9.4.4), so it must be the *neutral* one. A ramp whose
+    midpoint sat nearer one end would put the colour break off zero while still looking diverging,
+    which is the failure the section spends a paragraph forbidding."""
+    for theme in ALL_THEMES:
+        negative, _, zero, _, positive = (
+            _luminance(colour) for colour in palette_for(theme).diverging
+        )
+        assert zero > negative and zero > positive, (
+            f"{theme.value}'s middle diverging stop is not the neutral one."
+        )
+
+
+@pytest.mark.parametrize("theme", ALL_THEMES, ids=lambda t: t.value)
+def test_no_data_ramp_step_is_a_surface(theme: Theme) -> None:
+    """#218's rule generalised: a foreground token may never *be* a surface. Checked for both new
+    ramps, because #218 was found in the sequential one and this is the ramp it was found in.
+
+    The 3:1 floor is deliberately **not** asserted for the sequential ramp. §9.4.5 applies it to
+    chart lines; these are marker *fills* whose pale end is the point — a low C/N reading is meant
+    to recede — and the marker's outline is what carries it against the surface (§9.10.2)."""
+    palette = palette_for(theme)
+    surfaces = {
+        palette.page_background.upper(),
+        palette.layer_fill.upper(),
+        palette.card_fill.upper(),
+        palette.card_fill_secondary.upper(),
+    }
+
+    for index, colour in enumerate(palette.sequential, start=1):
+        assert colour.upper() not in surfaces, f"Sequential {index} is a surface colour."
+    for index, colour in enumerate(palette.diverging, start=1):
+        assert colour.upper() not in surfaces, f"Diverging {index} is a surface colour."
+
+
+def test_the_data_ramps_match_the_specification() -> None:
+    """§9.4.4 gives both ramps as literals and gives **one** column rather than one per theme.
+
+    The diverging ramp is shared verbatim: its middle stop is the neutral one against either
+    surface. The sequential ramp is not — see the token file for the measurement — but the *values*
+    are still the specification's, which is what this asserts."""
+    assert palette_for(Theme.LIGHT).sequential == (
+        "#DFF1F3",
+        "#A8DDE3",
+        "#6FC5CE",
+        "#3FB8C4",
+        "#189AA6",
+        "#0B6C74",
+        "#08474D",
+    )
+
+    # Dark carries the same seven values in the other order — see the token file. Asserted as an
+    # exact reversal so that a *new* colour appearing in Dark fails here rather than passing as a
+    # re-derivation nobody reviewed.
+    assert palette_for(Theme.DARK).sequential == tuple(
+        reversed(palette_for(Theme.LIGHT).sequential)
+    )
+
+    for theme in (Theme.LIGHT, Theme.DARK):
+        assert palette_for(theme).diverging == (
+            "#08474D",
+            "#3FB8C4",
+            "#DDE4E5",
+            "#F0A882",
+            "#B23A00",
+        )
+
+
 def test_the_series_ramp_matches_the_derivation() -> None:
     """These eight values come from ``build/palette/``, whose ``validate.py`` checks the colour
     maths against published figures. Restating them here would put them in two places; this asserts
