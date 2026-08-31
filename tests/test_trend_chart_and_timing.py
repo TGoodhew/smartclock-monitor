@@ -29,6 +29,7 @@ from smartclock_monitor.services.trend_store import (
     TrendStoreError,
     empty_series,
 )
+from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.tokens import ALL_THEMES, Theme, palette_for
 from smartclock_monitor.views.pages import SIGMA_WINDOW, TREND_RANGES, TimingPage
 from smartclock_monitor.widgets.chart_geometry import TI_FLOOR_NANOSECONDS
@@ -387,3 +388,84 @@ def test_a_reading_without_its_own_timestamp_falls_back_to_the_screen(clock: Fix
     store.append(Reading(status=ReceiverStatus(captured_at=NOW, mode=SmartClockMode.LOCKED)))
 
     assert store.window(timedelta(hours=1)).moment_at(0) == NOW
+
+
+# ---- The drift advisory on the page ------------------------------------------------------------
+
+
+def test_the_page_shows_a_drift_verdict(clock: FixedClock) -> None:
+    """The advisory reaches the card, through SeverityPill rather than as a colour — §9.13 item 10
+    makes it the one severity renderer and handing the page a brush would route around it."""
+    store = stored(clock, [reading(-index * 60, efc=-16.83) for index in range(2000)])
+    page = TimingPage()
+    page.show_reading(reading(0))
+    page.set_trend_store(store)
+
+    assert page._drift_pill.severity in set(Severity)
+    assert page._drift_evidence.text()
+    assert "ppm/day" in page._drift_evidence.text()
+
+
+def test_the_fit_reaches_further_back_than_the_chart_draws(clock: FixedClock) -> None:
+    """§10.7.1: a window of exactly *n* hours holds a span slightly under *n* hours, so the 24 h
+    range could never satisfy the day-long separability rule and the range named for a day could
+    not reach the day-based analysis it is built around."""
+    # A 37-second cadence, so the samples do not land on the window's edge. The 24 h window's
+    # oldest reading is then 23.998 h back — under a day, which is exactly the deficit §10.7.1
+    # describes — while the fit's window reaches one sample further and spans 24.08 h.
+    store = stored(clock, [reading(-index * 37, efc=-16.83) for index in range(2450)])
+    page = TimingPage()
+    page.show_reading(reading(0))
+    page.set_trend_store(store)
+    page._choose_range(2)  # 24 h
+
+    drawn = page._ti_chart.series.span
+    evidence = page._drift_evidence.text()
+
+    assert drawn < timedelta(hours=24), "the drawn window is under a day, which is the premise"
+    assert "cannot be separated" not in evidence, "but the fit reached past it"
+    assert "Daily swing" in evidence
+
+
+def test_a_power_up_before_the_window_still_excludes(clock: FixedClock) -> None:
+    """The reason the boundary is asked of the store rather than read off the window: the
+    exclusion reaches back 24 h and the window may be an hour, so a warm-up that finished before
+    the window opened leaves no trace in it at all."""
+    store = TrendStore.in_memory(clock)
+    for index in range(30):
+        store.append(reading(-7200 - index, mode=SmartClockMode.POWER_UP))
+    for index in range(1800):
+        store.append(reading(-index))
+
+    page = TimingPage()
+    page.show_reading(reading(0))
+    page.set_trend_store(store)
+
+    assert page._settling_boundary(store, store.window(timedelta(hours=1), ending=NOW)) is not None
+
+
+def test_no_power_up_in_the_record_excludes_nothing(clock: FixedClock) -> None:
+    """A receiver up longer than the store has existed is the ordinary case, and the one where
+    excluding anything would be inventing a warm-up that nothing observed."""
+    store = stored(clock, [reading(-index) for index in range(600)])
+    page = TimingPage()
+    page.show_reading(reading(0))
+    page.set_trend_store(store)
+
+    window = store.window(timedelta(hours=1), ending=NOW)
+    assert page._settling_boundary(store, window) is None
+    assert "excluded as still settling" not in page._drift_evidence.text()
+
+
+def test_the_advisory_survives_the_store_going_away(clock: FixedClock) -> None:
+    """Same contract as the charts: the history is lost, the page is not."""
+    store = stored(clock, [reading(-index * 60) for index in range(200)])
+    page = TimingPage()
+    page.show_reading(reading(0))
+    page.set_trend_store(store)
+
+    store.close()
+    page._refresh_trends(force=True)
+
+    assert page._store is None
+    assert "No trend history" in page._evidence.text()
