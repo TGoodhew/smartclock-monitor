@@ -43,11 +43,21 @@ from smartclock_monitor.widgets.severity_pill import SeverityPill, shape_path  #
 
 @pytest.fixture(scope="module")
 def application() -> QApplication:
-    """One QApplication for the module. Qt permits exactly one per process."""
+    """One QApplication for the module. Qt permits exactly one per process.
+
+    Skips rather than errors when Qt will not start. ``importorskip`` above covers a missing
+    package; this covers the other half — the package imports but the platform plugin cannot
+    initialise, which is what a machine without ``libEGL`` does. CI installs those libraries so
+    this should not trigger there, and a skip that fires on CI is worth investigating rather than
+    accepting.
+    """
     existing = QApplication.instance()
     if isinstance(existing, QApplication):
         return existing
-    return QApplication([])
+    try:
+        return QApplication([])
+    except Exception as error:  # pragma: no cover - depends on the machine, not the code
+        pytest.skip(f"Qt could not start a platform plugin: {error}")
 
 
 def status(mode: SmartClockMode = SmartClockMode.LOCKED, **kwargs: object) -> ReceiverStatus:
