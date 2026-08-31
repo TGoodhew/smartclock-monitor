@@ -86,6 +86,21 @@ extend-exclude = ["build/palette"]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF", "ASYNC", "TID"]
 
 # ---------------------------------------------------------------------------
+# Two characters this project uses on purpose, which RUF001-003 would otherwise
+# flag on sight.
+#
+# EN DASH is how the 58503A/59551A Operating and Programming Guide spells the
+# ranges in its figure-of-merit tables ("1 - 10 ns"), and those strings are shown
+# to the user verbatim. PRIME is the minute mark in a coordinate; ruff's
+# suggested replacement for it is GRAVE ACCENT, and models/coordinates.py exists
+# in large part to insist that the mark is neither that nor an apostrophe.
+#
+# Deliberately just these two. The rule is worth keeping for everything else -
+# a Cyrillic 'a' in an identifier is exactly the defect it is looking for.
+# ---------------------------------------------------------------------------
+allowed-confusables = ["–", "′"]
+
+# ---------------------------------------------------------------------------
 # The clock is injected, everywhere, without exception.
 #
 # Carried over from the original's BannedSymbols.txt, which the compiler enforces
