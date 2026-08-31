@@ -37,9 +37,19 @@ EXPECTED = (
     "surveying-locked-to-gps-stabilizing-frequency.txt",
 )
 
+#: The tenth capture, which lives a level up because `captured/` was a staging area on 21 August
+#: and the tests were pointed at the files where they lay rather than promoting them. It is the
+#: richest screen in the corpus — the week rollover, position hold, and the two side-by-side
+#: satellite column groups all come from this one — and it was the only fixture the byte-integrity
+#: checks below did not cover.
+AT_THE_ROOT = ("locked-stabilizing.txt",)
+
+#: Every capture, wherever it sits, as a path relative to ``tests/fixtures/``.
+ALL_CAPTURES = tuple(f"captured/{name}" for name in EXPECTED) + AT_THE_ROOT
+
 
 def test_every_captured_screen_is_present() -> None:
-    missing = [name for name in EXPECTED if not (CAPTURED / name).is_file()]
+    missing = [name for name in ALL_CAPTURES if not (FIXTURES / name).is_file()]
     assert not missing, f"Captured fixtures are missing and cannot be regenerated: {missing}"
 
 
@@ -52,9 +62,9 @@ def test_no_captured_screen_has_been_added_without_being_listed() -> None:
     )
 
 
-@pytest.mark.parametrize("name", EXPECTED)
+@pytest.mark.parametrize("name", ALL_CAPTURES)
 def test_captured_screen_is_intact(name: str) -> None:
-    raw = (CAPTURED / name).read_bytes()
+    raw = (FIXTURES / name).read_bytes()
 
     assert raw, f"{name} is empty"
     assert b"\r\n" in raw, (
