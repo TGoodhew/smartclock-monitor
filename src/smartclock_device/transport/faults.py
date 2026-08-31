@@ -12,7 +12,9 @@ prevent.
 
 from __future__ import annotations
 
+import errno
 from enum import Enum
+from typing import Final
 
 
 class TransportFault(Enum):
@@ -68,30 +70,54 @@ def is_transport_fault(exception: BaseException) -> bool:
     return isinstance(exception, TransportError | OSError | ValueError)
 
 
+#: What each errno means for a serial port.
+#:
+#: **Consulted before the message text**, and that ordering is the whole point. pyserial wraps a
+#: permission failure in a ``SerialException`` whose message reads *"could not open port
+#: /dev/ttyUSB0: [Errno 13] Permission denied"* — so a classifier that matched "could not open
+#: port" first called it a missing port and told the user their adapter might be unplugged. That
+#: is worse than saying nothing: it sends someone to check a cable when the fix is
+#: ``usermod -aG dialout``. Found against a real receiver, which is the only place it shows.
+_BY_ERRNO: Final[dict[int, TransportFault]] = {
+    errno.EACCES: TransportFault.ACCESS_DENIED,
+    errno.EPERM: TransportFault.ACCESS_DENIED,
+    errno.ENOENT: TransportFault.PORT_NOT_FOUND,
+    errno.ENODEV: TransportFault.DEVICE_REMOVED,
+    errno.ENXIO: TransportFault.DEVICE_REMOVED,
+    errno.EIO: TransportFault.IO,
+}
+
+
 def classify(exception: BaseException) -> TransportFault:
     """Map an exception raised by the port onto a fault.
 
-    Ordered most specific first. ``PermissionError`` and ``FileNotFoundError`` are both ``OSError``
-    subclasses, so a bare ``OSError`` check would swallow them.
+    **The errno is the evidence; the message is the fallback.** pyserial reports almost everything
+    as a ``SerialException`` — an ``OSError`` subclass — so the exception *type* separates very
+    little, and its message is prose that has changed between releases. The errno is neither.
     """
     if isinstance(exception, TransportError):
         return exception.fault
+
+    # These two are still worth naming: a bare OSError subclass carries the meaning in its type,
+    # and it costs nothing to trust that where it is present.
     if isinstance(exception, PermissionError):
         return TransportFault.ACCESS_DENIED
     if isinstance(exception, FileNotFoundError):
         return TransportFault.PORT_NOT_FOUND
 
     if isinstance(exception, OSError):
-        # pyserial reports a missing port as a SerialException carrying the device name, which is
-        # the only thing separating it from a mid-transaction I/O error. Same reasoning as the C#
-        # original's "does not exist" check against IOException.
+        code = exception.errno
+        if code is not None and code in _BY_ERRNO:
+            return _BY_ERRNO[code]
+
+        # No errno. Fall back to the message, permission first — see the note on _BY_ERRNO.
         text = str(exception).lower()
-        if "no such file" in text or "could not open port" in text or "does not exist" in text:
-            return TransportFault.PORT_NOT_FOUND
         if "permission" in text or "access is denied" in text:
             return TransportFault.ACCESS_DENIED
-        if "device" in text and ("disconnect" in text or "removed" in text):
+        if "disconnect" in text or "removed" in text:
             return TransportFault.DEVICE_REMOVED
+        if "no such file" in text or "could not open port" in text or "does not exist" in text:
+            return TransportFault.PORT_NOT_FOUND
         return TransportFault.IO
 
     # pyserial raises ValueError when a port is used after being closed. The handle outlives the
