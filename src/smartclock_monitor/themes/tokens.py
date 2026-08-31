@@ -104,6 +104,18 @@ class Palette:
     #: The §9.4.4 categorical ramp, eight series, for satellite traces.
     series: tuple[str, ...]
 
+    #: §9.4.4's sequential ramp, seven steps, low to high. Signal strength, and nothing else —
+    #: it encodes a magnitude, so it may not be used for a categorical distinction.
+    sequential: tuple[str, ...]
+
+    #: §9.4.4's diverging ramp, five stops, negative-strong → zero → positive-strong.
+    #:
+    #: **Only for an axis that contains zero**, which today means the 1 PPS chart alone. The
+    #: middle stop maps to exactly 0, never to the data midpoint: a colour break that drifted
+    #: with the window would mean "the receiver is on time" on one chart and "near where it has
+    #: lately been" on another.
+    diverging: tuple[str, ...]
+
     #: Which theme this is, for anything that must ask.
     theme: Theme
 
@@ -131,6 +143,45 @@ _SERIES_DARK: Final[tuple[str, ...]] = (
     "#7CB9D6",
     "#719BEA",
     "#C4C4C4",
+)
+
+#: §9.4.4's sequential ramp, verbatim, ordered for a **light** surface: low strength pale, high
+#: strength dark teal.
+#:
+#: Its adjacent steps measure low under simulated protanopia (4.4 ΔE₀₀) and §9.4.4 says that is
+#: correct rather than a defect — neighbouring steps of a ramp are meant to be similar, and the
+#: simulated ramp stays monotonic.
+#:
+#: **§9.4.4 gives one ramp and no second column, and that is a defect in Dark** (issue filed).
+#: A sequential ramp is read by lightness, so which end recedes depends on the surface it is drawn
+#: on. Used verbatim in Dark, the *strongest* signal draws #08474D on the #2B2B2B card — 1.13:1,
+#: below anything §9.4.5 permits and invisible in practice — while the *weakest* draws the
+#: brightest mark on the plot. The encoding is exactly inverted, on the theme that ships by default.
+#:
+#: This port therefore orders the same seven values per surface rather than deriving a second ramp:
+#: no new colour is introduced, the hue and the step spacing are the specification's, and the
+#: property §9.4.4 actually asks for — prominence rising with the value — holds in both themes.
+_SEQUENTIAL: Final[tuple[str, ...]] = (
+    "#DFF1F3",
+    "#A8DDE3",
+    "#6FC5CE",
+    "#3FB8C4",
+    "#189AA6",
+    "#0B6C74",
+    "#08474D",
+)
+
+#: The same seven values for a dark surface. See the note above: reversed, not re-derived.
+_SEQUENTIAL_DARK: Final[tuple[str, ...]] = tuple(reversed(_SEQUENTIAL))
+
+#: §9.4.4's diverging ramp, verbatim, ordered negative-strong → zero → positive-strong. One ramp
+#: for Light and Dark, for the same reason as the sequential one.
+_DIVERGING: Final[tuple[str, ...]] = (
+    "#08474D",
+    "#3FB8C4",
+    "#DDE4E5",
+    "#F0A882",
+    "#B23A00",
 )
 
 LIGHT: Final = Palette(
@@ -163,6 +214,8 @@ LIGHT: Final = Palette(
     info="#0F6CBD",
     neutral="#616161",
     series=_SERIES_LIGHT,
+    sequential=_SEQUENTIAL,
+    diverging=_DIVERGING,
     theme=Theme.LIGHT,
 )
 
@@ -191,6 +244,8 @@ DARK: Final = Palette(
     info="#4CC2FF",
     neutral="#9A9A9A",
     series=_SERIES_DARK,
+    sequential=_SEQUENTIAL_DARK,
+    diverging=_DIVERGING,
     theme=Theme.DARK,
 )
 
@@ -233,6 +288,32 @@ HIGH_CONTRAST: Final = Palette(
         "#FFB060",
         "#8CB4FF",
         "#D6D6D6",
+    ),
+    # Neither ramp flattens, for the reason given above: §9.4.4 flattens the sequential ramp to
+    # SystemColorWindowTextColor because on Windows the steps are the user's colours and steps 1
+    # and 2 resolved to the page background (#218). Here they are ours, so the ramp can stay
+    # readable — and a flattened sequential ramp would draw every satellite the same colour, which
+    # is what the strength encoding is for.
+    #
+    # Ordered by lightness rather than by hue. Under high contrast lightness is the channel that
+    # survives, and every step clears §9.4.5's 3:1 against the black surfaces.
+    sequential=(
+        "#8C8C8C",
+        "#A0A0A0",
+        "#B4B4B4",
+        "#C8C8C8",
+        "#DCDCDC",
+        "#EEEEEE",
+        "#FFFFFF",
+    ),
+    # Sign is carried by hue and strength by saturation, because on black the normal ramp's
+    # device — dark for strongly negative — would put the strongest readings in the background.
+    diverging=(
+        "#00E5E5",
+        "#7FD4FF",
+        "#FFFFFF",
+        "#FFC08A",
+        "#FF8A3D",
     ),
     theme=Theme.HIGH_CONTRAST,
 )
