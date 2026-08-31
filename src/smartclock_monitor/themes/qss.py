@@ -38,7 +38,6 @@ def stylesheet(palette: Palette) -> str:
 
     return f"""
 QWidget {{
-    background-color: {palette.page_background};
     color: {palette.text_primary};
     font-family: {body};
     font-size: {Type.BODY.size}pt;
@@ -46,6 +45,13 @@ QWidget {{
 
 QMainWindow, QDialog {{
     background-color: {palette.page_background};
+}}
+
+/* Labels never paint their own ground. A QLabel that inherits a background-color from QWidget
+   draws a filled rectangle the width of its layout cell, which reads as a row of grey bars
+   sitting behind the text rather than as text on a card. */
+QLabel {{
+    background: transparent;
 }}
 
 /* L2 card. The one surface the whole layout is built out of. */
@@ -131,6 +137,35 @@ QPushButton:focus {{
 QPushButton:disabled {{
     color: {palette.text_disabled};
     border-color: {palette.stroke_subtle};
+}}
+
+QComboBox {{
+    background-color: {palette.card_fill_secondary};
+    color: {palette.text_primary};
+    border: 1px solid {palette.stroke_default};
+    border-radius: {Radius.CONTROL}px;
+    padding: {Spacing.TIGHT}px {Spacing.SMALL}px;
+    /* §9.12's pointer-target floor, declared rather than inherited. */
+    min-height: {Spacing.LARGE}px;
+    min-width: {Spacing.PAGE}px;
+}}
+
+QComboBox:focus {{
+    border: 2px solid {palette.accent};
+}}
+
+QComboBox::drop-down {{
+    border: none;
+    width: {Spacing.LARGE}px;
+}}
+
+/* The popup is a separate top-level window and does not inherit the combo's own rules. */
+QComboBox QAbstractItemView {{
+    background-color: {palette.overlay_fill};
+    color: {palette.text_primary};
+    border: 1px solid {palette.stroke_default};
+    selection-background-color: {palette.accent};
+    selection-color: {palette.accent_foreground};
 }}
 
 QListWidget {{
