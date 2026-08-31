@@ -12,7 +12,7 @@ lying, and it is the kind of lie that is impossible to spot afterwards.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Final
 
 from PySide6.QtCore import Qt
@@ -34,9 +34,11 @@ from PySide6.QtWidgets import (
 
 from smartclock_device.models import coordinates
 from smartclock_device.models.receiver_status import ReceiverStatus, SignalStrengthKind
+from smartclock_monitor.services.drift import FIT_MARGIN, advise
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.statistics import deviation
 from smartclock_monitor.services.trend_store import (
+    SETTLING,
     Series,
     TrendStore,
     TrendStoreError,
@@ -381,6 +383,11 @@ TREND_RANGES: Final[tuple[tuple[str, timedelta], ...]] = (
 #: property of the receiver now rather than of the window being drawn.
 SIGMA_WINDOW: Final = timedelta(hours=1)
 
+#: Used only where a reading has arrived with no timestamp at all and the window is empty too —
+#: the advisory needs an instant to project from, and refusing to draw the card over it would be
+#: a worse answer than dating a projection nobody is going to get.
+NOW_FALLBACK: Final = datetime.min.replace(tzinfo=UTC)
+
 
 class TimingPage(Page):
     """§10.7 and §10.8: the figures of merit, the clock, and holdover."""
@@ -450,6 +457,13 @@ class TimingPage(Page):
         trends_layout.addWidget(label("Oscillator control (EFC)", "subtitle"))
         self._efc_chart = TrendChart("Oscillator control", AxisMode.FRAMED, "%", self._palette)
         trends_layout.addWidget(self._efc_chart)
+
+        trends_layout.addWidget(label("Oscillator drift", "subtitle"))
+        self._drift_pill = SeverityPill(Severity.NEUTRAL, "No history yet", self._palette)
+        trends_layout.addWidget(self._drift_pill)
+        self._drift_evidence = label("", "caption")
+        self._drift_evidence.setWordWrap(True)
+        trends_layout.addWidget(self._drift_evidence)
 
         return trends
 
@@ -539,6 +553,47 @@ class TimingPage(Page):
         self._ti_chart.show_series(window)
         self._efc_chart.show_series(window)
         self._describe_deviation(hour)
+        self._advise_drift(store, now)
+
+    def _advise_drift(self, store: TrendStore, now: datetime | None) -> None:
+        """§10.7.1's advisory, over a window slightly wider than the one drawn.
+
+        A window of exactly *n* hours holds a span slightly under *n* hours, so the 24 h range
+        could never satisfy the day-long separability rule and the range named for a day could not
+        reach the day-based analysis. The charts are unaffected: they are what the user is looking
+        at, and the fit is what is being said about it.
+        """
+        try:
+            wider = store.window(self._range + FIT_MARGIN, ending=now)
+            settling = self._settling_boundary(store, wider)
+        except TrendStoreError:
+            self._store = None
+            self._refresh_trends(force=True)
+            return
+
+        moment = now if now is not None else (wider.end or NOW_FALLBACK)
+        advisory = advise(wider, now=moment, settling_until=settling)
+
+        self._drift_pill.set_state(advisory.severity, advisory.headline)
+        self._drift_evidence.setText("\n".join(advisory.lines))
+
+    def _settling_boundary(self, store: TrendStore, window: Series) -> datetime | None:
+        """When the last power-up's settling period ends, or ``None`` if none is known.
+
+        Asked of the store rather than read off the window: the exclusion reaches back 24 h and
+        the window may be an hour, so a warm-up that finished before the window opened leaves no
+        trace in it at all.
+        """
+        start = window.start
+        if start is None:
+            return None
+
+        power_up = store.last_power_up(start)
+        if power_up is None:
+            return None
+
+        boundary = power_up + SETTLING
+        return boundary if boundary > start else None
 
     def _describe_deviation(self, hour: Series) -> None:
         """§10.7's σ caption, which **names what it found rather than what it asked for**.
