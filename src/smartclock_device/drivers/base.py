@@ -1,0 +1,112 @@
+"""The driver seam: every receiver-specific fact sits behind one of these.
+
+The application never reaches the SmartClock driver or the NMEA driver directly; it asks the driver
+the session selected. That is what makes a second family a new file rather than a scatter of
+conditionals, and it is why the poll cadence and the sweep are properties of the **driver** rather
+than of the application — §7.3's schedule is the SmartClock family's, and a broadcast talker has a
+different one.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import timedelta
+from typing import Protocol, runtime_checkable
+
+from smartclock_device.commands.scpi_command import ScpiCommand
+from smartclock_device.models.receiver_status import ReceiverStatus
+from smartclock_device.transport.transaction import Transaction
+
+
+@dataclass(frozen=True, slots=True)
+class Cadence:
+    """How often a driver wants its two tiers polled (§7.3).
+
+    Fixed rather than user-settable: §10.13 decided the cadences are deliberately not offered, and
+    the scheduler takes them from here.
+    """
+
+    #: The scalar sweep that drives the main window and the trend charts.
+    fast: timedelta
+
+    #: The full read that drives the satellite table, position and health.
+    full: timedelta
+
+
+@dataclass(frozen=True, slots=True)
+class PollPlan:
+    """What a driver asks for on each tier.
+
+    ``full`` is a single command for the SmartClock family — the status screen — but need not be:
+    a broadcast family's full read is the whole of its last complete cycle, which is why this is a
+    plan rather than a hard-coded pair of commands.
+    """
+
+    #: The fast tier, in order. The first entry is asked before the rest, so a driver whose rule
+    #: depends on knowing a state first (§7.3.1) puts that query at the front.
+    fast: tuple[ScpiCommand, ...]
+
+    #: The full read.
+    full: ScpiCommand
+
+    #: The fast-tier reading the receiver may legitimately refuse, or ``None``.
+    #:
+    #: §7.3.1: when a receiver refuses this, it is not asked again until the state query reports a
+    #: different state. Keyed on the state rather than on a list of states, because nothing in the
+    #: application decides which states support which reading — the receiver is asked once and
+    #: believed. A family whose plan has no refusable query leaves this ``None`` and §7.3.1 does
+    #: not arise for it.
+    refusable: ScpiCommand | None = None
+
+    #: The query whose answer keys the §7.3.1 suppression, or ``None``.
+    state_query: ScpiCommand | None = None
+
+
+@runtime_checkable
+class ReceiverDriver(Protocol):
+    """Everything the application needs to know about one family of receiver."""
+
+    @property
+    def name(self) -> str:
+        """What the family is called, for the connection UI and the logs."""
+        ...
+
+    @property
+    def cadence(self) -> Cadence:
+        """How often to poll."""
+        ...
+
+    @property
+    def plan(self) -> PollPlan:
+        """What to ask for."""
+        ...
+
+    def is_allowed(self, mnemonic: str | None) -> bool:
+        """Whether this command is on **this driver's** allowlist.
+
+        The point-of-send check (§8.1). A reads-only family legitimately allows no setter at all.
+        """
+        ...
+
+    def is_blocked(self, mnemonic: str | None) -> bool:
+        """Whether §8.4 excludes this command for this family.
+
+        Routed through the driver so the application never imports the exclusion module itself. A
+        family with nothing it can write legitimately answers ``False`` for everything, there being
+        nothing to exclude.
+        """
+        ...
+
+    def parse_full(
+        self, transaction: Transaction, previous: ReceiverStatus | None
+    ) -> ReceiverStatus:
+        """Turn the full-tier response into a status.
+
+        :param previous: The last status, so a driver whose full read is incremental can build on
+            it. The SmartClock driver ignores it — a status screen is complete in itself.
+        """
+        ...
+
+    def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
+        """Fold the fast-tier answers into the status the full tier last produced."""
+        ...
