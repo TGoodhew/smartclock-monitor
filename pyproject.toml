@@ -86,7 +86,7 @@ extend-exclude = ["build/palette"]
 select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF", "ASYNC", "TID"]
 
 # ---------------------------------------------------------------------------
-# Two characters this project uses on purpose, which RUF001-003 would otherwise
+# Three characters this project uses on purpose, which RUF001-003 would otherwise
 # flag on sight.
 #
 # EN DASH is how the 58503A/59551A Operating and Programming Guide spells the
@@ -95,10 +95,18 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF", "ASYNC", 
 # suggested replacement for it is GRAVE ACCENT, and models/coordinates.py exists
 # in large part to insist that the mark is neither that nor an apostrophe.
 #
-# Deliberately just these two. The rule is worth keeping for everything else -
+# MINUS SIGN is the negative supply rail in the Hardware status register's bit
+# table - "-15 V supply out of tolerance", printed directly beneath "+15 V" and
+# "+5 V" (guide, Command Reference 5-38). It is user-visible text and it is
+# byte-identical to the string in WinZ3805A, which is the reason to keep the
+# character rather than flatten it to HYPHEN-MINUS: the two tables are compared.
+# The typographic point is the same one PRIME makes - a hyphen is not a minus,
+# and next to a signed sibling the difference is legible.
+#
+# Deliberately just these three. The rule is worth keeping for everything else -
 # a Cyrillic 'a' in an identifier is exactly the defect it is looking for.
 # ---------------------------------------------------------------------------
-allowed-confusables = ["–", "′"]
+allowed-confusables = ["–", "′", "−"]
 
 # ---------------------------------------------------------------------------
 # The clock is injected, everywhere, without exception.
