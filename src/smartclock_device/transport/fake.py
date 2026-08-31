@@ -152,6 +152,18 @@ class FakeTransport:
         """
         self._enqueue(text)
 
+    def script(self, command: str, response: str | None) -> None:
+        """Change what one command answers, mid-session.
+
+        For the tests where the *receiver* changes its mind: a unit that regains lock starts
+        answering a query it was refusing, and §7.3.1's self-clearing rule is only testable if the
+        fake can do the same.
+        """
+        if response is None:
+            self._responses.pop(command, None)
+        else:
+            self._responses[command] = response
+
     def simulate_removal(self) -> None:
         """The port goes away underneath an open handle — P0-14's unplug.
 
