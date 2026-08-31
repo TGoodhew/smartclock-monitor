@@ -59,6 +59,10 @@ _DECIMAL: Final = re.compile(r"^[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]
 _INT32_MIN: Final = -(2**31)
 _INT32_MAX: Final = 2**31 - 1
 
+#: How many significant digits an in-range value can have. ``2147483647`` has ten, so anything
+#: longer is out of range and can be rejected without being converted — see :func:`parse_integer`.
+_INT32_DIGITS: Final = 10
+
 
 def _clean(response: str | None) -> str | None:
     """Trim the leading space and anything else stray, or return ``None`` for an empty answer."""
@@ -69,11 +73,26 @@ def _clean(response: str | None) -> str | None:
 
 
 def parse_integer(response: str | None) -> int | None:
-    """Parse a signed integer answer such as ``+3``."""
+    """Parse a signed integer answer such as ``+3``.
+
+    The digits are counted before they are converted, because ``int()`` **raises** on a long
+    enough string: CPython caps integer-from-string conversion at 4300 digits (CVE-2020-10735,
+    the quadratic-parsing denial of service), and a corrupted read is exactly how a five-thousand
+    character run of digits arrives. The grammar above matches it happily, so without this the one
+    function whose contract is that it never raises would raise (§11.1).
+
+    Counting significant digits rather than the string's length keeps ``00000000000000001``
+    parsing as ``1``, which is what C#'s ``int.TryParse`` does with it.
+    """
     text = _clean(response)
     if text is None or not _INTEGER.match(text):
         return None
-    value = int(text)
+
+    digits = text.lstrip("+-").lstrip("0")
+    if len(digits) > _INT32_DIGITS:
+        return None
+
+    value = -int(digits or "0") if text.startswith("-") else int(digits or "0")
     return value if _INT32_MIN <= value <= _INT32_MAX else None
 
 

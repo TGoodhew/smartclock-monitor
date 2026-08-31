@@ -1035,18 +1035,29 @@ def _find_holdover_duration(lines: list[str]) -> timedelta | None:
         if match is None:
             continue
 
-        # Every group is digits the pattern matched, so none of these can fail; the unmatched
-        # optional groups yield zero rather than raising.
-        def part(name: str, match: re.Match[str] = match) -> int:
+        # Routed through parse_integer rather than int(), and the result guarded, because neither
+        # conversion is as total as it looks: int() raises above 4300 digits, and timedelta raises
+        # OverflowError past 999999999 days. Both are reachable from a corrupted read, and both
+        # used to cost the whole screen — the catch-all in StatusScreenParser.parse would discard
+        # a perfectly good mode, satellite table and position over one unreadable duration.
+        # §11.1's rule is that an unparseable *field* becomes None, so it does.
+        def part(name: str, match: re.Match[str] = match) -> int | None:
             captured = match.group(name)
-            return int(captured) if captured else 0
+            return 0 if not captured else parse_integer(captured)
 
-        return timedelta(
-            days=part("days"),
-            hours=part("hours"),
-            minutes=part("minutes"),
-            seconds=part("seconds"),
-        )
+        parts = {name: part(name) for name in ("days", "hours", "minutes", "seconds")}
+        if any(value is None for value in parts.values()):
+            return None
+
+        try:
+            return timedelta(
+                days=parts["days"] or 0,
+                hours=parts["hours"] or 0,
+                minutes=parts["minutes"] or 0,
+                seconds=parts["seconds"] or 0,
+            )
+        except OverflowError:
+            return None
 
     return None
 

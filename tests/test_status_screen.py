@@ -939,3 +939,56 @@ def test_the_duration_keeps_counting_from_holdover_into_recovery() -> None:
     assert in_recovery == timedelta(minutes=17, seconds=6)
     assert in_recovery is not None and in_holdover is not None
     assert in_recovery > in_holdover, "the counter must not reset on leaving holdover"
+
+
+# ---------------------------------------------------------------------------------------------
+# Corrupted fields degrade; corrupted fields do not cost the screen
+# ---------------------------------------------------------------------------------------------
+
+
+def replace_holdover_duration(name: str, duration: str) -> ReceiverStatus:
+    """A captured screen with its holdover duration overwritten, and nothing else touched."""
+    lines = read_fixture(name).split(CRLF)
+    rewritten = [
+        f"Holdover Duration: {duration}" if "Holdover Duration:" in line else line for line in lines
+    ]
+    return parser_at(HOLDOVER_INSTANT).parse(CRLF.join(rewritten))
+
+
+@pytest.mark.parametrize(
+    ("duration", "expected"),
+    [
+        ("9" * 5000 + " m 0 s", None),
+        ("2000000000 d 0 m 0 s", None),
+        ("999999999 d 24 h 0 m 0 s", None),
+        ("1 d 2 h 3 m 4 s", timedelta(days=1, hours=2, minutes=3, seconds=4)),
+    ],
+)
+def test_an_unreadable_duration_costs_the_field_and_not_the_screen(
+    duration: str, expected: timedelta | None
+) -> None:
+    """§11.1's rule is that an unparseable **field** becomes ``None`` — not that the screen is
+    discarded. Both of these used to cost the whole screen: ``int()`` raises above 4300 digits and
+    ``timedelta`` raises ``OverflowError`` past 999999999 days, and the catch-all in
+    :meth:`StatusScreenParser.parse` caught each one and threw away a perfectly good mode,
+    satellite table and position along with it.
+
+    Regression test, and the assertion that matters is the second one.
+    """
+    status = replace_holdover_duration("captured/holdover-gps-1pps-invalid.txt", duration)
+
+    assert status.holdover_duration == expected
+    assert status.mode is not SmartClockMode.UNKNOWN
+    assert not any("failed unexpectedly" in warning for warning in status.parse_warnings)
+
+
+def test_the_rewrite_helper_reproduces_the_fixture_when_it_changes_nothing() -> None:
+    """Guarding the guard: if the substitution above missed its line, every assertion in the test
+    beside it would pass against an unmodified screen and prove nothing."""
+    original = parse_fixture("captured/holdover-gps-1pps-invalid.txt", HOLDOVER_INSTANT)
+    assert original.holdover_duration is not None
+
+    rewritten = replace_holdover_duration(
+        "captured/holdover-gps-1pps-invalid.txt", "9" * 5000 + " m 0 s"
+    )
+    assert rewritten.holdover_duration != original.holdover_duration

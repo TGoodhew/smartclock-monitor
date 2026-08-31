@@ -170,3 +170,37 @@ def test_a_boolean_follows_the_integer_grammar_and_not_pythons_truthiness() -> N
     assert parse_boolean("false") is None
     assert parse_boolean("true") is None
     assert parse_boolean(" -1") is True
+
+
+# ---- The conversion limit -------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("digits", [4299, 4300, 4301, 5000])
+def test_a_long_run_of_digits_is_rejected_rather_than_raising(digits: int) -> None:
+    """CPython caps integer-from-string conversion at 4300 digits (CVE-2020-10735, the quadratic
+    parsing denial of service), so ``int()`` **raises** above it. The grammar above matches a run
+    of digits happily, which made the one function whose contract is that it never raises the one
+    that did — reachable from any corrupted read long enough to matter.
+
+    Regression test. Before the digit count was checked ahead of the conversion, every one of
+    these raised ``ValueError``.
+    """
+    assert parse_integer("9" * digits) is None
+    assert parse_integer("-" + "9" * digits) is None
+
+
+def test_leading_zeros_are_not_significant_digits() -> None:
+    """The count is of significant digits, not of characters: five thousand zeros followed by a 1
+    is 1, which is what C#'s ``int.TryParse`` makes of it. Counting the string's length instead
+    would reject a legitimate value, which is the bug the obvious fix introduces."""
+    assert parse_integer("0" * 5000 + "1") == 1
+    assert parse_integer("00000000000000001") == 1
+    assert parse_integer("0" * 5000) == 0
+    assert parse_integer("-" + "0" * 5000 + "1") == -1
+
+
+def test_the_boundary_of_the_digit_count_is_the_int32_range_and_not_a_round_number() -> None:
+    """Ten digits is ``2147483647``'s width. Eleven cannot be in range whatever it says."""
+    assert parse_integer("2147483647") == 2147483647
+    assert parse_integer("9999999999") is None
+    assert parse_integer("10000000000") is None
