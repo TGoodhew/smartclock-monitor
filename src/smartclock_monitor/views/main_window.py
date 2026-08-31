@@ -18,6 +18,7 @@ from __future__ import annotations
 from datetime import datetime
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
@@ -25,6 +26,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QPushButton,
     QStatusBar,
     QVBoxLayout,
     QWidget,
@@ -40,6 +42,7 @@ from smartclock_monitor.themes.qss import stylesheet
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import ALL_THEMES, Theme, palette_for
+from smartclock_monitor.views.details_window import DetailsWindow
 from smartclock_monitor.widgets.medallion import StatusMedallion
 from smartclock_monitor.widgets.severity_pill import SeverityPill
 
@@ -126,6 +129,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self._theme = theme
 
+        self._last_reading: Reading | None = None
+
         self.setWindowTitle(APPLICATION_NAME)
         # G1's box. A floor rather than a fixed size: §9.6.1's breakpoints grow the layout, and the
         # acceptance criterion is that it *fits* in 420 by 260, not that it is stuck there.
@@ -143,6 +148,13 @@ class MainWindow(QMainWindow):
 
         self._detail = _label("", "device")
         self._detail.setWordWrap(True)
+
+        self._details: DetailsWindow | None = None
+        self._details_button = QPushButton("Details…")
+        self._details_button.setAccessibleName("Open the details window")
+        self._details_button.setToolTip("Satellites, position and timing (Ctrl+D)")
+        self._details_button.clicked.connect(self.open_details)
+        QShortcut(QKeySequence("Ctrl+D"), self, self.open_details)
 
         self._theme_picker = QComboBox()
         for available in ALL_THEMES:
@@ -190,6 +202,7 @@ class MainWindow(QMainWindow):
         header.setSpacing(Spacing.SMALL)
         header.addWidget(_label(APPLICATION_NAME, "title"))
         header.addStretch(1)
+        header.addWidget(self._details_button)
         header.addWidget(_label("Theme", "caption"))
         header.addWidget(self._theme_picker)
         outer.addLayout(header)
@@ -250,10 +263,40 @@ class MainWindow(QMainWindow):
         for widget in (self._medallion, self._mode_pill, self._outputs_pill, self._health_pill):
             widget.set_palette_tokens(palette)
 
+        # The details window is a separate top-level window and inherits neither the stylesheet nor
+        # the palette, so it is told as well.
+        if self._details is not None:
+            self._details.apply_theme(theme)
+
     def _on_theme_changed(self, index: int) -> None:
         theme = self._theme_picker.itemData(index)
         if isinstance(theme, Theme):
             self.apply_theme(theme)
+
+    # -- The details window ----------------------------------------------------------------------
+
+    def open_details(self) -> None:
+        """Open the details window, or raise the one that is already open.
+
+        Created lazily and kept, rather than rebuilt each time: it holds the sky plot's marker
+        widgets and the satellite table's selection, and throwing those away on close would lose
+        the row a user had picked while they went to look at the main window.
+        """
+        if self._details is None:
+            self._details = DetailsWindow(self._theme, self)
+            self._details.setWindowFlag(Qt.WindowType.Window, True)
+            if self._last_reading is not None:
+                self._details.show_reading(self._last_reading)
+
+        self._details.show()
+        self._details.raise_()
+        self._details.activateWindow()
+
+    @property
+    def details(self) -> DetailsWindow | None:
+        """The details window, if it has been opened. ``None`` before that — it is created on
+        demand, because most sessions never open it."""
+        return self._details
 
     # -- What the poll loop tells it -------------------------------------------------------------
 
@@ -264,6 +307,10 @@ class MainWindow(QMainWindow):
 
     def show_reading(self, reading: Reading) -> None:
         """Render one sweep. Called on the event loop, never from a worker thread."""
+        self._last_reading = reading
+        if self._details is not None:
+            self._details.show_reading(reading)
+
         status = reading.status
         severity = _MODE_SEVERITY.get(status.mode, Severity.NEUTRAL)
         label = _MODE_LABEL.get(status.mode, "Unknown")
