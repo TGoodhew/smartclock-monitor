@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# The shape is borrowed from WinZ3805A: the cheap checks run in their own
+# dependency-free jobs alongside the tests rather than behind them, so a lint,
+# typing or palette regression fails in seconds instead of after an install.
+jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install ruff
+      - run: ruff check .
+      - run: ruff format --check .
+
+  palette:
+    name: Colour derivation self-test
+    runs-on: ubuntu-latest
+    # build/palette/ came across from WinZ3805A already written in Python and
+    # runs unchanged. validate.py checks the colour maths against the figures
+    # published in the issue that prompted the derivation, before anything
+    # trusts it. It reports rather than exits, so the failure marker is the gate.
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install numpy
+      - name: Reproduce the published figures
+        run: |
+          python build/palette/validate.py | tee /tmp/palette.txt
+          if grep -q '!!' /tmp/palette.txt; then
+            echo "::error::The colour maths no longer reproduces the published figures."
+            exit 1
+          fi
+
+  types:
+    name: Types
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: mypy
+
+  test:
+    name: Test (${{ matrix.os }}, py${{ matrix.python }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.12", "3.13"]
+    env:
+      # Qt needs a platform plugin even for tests that never open a window.
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - run: pytest -v

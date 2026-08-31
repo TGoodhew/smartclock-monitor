@@ -1,0 +1,111 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "smartclock-monitor"
+version = "0.0.1"
+description = "Monitor and control HP/Symmetricom SmartClock GPS-disciplined oscillators over RS-232"
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Tony Goodhew" }]
+requires-python = ">=3.12"
+keywords = ["gpsdo", "gps", "z3805a", "smartclock", "frequency-standard", "scpi"]
+classifiers = [
+    "Development Status :: 2 - Pre-Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: Microsoft :: Windows",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+]
+
+dependencies = [
+    "PySide6>=6.7",
+    "qasync>=0.27",
+    "pyserial>=3.5",
+    "pyserial-asyncio>=0.6",
+    "markdown-it-py>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24",
+    "mypy>=1.11",
+    "ruff>=0.6",
+    "numpy>=1.26",       # build/palette only
+]
+
+[project.scripts]
+smartclock-monitor = "smartclock_monitor.__main__:main"
+
+[project.urls]
+Homepage = "https://github.com/TGoodhew/smartclock-monitor"
+"Windows sibling" = "https://github.com/TGoodhew/WinZ3805A"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/smartclock_device", "src/smartclock_monitor"]
+
+# ---------------------------------------------------------------------------
+# mypy --strict from the first commit, not later.
+#
+# The C# original leans on nullable reference types with warnings-as-errors to
+# hold up section 11.1's guarantee that the parser never throws: an unparseable
+# field becomes null and EVERY consumer is forced by the compiler to handle it.
+# Python has no equivalent, and retrofitting strict typing onto a finished
+# codebase is the same losing game as retrofitting a design-token layer onto
+# finished XAML. So it is on now, while the tree is empty and it is free.
+# ---------------------------------------------------------------------------
+[tool.mypy]
+files = ["src", "tests"]
+strict = true
+warn_unreachable = true
+disallow_any_explicit = false     # PySide6 signal plumbing needs a little slack
+mypy_path = "src"
+
+[[tool.mypy.overrides]]
+module = ["serial.*", "serial_asyncio.*", "qasync.*"]
+ignore_missing_imports = true
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests"]
+
+# build/palette/ is carried across from WinZ3805A verbatim and stays that way.
+# It is the derivation behind the section 9.4.4 palette, it is checked by its own
+# validate.py against published figures, and the two copies being byte-identical
+# is what lets either repository trust the other's colours. Reformatting it to
+# this project's house style would buy nothing and cost that. See docs/provenance.md.
+extend-exclude = ["build/palette"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "RUF", "ASYNC", "TID"]
+
+# ---------------------------------------------------------------------------
+# The clock is injected, everywhere, without exception.
+#
+# Carried over from the original's BannedSymbols.txt, which the compiler enforces
+# there. The GPS week-rollover logic (section 7.4), staleness display and poll
+# scheduling are all clock-dependent, and the fixture tests must be able to pin
+# the clock. A module-level datetime.now() in the device layer makes a test
+# unpinnable and the defect invisible.
+#
+# Test any addition to this list against a deliberate violation. A rule that
+# matches nothing is a rule that enforces nothing.
+# ---------------------------------------------------------------------------
+[tool.ruff.lint.flake8-tidy-imports.banned-api]
+"datetime.datetime.now".msg = "Inject a Clock and call it. See section 7.4 and the port plan."
+"datetime.datetime.utcnow".msg = "Inject a Clock and call it. Also deprecated."
+"time.time".msg = "Inject a Clock and call it."
+"time.monotonic".msg = "Inject a Clock and call it."
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

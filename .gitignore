@@ -1,0 +1,23 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/lib/
+dist/
+.venv/
+venv/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Runtime state, never committed
+*.db
+*.sqlite
+*.log
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store

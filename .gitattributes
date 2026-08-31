@@ -1,0 +1,37 @@
+# Normalise line endings so the repository content is stable regardless of the
+# contributor's core.autocrlf setting.
+* text=auto
+
+*.py    text diff=python
+*.md    text
+*.toml  text
+*.yml   text
+*.yaml  text
+*.cfg   text
+*.sh    text eol=lf
+
+*.png   binary
+*.ico   binary
+*.ttf   binary
+*.otf   binary
+*.db    binary
+*.sqlite binary
+
+# ---------------------------------------------------------------------------
+# Captured status screens are parser fixtures. They are device output reproduced
+# verbatim (§11.1) and their exact bytes, including line endings, are the point.
+# Carried across from WinZ3805A, where this line says the same thing.
+# ---------------------------------------------------------------------------
+tests/fixtures/** -text
+
+# ---------------------------------------------------------------------------
+# The specification is byte-exact and must stay that way.
+#
+# This machine has core.autocrlf=true, which would check the file out with CRLF
+# endings and alter every byte count, hash and column position in it on a fresh
+# clone. Marking it -text disables EOL conversion in both directions, so the file
+# that lands in a clone is the file that was committed - and, here, the file that
+# is byte-identical to the one in WinZ3805A, which is what makes the two
+# comparable at all. Do not remove this line. See docs/provenance.md.
+# ---------------------------------------------------------------------------
+docs/requirements.md -text
