@@ -12,14 +12,19 @@ lying, and it is the kind of lie that is impossible to spot afterwards.
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+from typing import Final
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QButtonGroup,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QPushButton,
     QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
@@ -30,11 +35,19 @@ from PySide6.QtWidgets import (
 from smartclock_device.models import coordinates
 from smartclock_device.models.receiver_status import ReceiverStatus, SignalStrengthKind
 from smartclock_monitor.services.polling import Reading
+from smartclock_monitor.services.statistics import deviation
+from smartclock_monitor.services.trend_store import (
+    Series,
+    TrendStore,
+    TrendStoreError,
+    empty_series,
+)
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
 from smartclock_monitor.widgets.severity_pill import SeverityPill
 from smartclock_monitor.widgets.sky_plot import SkyPlot
+from smartclock_monitor.widgets.trend_chart import AxisMode, TrendChart
 
 DASH = "—"
 
@@ -356,6 +369,18 @@ class PositionPage(Page):
 
 # ---- §10.7 Timing -------------------------------------------------------------------------------
 
+#: §10.7's four ranges, in the order the wireframe draws them.
+TREND_RANGES: Final[tuple[tuple[str, timedelta], ...]] = (
+    ("1 h", timedelta(hours=1)),
+    ("6 h", timedelta(hours=6)),
+    ("24 h", timedelta(hours=24)),
+    ("7 d", timedelta(days=7)),
+)
+
+#: What σ is always measured over, whatever range is selected. §10.7 puts it beside *Current* as a
+#: property of the receiver now rather than of the window being drawn.
+SIGMA_WINDOW: Final = timedelta(hours=1)
+
 
 class TimingPage(Page):
     """§10.7 and §10.8: the figures of merit, the clock, and holdover."""
@@ -364,6 +389,11 @@ class TimingPage(Page):
 
     def __init__(self, palette: Palette = LIGHT, parent: QWidget | None = None) -> None:
         super().__init__(palette, parent)
+        self._store: TrendStore | None = None
+        self._range: timedelta = TREND_RANGES[0][1]
+        self._last_captured: datetime | None = None
+        self._last_refresh: datetime | None = None
+
         layout = QVBoxLayout(self)
         layout.setSpacing(Spacing.MEDIUM)
 
@@ -393,10 +423,157 @@ class TimingPage(Page):
         holdover_layout.addWidget(self._holdover)
         layout.addWidget(holdover)
 
+        layout.addWidget(self._build_trends())
         layout.addStretch(1)
+
+    # -- §10.7's trends ------------------------------------------------------------------------
+
+    def _build_trends(self) -> QFrame:
+        trends, trends_layout = card("1 PPS time interval")
+
+        heading = QHBoxLayout()
+        self._sigma = label("", "readout-small")
+        heading.addWidget(self._sigma)
+        heading.addStretch(1)
+        heading.addWidget(self._build_ranges())
+        trends_layout.addLayout(heading)
+
+        self._evidence = label("", "caption")
+        self._evidence.setWordWrap(True)
+        trends_layout.addWidget(self._evidence)
+
+        self._ti_chart = TrendChart(
+            "1 PPS time interval", AxisMode.ZERO_ANCHORED, "ns", self._palette
+        )
+        trends_layout.addWidget(self._ti_chart)
+
+        trends_layout.addWidget(label("Oscillator control (EFC)", "subtitle"))
+        self._efc_chart = TrendChart("Oscillator control", AxisMode.FRAMED, "%", self._palette)
+        trends_layout.addWidget(self._efc_chart)
+
+        return trends
+
+    def _build_ranges(self) -> QWidget:
+        """§10.7.1: **one** range selector, shared by both charts.
+
+        A selector per chart would let the two disagree about what window is being looked at, and
+        the whole reason the EFC chart sits under the TI one is that they are read together.
+        """
+        holder = QWidget()
+        row = QHBoxLayout(holder)
+        row.setContentsMargins(0, 0, 0, 0)
+        row.setSpacing(Spacing.TIGHT)
+
+        self._range_buttons = QButtonGroup(holder)
+        self._range_buttons.setExclusive(True)
+
+        for index, (text, span) in enumerate(TREND_RANGES):
+            button = QPushButton(text)
+            button.setCheckable(True)
+            button.setChecked(span == self._range)
+            button.setAccessibleName(f"Show the last {text}")
+            self._range_buttons.addButton(button, index)
+            row.addWidget(button)
+
+        self._range_buttons.idClicked.connect(self._choose_range)
+        return holder
+
+    def _choose_range(self, index: int) -> None:
+        self._range = TREND_RANGES[index][1]
+        # Redraw at once rather than at the next poll: the click *is* the request, and waiting a
+        # second to honour it reads as the button not having worked.
+        self._refresh_trends(force=True)
+
+    def set_trend_store(self, store: TrendStore | None) -> None:
+        """Give the page its history, or take it away.
+
+        ``None`` is an ordinary state, not an error: §10.7 has to work on a run whose store could
+        not be opened, and the charts then show their empty state while every other card on the
+        page carries on."""
+        self._store = store
+        self._refresh_trends(force=True)
+
+    def _refresh_interval(self) -> timedelta:
+        """How often to re-read the store.
+
+        One pixel column's worth of time, bounded. Re-reading a 7-day window every second would
+        redraw 604 800 rows to move the trace by less than a pixel; re-reading an hour window once
+        a minute would make a live chart look frozen."""
+        per_column = self._range / 360
+        return max(timedelta(seconds=5), min(per_column, timedelta(minutes=5)))
+
+    def _refresh_trends(self, *, force: bool = False) -> None:
+        store = self._store
+        if store is None:
+            self._ti_chart.show_series(empty_series(self._range))
+            self._efc_chart.show_series(empty_series(self._range))
+            self._sigma.setText(DASH)
+            self._evidence.setText("No trend history is being kept this run.")
+            return
+
+        now = self._last_captured
+        due = (
+            force
+            or now is None
+            or self._last_refresh is None
+            or now - self._last_refresh >= self._refresh_interval()
+        )
+        if not due:
+            return
+        self._last_refresh = now
+
+        try:
+            window = store.window(self._range, ending=now)
+            # §10.7: the deviation is over an hour whatever range is selected, because it sits
+            # beside *Current* as a property of the receiver now rather than of the window drawn.
+            # A σ that changed when the user pressed 7 d would be a different statistic wearing
+            # the same label.
+            hour = window if self._range == SIGMA_WINDOW else store.window(SIGMA_WINDOW, ending=now)
+        except TrendStoreError:
+            # The store went away underneath us — a removed drive, a file deleted. The page keeps
+            # working without it, which is the same contract as never having had one.
+            self._store = None
+            self._refresh_trends(force=True)
+            return
+
+        self._ti_chart.show_series(window)
+        self._efc_chart.show_series(window)
+        self._describe_deviation(hour)
+
+    def _describe_deviation(self, hour: Series) -> None:
+        """§10.7's σ caption, which **names what it found rather than what it asked for**.
+
+        The application is not always running, so an hour of wall clock routinely holds four
+        minutes of readings — and a deviation over 3,000 readings and one over 12 are not the same
+        figure. Both the span and the count go beside the value.
+        """
+        spread = deviation(hour.ti_nanoseconds)
+
+        if spread.value is None:
+            self._sigma.setText(f"σ {DASH}")
+            self._evidence.setText(
+                "Not enough stored readings yet for a deviation — it needs two."
+                if spread.count < 2
+                else "No 1 PPS readings in the last hour."
+            )
+            return
+
+        self._sigma.setText(f"σ {spread.value:.1f} ns")
+        minutes = hour.span.total_seconds() / 60.0
+        self._evidence.setText(
+            f"Over {minutes:.0f} min of stored readings ({spread.count:,} samples). "
+            f"σ is always the last hour, whichever range is drawn."
+        )
+
+    def set_palette_tokens(self, palette: Palette) -> None:
+        super().set_palette_tokens(palette)
+        self._ti_chart.set_palette_tokens(palette)
+        self._efc_chart.set_palette_tokens(palette)
 
     def show_reading(self, reading: Reading) -> None:
         status = reading.status
+        self._last_captured = reading.captured_at or status.captured_at
+        self._refresh_trends()
 
         self._merit.set("Time figure of merit", _int(status.tfom))
         self._merit.set("Frequency figure of merit", _int(status.ffom))

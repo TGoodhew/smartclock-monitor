@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from smartclock_monitor.services.polling import Reading
+from smartclock_monitor.services.trend_store import TrendStore
 from smartclock_monitor.themes.qss import stylesheet
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import Theme, palette_for
@@ -123,6 +124,14 @@ class DetailsWindow(QMainWindow):
         for page in self._pages:
             page.set_palette_tokens(palette)
 
+    def set_trend_store(self, store: TrendStore | None) -> None:
+        """Forwarded to whichever pages want history. Only §10.7's does today; asking every page
+        keeps the wiring one line when a second one does."""
+        for page in self._pages:
+            setter = getattr(page, "set_trend_store", None)
+            if setter is not None:
+                setter(store)
+
     def show_reading(self, reading: Reading) -> None:
         """Feed every page, visible or not — see the module docstring."""
         for page in self._pages:
@@ -131,7 +140,7 @@ class DetailsWindow(QMainWindow):
         bar = self.statusBar()
         if bar is not None:
             bar.showMessage(
-                f"Updated {reading.status.captured_at.strftime('%H:%M:%S')}"
+                f"Updated {(reading.captured_at or reading.status.captured_at):%H:%M:%S}"
                 + (" — one reading suppressed, see Timing" if reading.suppressed else "")
             )
 

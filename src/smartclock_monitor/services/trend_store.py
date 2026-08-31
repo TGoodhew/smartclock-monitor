@@ -275,12 +275,17 @@ class TrendStore:
         samples by their recorded times precisely so it can tell that from a quiet receiver.
         """
         status = reading.status
+        # ``reading.captured_at`` rather than ``status.captured_at``: the fast tier refreshes the
+        # 1 PPS interval once a second into a status object that keeps the timestamp of the last
+        # full screen, so the status's own time would file ten readings under one instant. Found
+        # against the real receiver, where fifteen stored rows shared a single timestamp.
+        taken = reading.captured_at or status.captured_at
         with self._guarded() as connection:
             connection.execute(
                 "INSERT INTO reading (captured_at, ti_nanoseconds, efc_percent, mode)"
                 " VALUES (?, ?, ?, ?)",
                 (
-                    _epoch(status.captured_at),
+                    _epoch(taken),
                     status.one_pps_ti_nanoseconds,
                     reading.efc_percent,
                     status.mode.value,

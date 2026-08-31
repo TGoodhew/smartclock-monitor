@@ -22,7 +22,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from contextlib import suppress
+from pathlib import Path
 
 from smartclock_device.clock import SystemClock
 from smartclock_device.drivers.smartclock import SmartClockDriver
@@ -35,9 +37,11 @@ from smartclock_device.transport.settings import (
     SerialSettings,
     StopBits,
 )
-from smartclock_monitor.services.polling import PollingService
+from smartclock_monitor.platform.paths import trend_database
+from smartclock_monitor.services.polling import PollingService, Reading
 from smartclock_monitor.services.replay import ReplayTransport
 from smartclock_monitor.services.session import DeviceSession
+from smartclock_monitor.services.trend_store import TrendStore, TrendStoreError
 from smartclock_monitor.themes.tokens import Theme
 
 
@@ -67,6 +71,19 @@ def build_parser() -> argparse.ArgumentParser:
         default=Theme.DARK.value,
         choices=[theme.value for theme in Theme],
         help="which token set to start in",
+    )
+    parser.add_argument(
+        "--trend-store",
+        default=None,
+        help=(
+            "where to keep the trend history "
+            f"(default: {trend_database()}). Pass --no-trend-store to keep none."
+        ),
+    )
+    parser.add_argument(
+        "--no-trend-store",
+        action="store_true",
+        help="do not persist readings; the trend charts show only this session",
     )
     parser.add_argument(
         "--list-ports", action="store_true", help="print the serial ports this machine can see"
@@ -150,6 +167,7 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         window.set_connection_text(f"Connecting to {transport.description}…")
 
     session = DeviceSession(transport, driver, clock)
+    store = _open_store(arguments, clock, window)
 
     try:
         await session.open()
@@ -163,7 +181,7 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
     window.set_connection_text(f"Connected to {named} — {session.description}")
 
     service = PollingService(session=session, driver=driver, clock=clock)
-    service.on_reading = window.show_reading
+    service.on_reading = _publish(window, store)
 
     try:
         await service.run()
@@ -171,6 +189,59 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         raise
     finally:
         await session.close()
+        if store is not None:
+            store.close()
+
+
+def _open_store(
+    arguments: argparse.Namespace, clock: SystemClock, window: object
+) -> TrendStore | None:
+    """Open the trend store, or run without one.
+
+    **A store that will not open is never fatal.** A read-only home directory, a file written by a
+    newer build, a full disk — all of them are ordinary, and none is a reason to refuse to monitor
+    a receiver. The failure is reported in the status bar in §9.11's terms and the charts show
+    their empty state.
+    """
+    from smartclock_monitor.views.main_window import MainWindow
+
+    assert isinstance(window, MainWindow)
+
+    if arguments.no_trend_store:
+        return None
+
+    path = Path(arguments.trend_store) if arguments.trend_store else trend_database()
+    try:
+        store = TrendStore.open(path, clock)
+    except TrendStoreError as error:
+        window.set_connection_text(f"No trend history this run: {error}")
+        return None
+
+    window.set_trend_store(store)
+    return store
+
+
+def _publish(window: object, store: TrendStore | None) -> Callable[[Reading], None]:
+    """One callback that files the reading and then draws it.
+
+    **Stored before displayed, and a store that fails does not cost the display.** The reading is
+    on screen either way; the only thing a failed write loses is a pixel of history, and taking
+    the poll loop down over it would lose the receiver.
+    """
+    from smartclock_monitor.views.main_window import MainWindow
+
+    assert isinstance(window, MainWindow)
+
+    def publish(reading: Reading) -> None:
+        if store is not None:
+            # Suppressed deliberately, and this is the one place it is right to: a failed write
+            # costs a pixel of history, and letting it out of a poll-loop callback would cost the
+            # receiver.
+            with suppress(TrendStoreError):
+                store.append(reading)
+        window.show_reading(reading)
+
+    return publish
 
 
 if __name__ == "__main__":
