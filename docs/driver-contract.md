@@ -30,18 +30,62 @@ it — there is no base class to inherit and nothing to register a subclass with
 | `Plan` | `plan` | A property returning `PollPlan(fast, full, refusable, state_query)`. |
 | `Parse(response)` | `parse_full(transaction, previous)` | Takes the previous status, so an incremental family can build on it. The SmartClock ignores it. |
 | `InterpretSweep(answers)` | `apply_fast(status, results)` | Folds the fast tier into the status the full tier produced, rather than returning a separate readings object. |
+| `Link` | `link` | `LinkStyle.QUERY_RESPONSE` or `LinkStyle.BROADCAST`. |
+| `Overhear(lines)` | `overhear(lines)` | Offered the synchronise step's lines, **before** `*IDN?` is asked. A claim here means the probe is never sent. |
+| `ClassifyLine(line)` | `classify(line)` | Which plan key a broadcast line belongs to, or `None`. |
+
+Query/response families get all four from the `QueryResponseDefaults` mixin and write none of them.
 
 ### Not here yet
 
 | C# member | Why not, and what it blocks |
 |---|---|
-| `Link` (`QueryResponse` / `Broadcast`) | No broadcast family exists here, so there is nothing for the flag to switch between. Blocks: the NMEA driver. |
-| `Overhear(lines)` | Same. The synchronise step's lines are absorbed and parsed for an identity, but no driver is offered them. |
-| `ClassifyLine(line)` | Same, and the `BroadcastListener` that would consume it. |
-| `TimeoutFor(mnemonic)` | §7.2's classes live in `transport/timeouts.py` and are not yet per-driver. One family, one set. |
-| `AutoDetectSequence` | Lives in `transport/settings.py` as one sequence. §10.12's "union of every registered driver's sequence" needs a second driver to be a union of. |
+| `TimeoutFor(mnemonic)` | §7.2's classes live in `transport/timeouts.py` and are not yet per-driver. Broadcast does not need them — it never waits on a reply — so nothing forces the issue yet. |
+| `AutoDetectSequence` | Lives in `transport/settings.py` as one sequence. §10.12's "union of every registered driver's sequence" is now genuinely a union to build: a talker's 4800 baud is not in the SmartClock's list. |
 
-All of it is [issue #13](https://github.com/TGoodhew/smartclock-monitor/issues/13).
+Both are [issue #13](https://github.com/TGoodhew/smartclock-monitor/issues/13).
+
+---
+
+## The second family
+
+`drivers/nmea/` — any NMEA 0183 GNSS talker. It exists because **a contract satisfied by one
+implementation is a contract nobody has tested**, and it is registered in `__main__` rather than
+kept in the test suite, because a driver that only tests can reach is a driver nothing has proved.
+
+It is the opposite shape to the SmartClock at every point the contract has an opinion:
+
+| | SmartClock | NMEA talker |
+|---|---|---|
+| Link | query/response | broadcast |
+| Recognised by | `*IDN?` and the banner | `overhear`, before anything is asked |
+| Allowlist | 98 commands | **empty** — it is never written to |
+| Plan entry | a query | a key |
+| Full read | one status screen | the whole cycle |
+| Oscillator fields | all of them | **none**, left `None` |
+
+Four things it forced into the open, none of which a single-family build would have found:
+
+1. **The probe had to become neutral.** Registering a reads-only family ahead of the SmartClock
+   made every connection fall back, because `*IDN?` went through the allowlist of whichever driver
+   was first. It is now sent outside any allowlist, as a constant.
+2. **Recognition by listening has to come first.** Probing a talker costs a full timeout and is a
+   *write* to a link whose driver says it is never written to.
+3. **`ResponseBuffer` needed a stream mode.** It looks for a terminating prompt and keeps every line
+   forever — correct for a transaction, a freeze and a slow leak for a device that talks for weeks.
+   `detect_prompt=False` and `drain_lines()`.
+4. **Silence has to reuse the timeout vocabulary.** A talker that has gone quiet reports
+   `TIMED_OUT`, so §7.2's three-consecutive-failures rule, the supervisor and the status bar all
+   apply unchanged rather than each learning a second failure mode.
+
+What it deliberately does *not* do: invent an oscillator. There is no 1 PPS interval, no EFC, no
+TFOM, no holdover in NMEA, and those fields stay `None`. §11.1's rule is what makes that safe —
+every consumer already renders `None` as an em dash — and a driver that filled them with plausible
+numbers would be worse than one that leaves them empty, because nothing downstream could tell.
+
+`tools/nmea_simulator.py` is a talker on a pty. It is outside `src/`, nothing imports it, and
+`tests/test_nmea.py` drives the driver from its output rather than from sentences pasted into the
+test — so the sentences under test are ones something actually emitted.
 
 ---
 

@@ -62,6 +62,22 @@ class Registry:
 
         return Selection(driver=self._drivers[0], recognised=False)
 
+    def overhear(self, lines: Sequence[str]) -> Selection | None:
+        """The first driver that claims this stream from what arrived unprompted, or ``None``.
+
+        **This runs before the probe, and a claim here means the probe is never sent.** A talker
+        has no command parser: ``*IDN?`` would cost a full timeout and would be a *write* to a
+        receiver whose driver says it is never written to. §12 puts recognition-by-listening ahead
+        of recognition-by-identity for exactly that reason.
+
+        ``None`` is the ordinary answer — a query/response receiver's banner is not a stream, and
+        nothing claiming it means the probe proceeds as it always did.
+        """
+        for driver in self._drivers:
+            if driver.overhear(lines):
+                return Selection(driver=driver, recognised=True)
+        return None
+
     @property
     def is_ambiguous(self) -> bool:
         """Whether a failed match is worth warning about.

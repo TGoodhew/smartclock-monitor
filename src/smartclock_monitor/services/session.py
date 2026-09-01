@@ -14,6 +14,8 @@ Qt-free on purpose. Everything here is testable with no display, against the fak
 from __future__ import annotations
 
 import asyncio
+import contextlib
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import timedelta
 from enum import Enum
@@ -21,12 +23,13 @@ from enum import Enum
 from smartclock_device.clock import Clock
 from smartclock_device.commands import catalog
 from smartclock_device.commands.scpi_command import ScpiCommand
-from smartclock_device.drivers.base import ReceiverDriver
+from smartclock_device.drivers.base import WHOLE_CYCLE, LinkStyle, ReceiverDriver
 from smartclock_device.drivers.registry import Registry
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.model_profile import ModelProfile, for_identity
 from smartclock_device.transport import timeouts
 from smartclock_device.transport.base import Transport
+from smartclock_device.transport.broadcast import BroadcastListener
 from smartclock_device.transport.faults import TransportError, TransportFault, describe
 from smartclock_device.transport.line_protocol import LineProtocol
 from smartclock_device.transport.transaction import Transaction, TransactionOutcome
@@ -136,6 +139,12 @@ class DeviceSession:
         self._last_fault: str | None = None
         self._unrecognised = False
 
+        # Set only where a broadcast family claimed the receiver. Its presence *is* the link style
+        # as far as execute() is concerned — one thing to check rather than a driver property and
+        # a listener that could disagree with each other.
+        self._listener: BroadcastListener | None = None
+        self._listen_task: asyncio.Task[None] | None = None
+
     # -- What the application asks it ---------------------------------------------------------
 
     @property
@@ -202,6 +211,18 @@ class DeviceSession:
         # it is tried first — and *IDN? is asked anyway, because a sibling model may say nothing.
         self._adopt_identity(DeviceIdentity.parse(self._banner))
 
+        # §12: a family may claim the receiver from what it *said*, before anything is asked. A
+        # talker has no command parser, so probing it would cost a timeout and would be a write to
+        # a link whose driver says it is never written to.
+        if self._adopt_overheard(connect.lines):
+            self._state = ConnectionState.CONNECTED
+            self._consecutive_failures = 0
+            return
+
+        # Only now: the glitch is the SmartClock's own power-up behaviour, and spending it is two
+        # writes — which is two more than a talker may ever receive.
+        await self._protocol.spend_startup_glitch()
+
         identity = await self._probe_identity()
         if identity is not None and identity.succeeded:
             # Kept whole: §10.4 shows the raw answer where it is not four comma-separated fields,
@@ -219,6 +240,7 @@ class DeviceSession:
         self._consecutive_failures = 0
 
     async def close(self) -> None:
+        await self._stop_listening()
         await self._transport.close()
         self._state = ConnectionState.DISCONNECTED
 
@@ -240,6 +262,14 @@ class DeviceSession:
         it is excluded — an allowlist answers the first, and answering the second instead is the
         architecture §8.1 rejects.
         """
+        # §12's other link style, and the branch is here rather than in the poller on purpose: the
+        # plan is one type for both, so a page or a poll asks for a plan entry the same way and the
+        # session knows which kind of link it is holding. A broadcast entry is a *key*, answered
+        # from what the talker already said — nothing is written, and the allowlist below is not
+        # consulted because a talker has none to be on.
+        if self._listener is not None:
+            return self._answer_from_broadcast(mnemonic)
+
         if not self._driver.is_allowed(mnemonic):
             return Refusal(mnemonic, "That command is not in the catalog, so it was not sent.")
 
@@ -332,6 +362,92 @@ class DeviceSession:
             result = await self._protocol.execute(catalog.IDENTITY.mnemonic, None)
         self._note(result)
         return result
+
+    def _answer_from_broadcast(self, key: str) -> Transaction:
+        """One plan key, from the last complete cycle.
+
+        **Silence becomes a timeout** rather than a state of its own. §7.2's reconnect policy
+        already knows what to do about a link that has stopped answering, and giving broadcast its
+        own failure vocabulary would mean teaching the supervisor — and the three-consecutive-
+        failures rule, and the status bar — a second one for no gain.
+
+        A cycle that has not closed yet is *not* a failure: it is the first second of a connection,
+        and reporting it as one would spend a third of §7.2's failure budget on a link that is
+        working perfectly.
+        """
+        assert self._listener is not None
+
+        if self._listener.is_quiet():
+            result = Transaction(command=key, outcome=TransactionOutcome.TIMED_OUT)
+            self._note(result)
+            return result
+
+        lines = self._listener.whole_cycle() if key == WHOLE_CYCLE else self._listener.answer(key)
+        result = Transaction(command=key, outcome=TransactionOutcome.COMPLETED, lines=lines)
+        self._note(result)
+        return result
+
+    def _on_broadcast_line(self, line: str) -> None:
+        if self._listener is not None:
+            self._listener.feed(self._driver.classify(line), line)
+
+    def _start_listening(self, overheard: Sequence[str]) -> None:
+        """Begin reading a talker's stream, and keep the task so close() can stop it.
+
+        Unreferenced, the task would be garbage-collected mid-read — asyncio only holds a weak
+        reference — and the link would go quiet for a reason nothing reported.
+        """
+        self._listener = BroadcastListener(
+            clock=self._clock,
+            # §12: the plan's first fast-tier entry delimits a cycle. The driver names it; nothing
+            # here knows which sentence that is, which is the whole point of the seam.
+            boundary=self._driver.plan.fast[0].mnemonic,
+        )
+
+        # **Seeded with what was overheard**, and both halves matter. Those sentences are real data
+        # — throwing them away would discard the first cycle of every connection — and they are
+        # also the proof the talker is speaking. Without them the listener has heard nothing, and a
+        # listener that has heard nothing is quiet *at once* by design, so the connection that had
+        # just claimed a talker by listening to it would report the link as timed out.
+        for line in overheard:
+            self._on_broadcast_line(line)
+
+        self._listen_task = asyncio.create_task(self._protocol.listen(self._on_broadcast_line))
+
+    async def _stop_listening(self) -> None:
+        task, self._listen_task = self._listen_task, None
+        self._listener = None
+        if task is None:
+            return
+        task.cancel()
+        # A listener being torn down has nothing left to report: the port is closing, and a fault
+        # raised on the way out would replace the reason the session is closing at all.
+        #
+        # CancelledError is named explicitly because it is a *BaseException* and Exception alone
+        # does not catch it — which would let the cancel we just asked for propagate out of
+        # close(), from the one line in the teardown that exists to make it not.
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await task
+
+    def _adopt_overheard(self, lines: Sequence[str]) -> bool:
+        """Whether a family claimed the receiver from the banner, before ``*IDN?`` was asked.
+
+        Returning ``True`` ends the connect: there is nothing further to probe, and no identity to
+        adopt — a talker has none, and inventing one from the sentences it happened to send would
+        put a made-up model number on §10.4's Receiver card.
+        """
+        if self._registry is None:
+            return False
+
+        selection = self._registry.overhear(lines)
+        if selection is None:
+            return False
+
+        self._driver = selection.driver
+        self._unrecognised = False
+        if self._driver.link is LinkStyle.BROADCAST:
+            self._start_listening(lines)
+        return True
 
     def _select_driver(self) -> None:
         """Choose the family that claims this receiver, or keep the first registered."""

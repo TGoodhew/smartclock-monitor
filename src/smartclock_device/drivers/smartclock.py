@@ -15,7 +15,7 @@ from smartclock_device.clock import Clock
 from smartclock_device.commands import catalog
 from smartclock_device.commands.blocked import is_blocked as _is_blocked
 from smartclock_device.commands.scpi_command import ScpiCommand
-from smartclock_device.drivers.base import Cadence, PollPlan
+from smartclock_device.drivers.base import Cadence, PollPlan, QueryResponseDefaults
 from smartclock_device.models.device_identity import DeviceIdentity, ReceiverModel
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.parsing.scalars import (
@@ -43,7 +43,7 @@ PLAN: Final = PollPlan(
 
 
 @dataclass(slots=True)
-class SmartClockDriver:
+class SmartClockDriver(QueryResponseDefaults):
     """The Z3805A, Z3801A, Z3816A, 58503A/B and 59551A."""
 
     clock: Clock
