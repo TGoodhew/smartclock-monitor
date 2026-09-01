@@ -220,9 +220,10 @@ def test_no_two_markers_overlap_at_the_plot_s_minimum_size() -> None:
     satellite** — worse than a small target, because a missed click is obvious and a wrong
     selection is not.
 
-    It reproduces. At the plot's own 240 px minimum, PRN 5 and PRN 20 in
-    ``locked-stabilizing.txt`` sit 27.0 px apart: 32 px targets overlap on real sky and 24 px ones
-    do not. That is what moved this from a judgement call to a measurement.
+    It reproduces, across all ten captures. Of 424 satellite pairs placed on a plot at its own
+    240 px minimum, **thirteen** are closer than 32 px and **none** is closer than 24; the tightest
+    is PRN 17 and PRN 22 in ``surveying-locked-to-gps-stabilizing-frequency.txt`` at 26.8 px. That
+    is what moved this from a judgement call to a measurement.
     """
     import itertools
     import math
@@ -237,8 +238,13 @@ def test_no_two_markers_overlap_at_the_plot_s_minimum_size() -> None:
 
     smallest = float(SkyPlot().minimumWidth())
     driver = SmartClockDriver(clock=SystemClock())
-    fixtures = sorted((Path(__file__).resolve().parent / "fixtures").glob("*.txt"))
-    assert fixtures, "the fixtures are the oracle; a test that found none would pass vacuously"
+    # **rglob.** Nine of the ten captures live in ``fixtures/captured/``, and a flat glob found
+    # only the one at the top — so this walked a tenth of its oracle while asserting it had one.
+    # The non-empty assertion below did not catch that: one fixture is not none.
+    fixtures = sorted((Path(__file__).resolve().parent / "fixtures").rglob("*.txt"))
+    assert len(fixtures) >= 10, (
+        f"found only {len(fixtures)} captures; the fixtures are the oracle and there are ten"
+    )
 
     closest = math.inf
     for fixture in fixtures:
