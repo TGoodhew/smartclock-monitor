@@ -95,7 +95,17 @@ class DetailsWindow(QMainWindow):
         self.setWindowTitle("Details")
         # §9.6.2's minimum for the two-column arrangement: the sky plot caps at 360 and the table
         # goes beside it.
-        self.setMinimumSize(900, 560)
+        #
+        # **1100, measured, not 900.** The window opens at its minimum, and at 900 the Satellites
+        # page was 196 px too narrow for itself and scrolled *sideways* — taking the sky plot off
+        # the edge with the table. Every page's own minimum was measured; Satellites is the widest
+        # at 1096, and it is the plot beside the table plus the mask controls under it, none of
+        # which can give any more. The other nine need between 456 and 796.
+        #
+        # A window that opens too small to show its own first page is a worse answer than one that
+        # asks for the room it needs. The alternative — stacking the plot above the table below
+        # some breakpoint — is a §10.5 layout decision rather than a defect fix.
+        self.setMinimumSize(1100, 620)
 
         self._pages: list[Page] = [
             OverviewPage(palette_for(theme)),

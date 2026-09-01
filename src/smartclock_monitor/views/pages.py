@@ -77,9 +77,24 @@ from smartclock_monitor.widgets.trend_chart import AxisMode, TrendChart
 DASH = "—"
 
 
+#: The roles that carry **prose** rather than a value, and therefore wrap.
+#:
+#: Wrapping is a property of the text, not of the call site, so it belongs here: it was being set
+#: by hand and five of the ten pages had none at all, which made them scroll *horizontally* — the
+#: Position page wanted 1358 px of a 692 px viewport. A sentence that runs off the right of a card
+#: is a sentence nobody reads, and §9.11's whole argument is that the explanation is the part that
+#: has to arrive.
+#:
+#: Values do not wrap. A monospace device literal, a readout and a heading are each meant to be one
+#: line; wrapping them would let the layout squeeze a timestamp onto two, which reads as a
+#: rendering fault rather than as a narrow window.
+WRAPPING_ROLES: Final[frozenset[str]] = frozenset({"body", "caption", "tertiary"})
+
+
 def label(text: str, role: str = "body", parent: QWidget | None = None) -> QLabel:
     widget = QLabel(text, parent)
     widget.setProperty("role", role)
+    widget.setWordWrap(role in WRAPPING_ROLES)
     return widget
 
 
@@ -116,6 +131,13 @@ OUTPUT_VALIDITY_TEXT: Final[dict[OutputValidity, str]] = {
     OutputValidity.VALID_REDUCED: "Valid, reduced accuracy",
     OutputValidity.VALID: "Valid",
 }
+
+
+#: How narrow §10.5's table may get before it scrolls inside itself instead.
+#:
+#: Enough for PRN, elevation and azimuth to stay readable; the state column is what goes first,
+#: and it is the one the sky plot also shows by filling or outlining the marker.
+_TABLE_MINIMUM: Final = 320
 
 
 class Page(QWidget):
@@ -392,6 +414,12 @@ class SatellitesPage(Page):
             for column in range(len(self._COLUMNS) - 1):
                 header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(len(self._COLUMNS) - 1, QHeaderView.ResizeMode.Stretch)
+        # The table may shrink below the width its columns want, and scroll inside itself when it
+        # does. Without this its size hint became the page's, and §10.5 was the one page that
+        # scrolled *horizontally* at the window's own 900 px opening size — which is worse than a
+        # narrow table, because the sky plot goes off the side with it.
+        self._table.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
+        self._table.setMinimumWidth(_TABLE_MINIMUM)
         table_layout.addWidget(self._table)
         self._attach_table_menu()
 
