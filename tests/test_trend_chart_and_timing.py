@@ -469,3 +469,62 @@ def test_the_advisory_survives_the_store_going_away(clock: FixedClock) -> None:
 
     assert page._store is None
     assert "No trend history" in page._evidence.text()
+
+
+# ---- §10.7.2's stability card ------------------------------------------------------------------
+
+
+def test_the_stability_table_fills_from_the_stored_series(clock: FixedClock) -> None:
+    """Rows appear, with τ in seconds and the difference count beside each estimate."""
+    store = stored(
+        clock, [reading(-index, ti=float((index * 37) % 23) - 11.0) for index in range(1200)]
+    )
+    page = TimingPage()
+    page.show_reading(reading(0))
+    page.set_trend_store(store)
+
+    assert page._stability.rowCount() > 0
+    assert page._stability.isVisible() or page._stability.rowCount() > 0
+    first = page._stability.item(0, 0)
+    assert first is not None and first.text().endswith(" s")
+
+
+def test_the_stability_columns_are_the_three_the_spec_names(clock: FixedClock) -> None:
+    """§10.7.2's table has exactly three, and the count is one of them — confidence goes roughly
+    as 1/√N, so it is part of the reading rather than a footnote."""
+    page = TimingPage()
+    headers = [
+        page._stability.horizontalHeaderItem(column).text()  # type: ignore[union-attr]
+        for column in range(page._stability.columnCount())
+    ]
+
+    assert headers == ["Averaging time τ", "σy(τ)", "Differences averaged"]
+
+
+def test_a_series_too_short_for_stability_says_so_in_words(clock: FixedClock) -> None:
+    """§10.7.2: *"When the series is too short for any τ, the card's summary sentence says so in
+    words."* An empty table on its own looks broken rather than patient."""
+    store = stored(clock, [reading(-index) for index in range(3)])
+    page = TimingPage()
+    page.show_reading(reading(0))
+    page.set_trend_store(store)
+
+    assert page._stability.rowCount() == 0
+    assert "not yet enough" in page._stability_summary.text()
+
+
+def test_stability_is_fed_the_raw_window_not_the_decimated_one(clock: FixedClock) -> None:
+    """§10.7.2, and the reason it is stated: §9.10.2's decimation keeps each pixel column's
+    extremes, which is right for drawing a shape and wrong for a statistic — a second difference
+    across a bucket's extremes measures the decimation (#63).
+
+    Asserted by counting: the estimator's difference count at the shortest τ must be of the order
+    of the stored readings, not of the pixel columns a chart would have reduced them to."""
+    store = stored(clock, [reading(-index, ti=float(index % 13) - 6.0) for index in range(1500)])
+    page = TimingPage()
+    page.show_reading(reading(0))
+    page.set_trend_store(store)
+
+    count = page._stability.item(0, 2)
+    assert count is not None
+    assert int(count.text().replace(",", "")) > 1000

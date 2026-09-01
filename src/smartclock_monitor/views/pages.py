@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 
 from smartclock_device.models import coordinates
 from smartclock_device.models.receiver_status import ReceiverStatus, SignalStrengthKind
+from smartclock_monitor.services.allan import allan_deviation, summarise
 from smartclock_monitor.services.drift import FIT_MARGIN, advise
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.statistics import deviation
@@ -465,6 +466,27 @@ class TimingPage(Page):
         self._drift_evidence.setWordWrap(True)
         trends_layout.addWidget(self._drift_evidence)
 
+        trends_layout.addWidget(label("Stability (Allan deviation)", "subtitle"))
+        self._stability = QTableWidget(0, 3)
+        self._stability.setHorizontalHeaderLabels(
+            # §10.7.2's own column headings. The symbols are the notation of the measurement —
+            # "sigma sub y" in a column heading is a different claim from σy — and both characters
+            # are on pyproject.toml's allowed-confusables list for exactly this.
+            ["Averaging time τ", "σy(τ)", "Differences averaged"]
+        )
+        self._stability.verticalHeader().setVisible(False)
+        self._stability.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self._stability.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self._stability.setAccessibleName("Allan deviation by averaging time")
+        header = self._stability.horizontalHeader()
+        if header is not None:
+            header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
+        trends_layout.addWidget(self._stability)
+
+        self._stability_summary = label("", "caption")
+        self._stability_summary.setWordWrap(True)
+        trends_layout.addWidget(self._stability_summary)
+
         return trends
 
     def _build_ranges(self) -> QWidget:
@@ -523,6 +545,11 @@ class TimingPage(Page):
             self._efc_chart.show_series(empty_series(self._range))
             self._sigma.setText(DASH)
             self._evidence.setText("No trend history is being kept this run.")
+            self._stability.setRowCount(0)
+            self._stability.setVisible(False)
+            self._stability_summary.setText("Stability needs stored readings.")
+            self._drift_pill.set_state(Severity.NEUTRAL, "No history")
+            self._drift_evidence.setText("")
             return
 
         now = self._last_captured
@@ -554,6 +581,28 @@ class TimingPage(Page):
         self._efc_chart.show_series(window)
         self._describe_deviation(hour)
         self._advise_drift(store, now)
+        self._show_stability(window)
+
+    def _show_stability(self, window: Series) -> None:
+        """§10.7.2's table, over **the raw window rather than the decimated one**.
+
+        §9.10.2's decimation keeps each pixel column's extremes, which is right for drawing a
+        shape and wrong for a statistic: a second difference taken across a bucket's extremes
+        measures the decimation (#63). The chart is handed the same series and reduces it itself.
+        """
+        points = allan_deviation(window)
+
+        self._stability.setRowCount(len(points))
+        for row, point in enumerate(points):
+            # Seconds throughout, never switching to minutes down the column — §9.5.3 rule 6.
+            self._stability.setItem(row, 0, QTableWidgetItem(f"{point.tau_seconds:,.0f} s"))
+            self._stability.setItem(row, 1, QTableWidgetItem(point.formatted()))
+            self._stability.setItem(row, 2, QTableWidgetItem(f"{point.differences:,}"))
+
+        # A τ the series cannot support is dropped rather than dashed, so an empty table is an
+        # ordinary state and the sentence below is what explains it.
+        self._stability.setVisible(bool(points))
+        self._stability_summary.setText(summarise(points, window))
 
     def _advise_drift(self, store: TrendStore, now: datetime | None) -> None:
         """§10.7.1's advisory, over a window slightly wider than the one drawn.
