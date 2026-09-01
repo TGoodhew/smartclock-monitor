@@ -166,9 +166,9 @@ select a hand-authored set, and the objection above is to the set, not to the tr
 
 ## D4 — The typeface, and the contrast re-derivation that follows
 
-**Status: Provisional** ([#4](https://github.com/TGoodhew/smartclock-monitor/issues/4)). System UI
-font for prose, Cascadia Mono bundled for device-literal text, contrast figures re-derived before
-Phase 5 closes.
+**Status: Settled** (1 Sep 2026, [#4](https://github.com/TGoodhew/smartclock-monitor/issues/4)).
+**Noto Sans** for prose, Cascadia Mono for device-literal text, contrast figures re-derived and
+gated.
 
 §9.5.1 specifies Segoe UI Variable Text for UI, Segoe UI Variable Display for headings and
 numeric readouts, and **Cascadia Mono for every string the receiver actually emits** — SCPI
@@ -182,21 +182,37 @@ split is load-bearing, not decorative: it makes "what the machine said" visually
   survives unchanged**, which is the half that matters most.
 - **Segoe UI Variable does not port.** It is not present on Linux and is not redistributable.
 
-The prose half therefore needs a face. Either the system UI font (Qt's default resolves to
-Cantarell, Noto Sans, DejaVu Sans or whatever the desktop configures), or a bundled variable face
-chosen once. The system font is proposed: it is what every other application on the desktop uses,
-which is the same instinct §9.5.1 followed in picking the Windows system face, and it avoids
-shipping a second font with a second licence for no gain in identity.
+The prose half therefore needs a face, and it is **Noto Sans**, named.
 
-**The part that is not optional.** §9.4.5's contrast figures and §9.5.2's type ramp were measured
-against Segoe UI Variable at specific optical sizes. Changing the face **silently invalidates
-them** — that is part 12's own warning. Whatever is chosen:
+The provisional answer was the system UI font — whatever the desktop configures — on the reasoning
+that this is what every other application uses, and it is the same instinct §9.5.1 followed in
+picking the Windows system face. That reasoning is sound for an application with slack in its
+layout. **This one does not have much**, and the cost showed up as a CI failure: a page measured to
+fit on the development machine overflowed on a runner that resolved a wider face at the same point
+size. A face is a set of glyph widths, so deferring the face defers the widths to a machine nobody
+has measured, and no local run can see it.
 
-1. Re-derive the §9.4.5 contrast figures against the chosen face and Qt's palette. §9.4.1's stock
-   Fluent values were measured from a running Windows app and are not a valid baseline here.
-2. Re-check §9.5.2's ramp — x-height and optical sizing differ, and a ramp that reads correctly in
-   Segoe UI Variable Text at 12 px may not in a face with a larger x-height.
-3. Only then port `Test-ContrastFloor.ps1`. Its maths is reusable; **its input table is not.**
+Noto Sans rather than DejaVu Sans, the other candidate present nearly everywhere: DejaVu is
+materially wider at the same point size, and the widest page here already sets the Details window's
+minimum. A specimen of both across the §9.5.2 ramp is what settled it. Noto is SIL OFL 1.1, so
+bundling it later needs no new licence conversation — the same door Cascadia Mono leaves open, and
+bundling is what would make the metrics identical everywhere rather than merely likely.
+
+**The part that was not optional, and what became of it.** §9.4.5's contrast figures and §9.5.2's
+type ramp were measured against Segoe UI Variable at specific optical sizes, and changing the face
+silently invalidates them — part 12's own warning.
+
+1. **Contrast: re-derived, and it no longer depends on the face.** `test_design_tokens.py` asserts
+   **4.5:1 for every text token on every surface it is drawn on**. That is the stricter floor,
+   taken deliberately: none of it rests on WCAG's large-text exemption, which is the only part a
+   change of face could have invalidated. §9.4.1's stock Fluent values are not a baseline here and
+   are not used as one.
+2. **The ramp: re-checked against a rendered specimen** of Noto Sans, DejaVu Sans and Ubuntu across
+   all six steps, comparing x-heights. Noto's progression (15 / 10 / 8 / 7 px at Title / Subtitle /
+   Body / Caption) keeps every step distinguishable from its neighbours, which is what the ramp is
+   for. `test_typography.py` gates the distinctness and the named face.
+3. `Test-ContrastFloor.ps1` was not ported. Its maths is inline in the gate above; **its input
+   table was the part that did not transfer**, and it is this port's palette that is asserted.
 
 ---
 
@@ -289,7 +305,7 @@ was someone trying to use the application.
 | D1 | Route — independent port | **Settled** | — | — |
 | D2 | G5 / Microsoft Store | **Settled** | [#5](https://github.com/TGoodhew/smartclock-monitor/issues/5) | — |
 | D3 | High contrast — **not shipped** | **Settled** | [#3](https://github.com/TGoodhew/smartclock-monitor/issues/3) | — |
-| D4 | Typeface + contrast re-derivation | Provisional | [#4](https://github.com/TGoodhew/smartclock-monitor/issues/4) | One constant, plus re-running the figures |
+| D4 | Typeface — **Noto Sans** + Cascadia Mono | **Settled** | [#4](https://github.com/TGoodhew/smartclock-monitor/issues/4) | — |
 | D5 | Tray and notifications | Provisional | [#6](https://github.com/TGoodhew/smartclock-monitor/issues/6) | Confined to `platform/` |
 | D6 | Relationship — §8.4 sync | **Settled** (safety half) | — | Not reversible. See above. |
 

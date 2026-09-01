@@ -6,15 +6,27 @@ monospace face, and everything the *application* says is set in the UI face. In 
 whose whole job is faithful reporting, that is what makes "what the machine said" visually distinct
 from "what the app says about it".
 
-Per `docs/platform-decisions.md` D4 (issue #4): the device-literal half ports unchanged, because
-Cascadia Mono is SIL OFL 1.1 and redistributable. The prose half does not — Segoe UI Variable is
-not present on Linux and is not redistributable — so the system UI font is used, which is what
-every other application on the desktop uses and the same instinct §9.5.1 followed in picking the
-Windows system face.
+Per `docs/platform-decisions.md` D4 (issue #4, settled 1 Sep 2026): the device-literal half ports
+unchanged, because Cascadia Mono is SIL OFL 1.1 and redistributable. Segoe UI Variable does not —
+it is absent from Linux and is not redistributable — so the prose half is **Noto Sans**, named.
 
-**§9.4.5's contrast figures and §9.5.2's ramp were measured against Segoe UI Variable.** Changing
-the face silently invalidates them. Re-deriving both is issue #4's outstanding work and is required
-before Phase 5 can be called finished.
+**Named, rather than deferred to the desktop.** The first answer here was an empty first entry
+meaning "whatever Qt resolves as the system UI font", on the reasoning that this is what every
+other application does. That reasoning is sound for an application whose layout has slack, and this
+one does not have much: a face is a set of glyph widths, and deferring the face defers the widths.
+It cost a CI failure — a page measured to fit here overflowed on a runner that resolved a wider
+face at the same point size — and it would have gone on costing them, because no local run can see
+another machine's fontconfig.
+
+Noto Sans rather than DejaVu Sans, which was the other candidate present nearly everywhere: DejaVu
+is materially wider at the same point size, and this application's widest page is already the thing
+setting the Details window's minimum. Noto is also SIL OFL 1.1, so bundling it later needs no new
+licence conversation — the same door Cascadia Mono left open.
+
+**§9.4.5's contrast figures do not depend on the face.** They were re-derived for this port against
+its own palette, and `test_design_tokens.py` asserts 4.5:1 for every text token on every surface it
+is drawn on — the *stricter* floor, taken deliberately so that none of it rests on WCAG's
+large-text exemption, which is the only part a change of face could have invalidated.
 """
 
 from __future__ import annotations
@@ -22,9 +34,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
-#: The UI face, with fallbacks. Empty first entry means "whatever Qt resolves as the system UI
-#: font", which is the deliberate choice — see the module docstring.
-UI_FAMILY: Final[tuple[str, ...]] = ("", "Cantarell", "Noto Sans", "DejaVu Sans", "sans-serif")
+#: The UI face, with fallbacks. **Named first, not the system default** — see the module docstring
+#: for what deferring it cost. The fallbacks are ordered so that a machine without Noto Sans lands
+#: on something close in width before it lands on something merely present.
+UI_FAMILY: Final[tuple[str, ...]] = ("Noto Sans", "Cantarell", "DejaVu Sans", "sans-serif")
 
 #: The device-literal face. Cascadia Mono ports as-is; the rest are fallbacks for a machine that
 #: does not have it yet, since bundling is Phase 8's packaging work.
