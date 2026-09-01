@@ -9,9 +9,15 @@ There is no free-text command path and there must never be one: §10.11's Advanc
 picker over these entries.
 
 **This is a working subset, not the whole of §8.2.** It holds what the §7.3 poll schedule, the
-connect sequence and the Diagnostics reads need — enough for the application to run against real
-hardware. The remaining catalogued reads and every tier C setter are still to come, and adding one
-is adding a row here. Nothing is reachable that is not on this page.
+connect sequence, and the Holdover, Diagnostics, Status Registers and Time pages need. Adding a
+command is adding a row here. Nothing is reachable that is not on this page.
+
+**A setter is catalogued by its header alone.** ``:SYNC:HOLD:DUR:THR`` is the entry; the seconds
+are supplied separately and validated by :meth:`ScpiCommand.rendered` against bounds declared on
+the entry. Cataloguing the composed string instead would make the point-of-send check a prefix
+match, which is a free-text path with extra steps. The exception is a keyword that changes what the
+command *does* — ``:GPS:POSition LAST`` and ``:GPS:POSition SURVey`` are separate entries, because
+§8.3 gives them different confirmations and one sentence cannot describe both.
 """
 
 from __future__ import annotations
@@ -19,7 +25,12 @@ from __future__ import annotations
 from types import MappingProxyType
 from typing import Final
 
-from smartclock_device.commands.scpi_command import ResponseFormat, ScpiCommand
+from smartclock_device.commands.scpi_command import (
+    ArgumentKind,
+    ResponseFormat,
+    SafetyTier,
+    ScpiCommand,
+)
 
 #: Identity, per IEEE 488.2. The first thing asked, and what §8.6 keys the model profile on.
 IDENTITY: Final = ScpiCommand(
@@ -132,6 +143,307 @@ TIME_CODE_FORMAT: Final = ScpiCommand(
     response=ResponseFormat.KEYWORD,
 )
 
+LOG_COUNT: Final = ScpiCommand(
+    mnemonic=":DIAG:LOG:COUN?",
+    summary="How many entries the diagnostic log holds",
+    response=ResponseFormat.INTEGER,
+)
+
+#: §10.9: the receiver reports **hours**, not a count — the mnemonic says COUNt and the manual says
+#: otherwise. #316 nearly struck the requirement on the grounds that no such query existed; it does,
+#: and what was wrong was the card's label.
+LIFETIME_HOURS: Final = ScpiCommand(
+    mnemonic=":DIAG:LIF:COUN?",
+    summary="Power-on hours — the receiver's accumulated running time",
+    response=ResponseFormat.INTEGER,
+    unit="h",
+)
+
+# ---- §10.8 Holdover ----------------------------------------------------------------------------
+
+HOLDOVER_DURATION: Final = ScpiCommand(
+    mnemonic=":SYNC:HOLD:DUR?",
+    summary="How long the receiver has been in holdover",
+    response=ResponseFormat.DECIMAL,
+    unit="s",
+)
+
+#: §10.8: read on navigation, on every reconnect, and again after a successful Apply — the limit has
+#: one-second resolution, so what the receiver took need not be what was sent, and the editor is the
+#: only place that figure appears.
+HOLDOVER_DURATION_THRESHOLD: Final = ScpiCommand(
+    mnemonic=":SYNC:HOLD:DUR:THR?",
+    summary="The holdover duration limit",
+    response=ResponseFormat.DECIMAL,
+    unit="s",
+)
+
+HOLDOVER_DURATION_EXCEEDED: Final = ScpiCommand(
+    mnemonic=":SYNC:HOLD:DUR:THR:EXC?",
+    summary="Whether the holdover duration limit is currently exceeded",
+    response=ResponseFormat.BOOLEAN,
+)
+
+HOLDOVER_UNCERTAINTY_PREDICTED: Final = ScpiCommand(
+    mnemonic=":SYNC:HOLD:TUNC:PRED?",
+    summary="Predicted 24 hour holdover uncertainty",
+    response=ResponseFormat.DECIMAL,
+    unit="s",
+)
+
+HOLDOVER_UNCERTAINTY_PRESENT: Final = ScpiCommand(
+    mnemonic=":SYNC:HOLD:TUNC:PRES?",
+    summary="Present holdover time error",
+    response=ResponseFormat.DECIMAL,
+    unit="s",
+)
+
+# ---- §10.14 Time, and the leap second ----------------------------------------------------------
+
+RECEIVER_DATE: Final = ScpiCommand(
+    mnemonic=":PTIM:DATE?",
+    summary="The receiver's date",
+    response=ResponseFormat.VALUE_LIST,
+)
+
+RECEIVER_TIME: Final = ScpiCommand(
+    mnemonic=":PTIM:TIME?",
+    summary="The receiver's time of day",
+    response=ResponseFormat.VALUE_LIST,
+)
+
+RECEIVER_TIME_STRING: Final = ScpiCommand(
+    mnemonic=":PTIM:TIME:STR?",
+    summary="The receiver's time of day, formatted",
+    response=ResponseFormat.TEXT,
+)
+
+TIME_ZONE: Final = ScpiCommand(
+    mnemonic=":PTIM:TZON?",
+    summary="The time zone offset applied to reported times",
+    response=ResponseFormat.VALUE_LIST,
+)
+
+LEAP_ACCUMULATED: Final = ScpiCommand(
+    mnemonic=":PTIM:LEAP:ACC?",
+    summary="Accumulated leap seconds between GPS and UTC",
+    response=ResponseFormat.INTEGER,
+    unit="s",
+)
+
+LEAP_DATE: Final = ScpiCommand(
+    mnemonic=":PTIM:LEAP:DATE?",
+    summary="The date of the pending leap second",
+    response=ResponseFormat.VALUE_LIST,
+)
+
+LEAP_DURATION: Final = ScpiCommand(
+    mnemonic=":PTIM:LEAP:DUR?",
+    summary="Whether the pending leap second adds or removes a second",
+    response=ResponseFormat.INTEGER,
+    unit="s",
+)
+
+LEAP_STATE: Final = ScpiCommand(
+    mnemonic=":PTIM:LEAP:STAT?",
+    summary="Whether a leap second is pending",
+    response=ResponseFormat.KEYWORD,
+)
+
+# ---- §10.10 Status registers -------------------------------------------------------------------
+#
+# Five registers, five fields each. Generated rather than written out: twenty-five near-identical
+# entries hand-typed is twenty-five chances to transpose a mnemonic, and a transposed one here is a
+# page reporting one register's bits under another's name.
+
+#: The register roots, in the order §10.10's selector lists them.
+REGISTER_ROOTS: Final[tuple[tuple[str, str], ...]] = (
+    (":STAT:OPER", "Operation"),
+    (":STAT:OPER:HARD", "Operation — Hardware"),
+    (":STAT:OPER:HOLD", "Operation — Holdover"),
+    (":STAT:OPER:POW", "Operation — Power-up"),
+    (":STAT:QUES", "Questionable"),
+)
+
+#: The five fields §10.10's table has a column for.
+REGISTER_FIELDS: Final[tuple[tuple[str, str], ...]] = (
+    ("COND", "condition"),
+    ("EVEN", "event"),
+    ("ENAB", "enable mask"),
+    ("PTR", "positive transition mask"),
+    ("NTR", "negative transition mask"),
+)
+
+#: Which of those fields can be written. Condition and event are the receiver's own state.
+WRITABLE_REGISTER_FIELDS: Final[frozenset[str]] = frozenset({"ENAB", "PTR", "NTR"})
+
+
+def _register_queries() -> tuple[ScpiCommand, ...]:
+    return tuple(
+        ScpiCommand(
+            mnemonic=f"{root}:{field}?",
+            summary=f"{label} register — {description}",
+            response=ResponseFormat.INTEGER,
+        )
+        for root, label in REGISTER_ROOTS
+        for field, description in REGISTER_FIELDS
+    )
+
+
+def _register_setters() -> tuple[ScpiCommand, ...]:
+    return tuple(
+        ScpiCommand(
+            mnemonic=f"{root}:{field}",
+            summary=f"Set the {label} register's {description}",
+            response=ResponseFormat.NONE,
+            tier=SafetyTier.CONFIRM,
+            argument=ArgumentKind.INTEGER,
+            minimum=0,
+            maximum=32767,
+            confirmation="Change status register mask?",
+        )
+        for root, label in REGISTER_ROOTS
+        for field, description in REGISTER_FIELDS
+        if field in WRITABLE_REGISTER_FIELDS
+    )
+
+
+REGISTER_QUERIES: Final[tuple[ScpiCommand, ...]] = _register_queries()
+REGISTER_SETTERS: Final[tuple[ScpiCommand, ...]] = _register_setters()
+
+
+def register_query(root: str, field: str) -> ScpiCommand | None:
+    """The query for one register field, or ``None`` if there is no such pair."""
+    return find(f"{root}:{field}?")
+
+
+def register_setter(root: str, field: str) -> ScpiCommand | None:
+    return find(f"{root}:{field}")
+
+
+# ---- §8.3 tier C: the setters, each carrying its own confirmation -------------------------------
+
+#: §8.2 classes both recovery commands Safe: they move the unit *toward* lock, which is the desired
+#: state, and cannot damage anything.
+HOLDOVER_RECOVER: Final = ScpiCommand(
+    mnemonic=":SYNC:HOLD:REC:INIT",
+    summary="Recover from holdover now",
+    response=ResponseFormat.NONE,
+)
+
+HOLDOVER_IGNORE_RECOVERY_LIMIT: Final = ScpiCommand(
+    mnemonic=":SYNC:HOLD:REC:LIM:IGN",
+    summary="Ignore the recovery limit and reacquire",
+    response=ResponseFormat.NONE,
+)
+
+HOLDOVER_FORCE: Final = ScpiCommand(
+    mnemonic=":SYNC:HOLD:INIT",
+    summary="Force manual holdover",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    confirmation=(
+        "Force manual holdover? The receiver will stop disciplining to GPS until you explicitly "
+        "recover. Do not do this within the first 24 hours after power-up — it corrupts SmartClock "
+        "oscillator learning."
+    ),
+    requires_acknowledgement=True,
+)
+
+SET_HOLDOVER_DURATION_THRESHOLD: Final = ScpiCommand(
+    mnemonic=":SYNC:HOLD:DUR:THR",
+    summary="Set the holdover duration limit",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    unit="s",
+    argument=ArgumentKind.INTEGER,
+    minimum=1,
+    maximum=999_999,
+    confirmation="Set the holdover duration limit?",
+)
+
+CLEAR_DIAGNOSTIC_LOG: Final = ScpiCommand(
+    mnemonic=":DIAG:LOG:CLE",
+    summary="Clear the diagnostic log",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    confirmation="Clear the diagnostic log? This cannot be undone.",
+)
+
+#: §10.9: twelve subsystem keywords, probed against the live receiver rather than taken on trust.
+#: ``ALL`` is the default because one sweep is one disruption where eleven separate runs would be
+#: eleven disruptions of a disciplined oscillator.
+SELF_TEST_SUBSYSTEMS: Final[tuple[str, ...]] = (
+    "ALL",
+    "DISP",
+    "PROC",
+    "RAM",
+    "EEPROM",
+    "UART",
+    "QSPI",
+    "FPGA",
+    "INTP",
+    "IREF",
+    "GPS",
+    "POW",
+)
+
+RUN_SELF_TEST: Final = ScpiCommand(
+    mnemonic=":DIAG:TEST?",
+    summary="Run a subsystem diagnostic",
+    response=ResponseFormat.INTEGER,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.KEYWORD,
+    keywords=SELF_TEST_SUBSYSTEMS,
+    confirmation=(
+        "Run the diagnostic? The receiver will drop out of lock and re-acquire, so the 1 PPS "
+        "output is degraded for several minutes. The test itself takes up to 30 seconds."
+    ),
+)
+
+SET_ELEVATION_MASK: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:EMAN",
+    summary="Set the elevation mask",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    unit="°",
+    argument=ArgumentKind.INTEGER,
+    minimum=0,
+    maximum=90,
+    confirmation=(
+        "Set the elevation mask? Values above 15° during survey may prevent position "
+        "determination; above 40° severely limits availability."
+    ),
+)
+
+SET_ANTENNA_DELAY: Final = ScpiCommand(
+    mnemonic=":GPS:REF:ADEL",
+    summary="Set the antenna cable delay",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    unit="s",
+    argument=ArgumentKind.DECIMAL,
+    minimum=0.0,
+    maximum=0.999999,
+    confirmation=(
+        "Set the antenna delay? Changing this while locked can push the receiver into holdover."
+    ),
+)
+
+ELEVATION_MASK: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:EMAN?",
+    summary="The elevation mask below which satellites are ignored",
+    response=ResponseFormat.DECIMAL,
+    unit="°",
+)
+
+ANTENNA_DELAY: Final = ScpiCommand(
+    mnemonic=":GPS:REF:ADEL?",
+    summary="The antenna cable delay the receiver is compensating for",
+    response=ResponseFormat.DECIMAL,
+    unit="s",
+)
+
 #: Every catalogued command. **The allowlist.**
 ALL: Final[tuple[ScpiCommand, ...]] = (
     IDENTITY,
@@ -142,6 +454,33 @@ ALL: Final[tuple[ScpiCommand, ...]] = (
     DIAGNOSTIC_LOG,
     SELF_TEST_RESULT,
     TIME_CODE_FORMAT,
+    LOG_COUNT,
+    LIFETIME_HOURS,
+    HOLDOVER_DURATION,
+    HOLDOVER_DURATION_THRESHOLD,
+    HOLDOVER_DURATION_EXCEEDED,
+    HOLDOVER_UNCERTAINTY_PREDICTED,
+    HOLDOVER_UNCERTAINTY_PRESENT,
+    RECEIVER_DATE,
+    RECEIVER_TIME,
+    RECEIVER_TIME_STRING,
+    TIME_ZONE,
+    LEAP_ACCUMULATED,
+    LEAP_DATE,
+    LEAP_DURATION,
+    LEAP_STATE,
+    ELEVATION_MASK,
+    ANTENNA_DELAY,
+    *REGISTER_QUERIES,
+    HOLDOVER_RECOVER,
+    HOLDOVER_IGNORE_RECOVERY_LIMIT,
+    HOLDOVER_FORCE,
+    SET_HOLDOVER_DURATION_THRESHOLD,
+    CLEAR_DIAGNOSTIC_LOG,
+    RUN_SELF_TEST,
+    SET_ELEVATION_MASK,
+    SET_ANTENNA_DELAY,
+    *REGISTER_SETTERS,
 )
 
 _BY_MNEMONIC: Final[MappingProxyType[str, ScpiCommand]] = MappingProxyType(
