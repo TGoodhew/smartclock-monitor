@@ -353,7 +353,8 @@ class DiagnosticsPage(Page):
             severity = _severity_of(entry)
             # §10.9 as amended by #225: severity is shape **and** colour, never colour alone. The
             # amber-and-red pair is the one §9.4.3 singles out — they converge under protanopia and
-            # deuteranopia, and under high contrast both resolve to the same token.
+            # deuteranopia, which is reason enough on its own now that D3 has removed the
+            # high-contrast theme where they also shared a token.
             pill = SeverityPill(severity, "", self._palette)
             self._log.setCellWidget(row, 0, pill)
             self._log.setItem(row, 1, QTableWidgetItem(_index_text(entry)))

@@ -82,7 +82,13 @@ smartclock-monitor --port /dev/ttyUSB0                       # Z3805A defaults
 smartclock-monitor --port /dev/ttyUSB0 --baud 19200 --data-bits 7 --parity O
 ```
 
-`--theme light|dark|high-contrast` picks the token set to start in; the window has a picker too.
+`--theme light|dark` picks the token set to start in; the window has a picker too.
+
+**There is no high-contrast theme.** WinZ3805A resolves its high-contrast tokens to your own
+Windows system colours; no desktop this port targets offers an equivalent contract, and rather than
+assert colours of our own under that name there is none here. If you rely on a high-contrast
+scheme, that is a real reduction against the Windows application — see
+[`docs/divergences.md`](docs/divergences.md).
 
 > **Linux serial access** is the first thing that will go wrong. Your user needs to be in the
 > `dialout` group (`sudo usermod -aG dialout $USER`, then log out and back in). Under WSL, a USB

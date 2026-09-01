@@ -63,8 +63,8 @@ and different platforms; that they share a maintainer is why D6 matters, not why
 
 ## D2 — G5, the Microsoft Store
 
-**Status: Provisional** ([#5](https://github.com/TGoodhew/smartclock-monitor/issues/5)). Dropped
-as a goal of this repository.
+**Status: Settled** (confirmed 1 Sep 2026, [#5](https://github.com/TGoodhew/smartclock-monitor/issues/5)).
+Dropped as a goal of this repository.
 
 §2's G5 is "Ships to the Microsoft Store as an MSIX package", measured by passing the Windows App
 Certification Kit. MSIX is a Windows packaging format and the Store is a Windows channel; neither
@@ -87,15 +87,11 @@ for it and support should not be claimed without a machine to test on.
 
 ## D3 — High contrast
 
-**Status: Provisional** ([#3](https://github.com/TGoodhew/smartclock-monitor/issues/3)) — option
-**(a)**, with (c)'s trigger deferred to Phase 8.
+**Status: Settled** (1 Sep 2026, [#3](https://github.com/TGoodhew/smartclock-monitor/issues/3)) —
+option **(b)**. Light and Dark only, and the reduction is written down where a user can read it.
 
-**This is the one to be most careful about.** It was taken provisionally rather than left open
-only because Phase 5 could not start otherwise; of everything on this page it is the decision
-most worth a second opinion.
-
-It is an accessibility promise, the current one is stronger than a hand-authored theme can be,
-and the difference is invisible to anyone not relying on it.
+This was taken provisionally as **(a)** so that Phase 5 could start, flagged here as the decision
+most worth a second opinion, and reviewed. The second opinion went the other way.
 
 ### What Windows does today
 
@@ -143,20 +139,28 @@ what desktop it is running on belongs anyway.
 
 ### What was decided, and what it costs
 
-**(a)**, with (c)'s trigger deferred. The plan says (a) is the better answer for this audience,
-with the qualifier that it be made deliberately and the weaker promise written down where a user
-can read it — so:
+**(b).** Light and Dark, and no high-contrast theme.
 
-> **This application asserts its own high-contrast colours. It does not use yours.** On Windows,
-> WinZ3805A resolves them to your system colour choices; this port cannot, because the desktop
-> offers no equivalent contract. If you rely on a specific high-contrast scheme, this is a real
-> difference and not a cosmetic one.
+The argument that settled it is the one (a) had to answer and could not: a hand-authored theme
+**asserts our contrast in place of the user's**. For someone who has configured a specific scheme
+because of a specific impairment, that is not a weaker version of the Windows behaviour — it is a
+different thing wearing its name. And it is worse than having nothing, because a menu entry
+reading *High contrast* is a claim the user has no reason to doubt until it fails them.
 
-That paragraph belongs in the README and the guide, not only here.
+> **This port ships Light and Dark only.** WinZ3805A resolves its high-contrast tokens to your own
+> Windows system colours; no desktop this port targets offers an equivalent contract, and rather
+> than assert colours of our own under that name, there is no high-contrast theme here. If you
+> rely on one, this is a real reduction against the Windows application and not a cosmetic one.
 
-The token set is identical under (a) and (c), so adding the trigger in Phase 8 reworks nothing in
-Phase 5. **Reversing to (b) is cheap** — delete a token column and two gates. Reversing *to* (a)
-later would not have been, which is why it was taken this way round.
+That paragraph belongs in the README and the guide, not only here, and the difference is recorded
+in [`divergences.md`](divergences.md) with the others.
+
+**What it cost to reverse, as predicted:** one token column, one gate rewritten from three themes
+to two, and nine parametrised cases that went away with it. The prediction was accurate, which is
+the only reason taking it provisionally was defensible.
+
+**(c) is not reopened by this.** Reading the desktop's own high-contrast preference would only
+select a hand-authored set, and the objection above is to the set, not to the trigger.
 
 ---
 
@@ -283,8 +287,8 @@ was someone trying to use the application.
 | # | Decision | Status | Issue | Reversing it costs |
 |---|---|---|---|---|
 | D1 | Route — independent port | **Settled** | — | — |
-| D2 | G5 / Microsoft Store | Provisional | [#5](https://github.com/TGoodhew/smartclock-monitor/issues/5) | Phase 8 packaging work only |
-| D3 | High contrast | Provisional | [#3](https://github.com/TGoodhew/smartclock-monitor/issues/3) | One token column and two gates |
+| D2 | G5 / Microsoft Store | **Settled** | [#5](https://github.com/TGoodhew/smartclock-monitor/issues/5) | — |
+| D3 | High contrast — **not shipped** | **Settled** | [#3](https://github.com/TGoodhew/smartclock-monitor/issues/3) | — |
 | D4 | Typeface + contrast re-derivation | Provisional | [#4](https://github.com/TGoodhew/smartclock-monitor/issues/4) | One constant, plus re-running the figures |
 | D5 | Tray and notifications | Provisional | [#6](https://github.com/TGoodhew/smartclock-monitor/issues/6) | Confined to `platform/` |
 | D6 | Relationship — §8.4 sync | **Settled** (safety half) | — | Not reversible. See above. |
