@@ -8,6 +8,7 @@ Console is a picker over these entries rather than a terminal.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 
@@ -77,6 +78,11 @@ class ArgumentKind(Enum):
     #: One of :attr:`ScpiCommand.keywords`, matched case-insensitively and sent upper-cased.
     KEYWORD = 3
 
+    #: Several whole numbers, comma-joined — the form the 58503A programming guide gives, e.g.
+    #: ``:GPS:INIT:DATE 1994,7,4``. Every element goes through the same bounds a single value
+    #: would, so the console cannot accept what a page would reject.
+    INTEGER_LIST = 4
+
 
 @dataclass(frozen=True, slots=True)
 class ScpiCommand:
@@ -130,6 +136,34 @@ class ScpiCommand:
     def needs_confirmation(self) -> bool:
         return self.tier is SafetyTier.CONFIRM
 
+    def _rendered_list(self, argument: object) -> str | None:
+        """A comma-joined list, or ``None`` if any element is not one this command accepts.
+
+        **Any element**, not most of them: a partially-valid list sent with the bad entries
+        dropped would do something the user did not ask for, quietly, and the thing it did would
+        be a subset of a destructive operation.
+        """
+        if isinstance(argument, str) or not isinstance(argument, Iterable):
+            return None
+
+        values: list[int] = []
+        for element in argument:
+            try:
+                value = float(element)
+            except (TypeError, ValueError):
+                return None
+            if value != int(value) or not math.isfinite(value):
+                return None
+            if self.minimum is not None and value < self.minimum:
+                return None
+            if self.maximum is not None and value > self.maximum:
+                return None
+            values.append(int(value))
+
+        if not values:
+            return None
+        return f"{self.mnemonic} " + ",".join(str(value) for value in values)
+
     def rendered(self, argument: object = None) -> str | None:
         """The exact text to send, or ``None`` if the argument is not one this command accepts.
 
@@ -142,6 +176,9 @@ class ScpiCommand:
 
         if argument is None:
             return None
+
+        if self.argument is ArgumentKind.INTEGER_LIST:
+            return self._rendered_list(argument)
 
         if self.argument is ArgumentKind.KEYWORD:
             text = str(argument).strip().upper()
