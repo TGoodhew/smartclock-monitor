@@ -96,6 +96,17 @@ ruff check . && ruff format --check . && mypy && pytest
 python build/palette/validate.py
 ```
 
+## Adding another receiver
+
+Every receiver-specific fact sits behind a driver, so a second family is a new file rather than a
+scatter of conditionals.
+
+- [`docs/adding-a-receiver.md`](docs/adding-a-receiver.md) is the walkthrough. It is carried over
+  from WinZ3805A verbatim and is C# throughout — read it for the reasoning.
+- [`docs/driver-contract.md`](docs/driver-contract.md) is this port's member-by-member mapping:
+  what the Protocol looks like here, what is not built yet, and three things this port learned
+  that the walkthrough does not say.
+
 ## Licence
 
 MIT, as WinZ3805A is. See [LICENSE](LICENSE).
