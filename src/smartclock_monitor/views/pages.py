@@ -41,13 +41,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from smartclock_device.commands import catalog
 from smartclock_device.commands.position_argument import (
     HEIGHT_METRES,
     MINUTES,
     SECONDS,
     PositionArgument,
 )
+from smartclock_device.drivers.capability import Capability
 from smartclock_device.models import antenna_cable, coordinates
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.position import GeoPosition
@@ -73,7 +73,7 @@ from smartclock_monitor.services.trend_store import (
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import TABLE_ROW_TARGET, Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
-from smartclock_monitor.views.capability import gate
+from smartclock_monitor.views.capability import command_for, gate
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.manage_satellites import ask_to_manage, parse_exclusions
 from smartclock_monitor.views.wording import humanise
@@ -542,16 +542,16 @@ class SatellitesPage(Page):
         live = runner is not None and runner.is_connected
         driver = runner.driver if live and runner is not None else None
 
-        gate(self._apply_mask, driver, catalog.SET_ELEVATION_MASK)
+        gate(self._apply_mask, driver, Capability.SET_ELEVATION_MASK)
         # §12's #304 keeps the manage dialog's own five lookups as assertions, gated by the same
         # five on the button: the dialog may assume what the button already checked.
         gate(
             self._manage,
             driver,
-            catalog.EXCLUDED_SATELLITES,
-            catalog.EXCLUDE_SATELLITES,
-            catalog.EXCLUDE_ALL_SATELLITES,
-            catalog.CLEAR_EXCLUSIONS,
+            Capability.EXCLUDED_SATELLITES,
+            Capability.EXCLUDE_SATELLITES,
+            Capability.EXCLUDE_ALL_SATELLITES,
+            Capability.CLEAR_EXCLUSIONS,
         )
         if live:
             self.refresh_exclusions()
@@ -564,7 +564,7 @@ class SatellitesPage(Page):
         runner = self._runner
         if runner is None or not runner.is_connected:
             return
-        runner.run([(catalog.EXCLUDED_SATELLITES, None)], self._absorb_exclusions)
+        runner.run([(Capability.EXCLUDED_SATELLITES, None)], self._absorb_exclusions)
 
     def _absorb_exclusions(self, outcomes: Sequence[CommandOutcome]) -> None:
         line = None
@@ -589,13 +589,24 @@ class SatellitesPage(Page):
             # neither is worth telling the user about.
             return
 
+        # Resolved here, because the dialog names capabilities and the confirmation shows exactly
+        # what will go on the wire — which only the connected family can spell.
+        resolved = [
+            (command_for(self._runner, wanted) if isinstance(wanted, Capability) else wanted, value)
+            for wanted, value in commands
+        ]
+        if any(command is None for command, _ in resolved):
+            return
+
         # One confirmation for one action, naming every command it will send.
         rendered = [
             text
-            for text in (command.rendered(argument) for command, argument in commands)
+            for text in (
+                command.rendered(argument) for command, argument in resolved if command is not None
+            )
             if text is not None
         ]
-        if not ask(commands[0][0], commands[0][1], self._palette, self, detail=rendered):
+        if not ask(resolved[0][0], resolved[0][1], self._palette, self, detail=rendered):
             return
 
         runner.run(commands, lambda _o: self.refresh_exclusions())
@@ -662,10 +673,12 @@ class SatellitesPage(Page):
         if runner is None:
             return
         degrees = self._mask.value()
-        if not ask(catalog.SET_ELEVATION_MASK, degrees, self._palette, self):
+        if not ask(
+            command_for(self._runner, Capability.SET_ELEVATION_MASK), degrees, self._palette, self
+        ):
             return
         self._mask_written = degrees
-        runner.run([(catalog.SET_ELEVATION_MASK, degrees)])
+        runner.run([(Capability.SET_ELEVATION_MASK, degrees)])
 
     def _attach_table_menu(self) -> None:
         attach_table_menu(self._table, self.csv_rows)
@@ -849,12 +862,12 @@ class PositionPage(_FieldsExport, Page):
         self._adopt = QPushButton("Adopt computed position")
         self._adopt.setProperty("role", "destructive")
         self._adopt.clicked.connect(
-            lambda: self._send_survey_command(catalog.ADOPT_SURVEYED_POSITION)
+            lambda: self._send_survey_command(Capability.ADOPT_SURVEYED_POSITION)
         )
         self._cancel_survey = QPushButton("Cancel")
         self._cancel_survey.setProperty("role", "destructive")
         self._cancel_survey.clicked.connect(
-            lambda: self._send_survey_command(catalog.RESTORE_LAST_POSITION)
+            lambda: self._send_survey_command(Capability.RESTORE_LAST_POSITION)
         )
         for button in (self._start_survey, self._adopt, self._cancel_survey):
             buttons.addWidget(button)
@@ -963,11 +976,13 @@ class PositionPage(_FieldsExport, Page):
             self._position_note.setText("That is not a position the receiver would accept.")
             return
 
-        if not ask(catalog.SET_POSITION, argument, self._palette, self):
+        if not ask(
+            command_for(self._runner, Capability.SET_POSITION), argument, self._palette, self
+        ):
             return
 
         self._position_note.setText(f"Sending {argument.spoken()}…")
-        runner.run([(catalog.SET_POSITION, argument)], self._absorb_position)
+        runner.run([(Capability.SET_POSITION, argument)], self._absorb_position)
 
     def _absorb_position(self, outcomes: Sequence[CommandOutcome]) -> None:
         for outcome in outcomes:
@@ -985,11 +1000,11 @@ class PositionPage(_FieldsExport, Page):
         live = runner is not None and runner.is_connected
         driver = runner.driver if live and runner is not None else None
 
-        gate(self._start_survey, driver, catalog.START_SURVEY)
-        gate(self._adopt, driver, catalog.ADOPT_SURVEYED_POSITION)
-        gate(self._cancel_survey, driver, catalog.RESTORE_LAST_POSITION)
-        gate(self._on_power_up, driver, catalog.SET_SURVEY_ON_POWER_UP)
-        gate(self._apply_position, driver, catalog.SET_POSITION)
+        gate(self._start_survey, driver, Capability.START_SURVEY)
+        gate(self._adopt, driver, Capability.ADOPT_SURVEYED_POSITION)
+        gate(self._cancel_survey, driver, Capability.RESTORE_LAST_POSITION)
+        gate(self._on_power_up, driver, Capability.SET_SURVEY_ON_POWER_UP)
+        gate(self._apply_position, driver, Capability.SET_POSITION)
         if live:
             self.refresh_survey()
 
@@ -997,7 +1012,7 @@ class PositionPage(_FieldsExport, Page):
         runner = self._runner
         if runner is None or not runner.is_connected:
             return
-        runner.run([(catalog.SURVEY_ON_POWER_UP, None)], self._absorb_survey)
+        runner.run([(Capability.SURVEY_ON_POWER_UP, None)], self._absorb_survey)
 
     def _absorb_survey(self, outcomes: Sequence[CommandOutcome]) -> None:
         if not outcomes or outcomes[0].transaction is None:
@@ -1018,19 +1033,24 @@ class PositionPage(_FieldsExport, Page):
         runner.run([(command, None)], self._report)  # type: ignore[list-item]
 
     def _begin_survey(self) -> None:
-        self._send_survey_command(catalog.START_SURVEY)
+        self._send_survey_command(Capability.START_SURVEY)
 
     def _send_power_up(self) -> None:
         runner = self._runner
         if runner is None:
             return
         wanted = "ON" if self._on_power_up.isChecked() else "OFF"
-        if not ask(catalog.SET_SURVEY_ON_POWER_UP, wanted, self._palette, self):
+        if not ask(
+            command_for(self._runner, Capability.SET_SURVEY_ON_POWER_UP),
+            wanted,
+            self._palette,
+            self,
+        ):
             # Put the box back: the user declined, and a box that stayed moved would show a
             # setting the receiver does not have.
             self._on_power_up.setChecked(not self._on_power_up.isChecked())
             return
-        runner.run([(catalog.SET_SURVEY_ON_POWER_UP, wanted)], lambda _o: self.refresh_survey())
+        runner.run([(Capability.SET_SURVEY_ON_POWER_UP, wanted)], lambda _o: self.refresh_survey())
 
     def _report(self, outcomes: Sequence[CommandOutcome]) -> None:
         """Say what happened, and attach §10.6's advice to −300 **only**.
@@ -1242,7 +1262,7 @@ class TimingPage(Page):
 
         live = self._runner is not None and self._runner.is_connected
         driver = self._runner.driver if live and self._runner is not None else None
-        gate(self._apply_delay, driver, catalog.SET_ANTENNA_DELAY)
+        gate(self._apply_delay, driver, Capability.SET_ANTENNA_DELAY)
         self._recompute_delay()
 
     def _recompute_delay(self) -> None:
@@ -1270,9 +1290,11 @@ class TimingPage(Page):
             return
 
         seconds = nanoseconds * 1e-9
-        if not ask(catalog.SET_ANTENNA_DELAY, seconds, self._palette, self):
+        if not ask(
+            command_for(self._runner, Capability.SET_ANTENNA_DELAY), seconds, self._palette, self
+        ):
             return
-        runner.run([(catalog.SET_ANTENNA_DELAY, seconds)], lambda _o: self.refresh_antenna())
+        runner.run([(Capability.SET_ANTENNA_DELAY, seconds)], lambda _o: self.refresh_antenna())
 
     def refresh_antenna(self) -> None:
         """Read back what the receiver took.
@@ -1284,19 +1306,22 @@ class TimingPage(Page):
         if runner is None or not runner.is_connected:
             return
         runner.run(
-            [(catalog.ANTENNA_DELAY, None), (catalog.ELEVATION_MASK, None)], self._absorb_antenna
+            [(Capability.ANTENNA_DELAY, None), (Capability.ELEVATION_MASK, None)],
+            self._absorb_antenna,
         )
 
     def _absorb_antenna(self, outcomes: Sequence[CommandOutcome]) -> None:
-        by_mnemonic = {outcome.command.mnemonic: outcome for outcome in outcomes}
+        # Keyed by **capability**, which is what was asked for. Keying by mnemonic meant the page
+        # knowing the connected family's spelling of its own question.
+        answered = {outcome.capability: outcome for outcome in outcomes if outcome.capability}
 
-        delay = by_mnemonic.get(catalog.ANTENNA_DELAY.mnemonic)
+        delay = answered.get(Capability.ANTENNA_DELAY)
         seconds = None
         if delay is not None and delay.transaction is not None:
             seconds = parse_decimal(delay.transaction.first_line)
         self._antenna_current.set("Current", DASH if seconds is None else f"{seconds * 1e9:.1f} ns")
 
-        mask = by_mnemonic.get(catalog.ELEVATION_MASK.mnemonic)
+        mask = answered.get(Capability.ELEVATION_MASK)
         degrees = None
         if mask is not None and mask.transaction is not None:
             degrees = parse_decimal(mask.transaction.first_line)
@@ -1398,7 +1423,7 @@ class TimingPage(Page):
         self._runner = runner
         self._retune_antenna()
         if runner is not None and runner.is_connected:
-            runner.run([(catalog.HARDWARE_CONDITION, None)], self._absorb_register)
+            runner.run([(Capability.HARDWARE_CONDITION, None)], self._absorb_register)
             self.refresh_antenna()
 
     def _absorb_register(self, outcomes: Sequence[CommandOutcome]) -> None:

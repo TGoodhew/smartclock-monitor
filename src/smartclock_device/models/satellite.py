@@ -8,6 +8,16 @@ page.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Final
+
+#: The PRN numbers GPS assigns, inclusive at both ends.
+#:
+#: A fact about **GPS**, not about any receiver family — every GPS receiver sees the same
+#: constellation — so it lives with the satellite model rather than in a command catalog or behind
+#: a driver. It was in the catalog because the exclusion commands bound their arguments with it;
+#: those still do, from here.
+FIRST_PRN: Final = 1
+LAST_PRN: Final = 32
 
 
 @dataclass(frozen=True, slots=True)

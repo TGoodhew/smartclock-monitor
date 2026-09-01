@@ -14,6 +14,12 @@ true one.
 **Nothing here decides what a family supports.** It asks the driver, which is the whole point of
 the seam: a page that knew which families had which commands would be the scatter of conditionals
 the driver exists to prevent.
+
+**It takes capabilities, not commands.** A page names what it wants done and the driver answers
+with its own command or with nothing, so the page never holds another family's mnemonic. Passing a
+``ScpiCommand`` here would have meant passing *the SmartClock's* command object to whichever driver
+happened to be connected — which worked, because the other one answers ``False``, and read as
+decoupled without being so.
 """
 
 from __future__ import annotations
@@ -22,17 +28,39 @@ from PySide6.QtWidgets import QWidget
 
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import ReceiverDriver
+from smartclock_device.drivers.capability import Capability
+from smartclock_monitor.services.commands import CommandRunner
 
 
-def explain(driver: ReceiverDriver | None, command: ScpiCommand) -> str:
+def explain(driver: ReceiverDriver | None) -> str:
     """One sentence for a control the connected receiver cannot drive."""
     if driver is None:
         return "Not connected, so this cannot be sent yet."
     return f"{driver.name} has no command for this."
 
 
-def gate(control: QWidget, driver: ReceiverDriver | None, *commands: ScpiCommand) -> bool:
-    """Enable ``control`` only where the driver supports **every** command it would send.
+def resolve(driver: ReceiverDriver | None, capability: Capability) -> ScpiCommand | None:
+    """The connected family's command for a capability, or ``None``.
+
+    The one place a page turns a want into something sendable. Kept beside the gate because the
+    two answer the same question — the gate asks whether it *can* be sent, this asks *what* — and
+    a page that resolved without gating would be back to a button that fails on click.
+    """
+    return None if driver is None else driver.command(capability)
+
+
+def command_for(runner: CommandRunner | None, capability: Capability) -> ScpiCommand | None:
+    """The connected family's command for a capability, given a page's runner.
+
+    The form a page actually needs: pages hold a runner, not a driver, and going through the
+    runner keeps "which family is connected" a single fact read at the moment it is used rather
+    than a copy kept on the page and gone stale by the next reconnect.
+    """
+    return resolve(None if runner is None else runner.driver, capability)
+
+
+def gate(control: QWidget, driver: ReceiverDriver | None, *capabilities: Capability) -> bool:
+    """Enable ``control`` only where the driver offers **every** capability it would use.
 
     Returns whether it was enabled, so a caller can gate a second thing on the same answer without
     asking twice.
@@ -44,7 +72,9 @@ def gate(control: QWidget, driver: ReceiverDriver | None, *commands: ScpiCommand
     A missing driver disables without claiming the family lacks anything — not connected and
     cannot do this are different facts, and the tooltip says which.
     """
-    supported = driver is not None and all(driver.supports(command) for command in commands)
+    supported = driver is not None and all(
+        driver.command(capability) is not None for capability in capabilities
+    )
     control.setEnabled(supported)
 
     if supported:
@@ -54,7 +84,7 @@ def gate(control: QWidget, driver: ReceiverDriver | None, *commands: ScpiCommand
             control.setToolTip("")
         return True
 
-    control.setToolTip(explain(driver, commands[0]) + _MARKER)
+    control.setToolTip(explain(driver) + _MARKER)
     return False
 
 

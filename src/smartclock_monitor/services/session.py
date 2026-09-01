@@ -24,6 +24,7 @@ from smartclock_device.clock import Clock
 from smartclock_device.commands import catalog
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import WHOLE_CYCLE, LinkStyle, ReceiverDriver
+from smartclock_device.drivers.capability import Capability
 from smartclock_device.drivers.registry import Registry
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.model_profile import ModelProfile, for_identity
@@ -70,7 +71,12 @@ class CommandOutcome:
     "it worked" are different facts and a caller must be able to tell them apart.
     """
 
-    command: ScpiCommand
+    #: ``None`` where the connected family had no command for what was asked — see ``capability``.
+    command: ScpiCommand | None
+
+    #: What the caller asked for, where it asked by capability rather than by command. Lets a page
+    #: match an answer back to its question without knowing the family's mnemonic for it.
+    capability: Capability | None = None
 
     #: Exactly what was put on the wire, for the Advanced Console's echo.
     sent: str | None = None

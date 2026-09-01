@@ -41,8 +41,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from smartclock_device.commands import catalog
 from smartclock_device.commands.scpi_command import ScpiCommand
+from smartclock_device.drivers.base import ReceiverDriver
+from smartclock_device.drivers.capability import Capability, CommandGroup
 from smartclock_device.models.diagnostic_log_entry import DiagnosticLogEntry
 from smartclock_device.parsing.diagnostic_log import parse_all
 from smartclock_device.parsing.scalars import parse_integer
@@ -54,7 +55,7 @@ from smartclock_monitor.services.session import CommandOutcome
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
-from smartclock_monitor.views.capability import gate
+from smartclock_monitor.views.capability import command_for, gate
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.pages import DASH, Page, card, label
 from smartclock_monitor.widgets.severity_pill import SeverityPill
@@ -99,8 +100,8 @@ class DiagnosticsPage(Page):
         row.addWidget(label("Subsystem", "caption"))
         self._subsystem = QComboBox()
         self._subsystem.setAccessibleName("Which subsystem to test")
-        for keyword in catalog.SELF_TEST_SUBSYSTEMS:
-            self._subsystem.addItem(keyword)
+        # Filled from the connected family's own command — its keywords *are* the subsystem list,
+        # so there is no second place for them to be listed and go stale. See _retune.
         row.addWidget(self._subsystem, 1)
         self._run = QPushButton("Run test")
         # §8.3 classes this tier C: the receiver leaves lock entirely and returns to power-up with
@@ -224,14 +225,55 @@ class DiagnosticsPage(Page):
             )
         )
 
+        # **Built from the connected family, not from a catalog.** §8.5 has six of these for this
+        # receiver and a different family may have none — the set is the family's, so the card is
+        # rebuilt when the driver changes rather than drawn once from one family's list.
         self._experimental_rows: dict[str, QLabel] = {}
         self._experimental_buttons: list[QPushButton] = []
-        for command in catalog.EXPERIMENTAL:
+        self._experimental_shown: tuple[ScpiCommand, ...] = ()
+        self._experimental_layout = holder_layout
+
+        holder.setVisible(False)
+        self._experimental_card = holder
+        return holder
+
+    def _refill_subsystems(self, self_test: ScpiCommand | None) -> None:
+        """The subsystem list is the self-test command's own keywords.
+
+        Taken from the command rather than kept beside it: a second list saying the same thing is
+        a second list to go stale, and §8.1 already has the command declaring what it accepts.
+        """
+        wanted = list(self_test.keywords) if self_test is not None else []
+        if wanted == [self._subsystem.itemText(i) for i in range(self._subsystem.count())]:
+            return
+
+        self._subsystem.clear()
+        self._subsystem.addItems(wanted)
+
+    def _rebuild_experimental(self, driver: ReceiverDriver | None) -> None:
+        """Draw one row per query the connected family actually has.
+
+        §8.5's six belong to this receiver. A card drawn from one family's list and then greyed for
+        another would be six controls naming commands that family has never heard of — §9.11's
+        "disabled and explained" is about a control the *page* offers, not about inventing controls
+        for a receiver to disappoint.
+        """
+        offered = () if driver is None else driver.commands_for(CommandGroup.EXPERIMENTAL)
+        if offered == self._experimental_shown:
+            return
+
+        for button in self._experimental_buttons:
+            button.setParent(None)
+        for answer in self._experimental_rows.values():
+            answer.setParent(None)
+        self._experimental_rows.clear()
+        self._experimental_buttons.clear()
+        self._experimental_shown = offered
+
+        for command in offered:
             row = QHBoxLayout()
-            name = label(command.mnemonic, "device")
-            row.addWidget(name)
+            row.addWidget(label(command.mnemonic, "device"))
             answer = label(DASH, "device")
-            answer.setWordWrap(True)
             self._experimental_rows[command.mnemonic] = answer
             row.addWidget(answer, 1)
             run = QPushButton("Run")
@@ -239,11 +281,7 @@ class DiagnosticsPage(Page):
             run.clicked.connect(lambda _checked=False, c=command: self._run_experimental(c))
             self._experimental_buttons.append(run)
             row.addWidget(run)
-            holder_layout.addLayout(row)
-
-        holder.setVisible(False)
-        self._experimental_card = holder
-        return holder
+            self._experimental_layout.addLayout(row)
 
     def set_experimental_visible(self, shown: bool) -> None:
         """§8.5's opt-in. The card is added and removed rather than merely greyed, so a switch
@@ -259,7 +297,11 @@ class DiagnosticsPage(Page):
 
     def _absorb_experimental(self, outcomes: Sequence[CommandOutcome]) -> None:
         for outcome in outcomes:
-            row = self._experimental_rows.get(outcome.command.mnemonic)
+            row = (
+                None
+                if outcome.command is None
+                else self._experimental_rows.get(outcome.command.mnemonic)
+            )
             if row is None:
                 continue
             if outcome.transaction is None:
@@ -292,15 +334,13 @@ class DiagnosticsPage(Page):
         live = self._runner is not None and self._runner.is_connected
         driver = self._runner.driver if live and self._runner is not None else None
 
-        gate(self._run, driver, catalog.RUN_SELF_TEST)
-        gate(self._clear_log, driver, catalog.CLEAR_DIAGNOSTIC_LOG)
-        gate(self._refresh_log, driver, catalog.DIAGNOSTIC_LOG)
-        gate(self._read_errors, driver, catalog.ERROR_QUEUE)
+        gate(self._run, driver, Capability.RUN_SELF_TEST)
+        gate(self._clear_log, driver, Capability.CLEAR_DIAGNOSTIC_LOG)
+        gate(self._refresh_log, driver, Capability.DIAGNOSTIC_LOG)
+        gate(self._read_errors, driver, Capability.ERROR_QUEUE)
 
-        # §8.5's six are gated one by one: a family might have some and not others, and a card
-        # that enabled all six because one existed would offer five buttons that fail on click.
-        for button, command in zip(self._experimental_buttons, catalog.EXPERIMENTAL, strict=True):
-            gate(button, driver, command)
+        self._rebuild_experimental(driver)
+        self._refill_subsystems(command_for(self._runner, Capability.RUN_SELF_TEST))
 
     # -- Reading ---------------------------------------------------------------------------------
 
@@ -312,22 +352,24 @@ class DiagnosticsPage(Page):
 
         runner.run(
             [
-                (catalog.DIAGNOSTIC_LOG, None),
-                (catalog.LOG_COUNT, None),
-                (catalog.LIFETIME_HOURS, None),
+                (Capability.DIAGNOSTIC_LOG, None),
+                (Capability.LOG_COUNT, None),
+                (Capability.LIFETIME_HOURS, None),
             ],
             self._absorb,
         )
 
     def _absorb(self, outcomes: Sequence[CommandOutcome]) -> None:
-        by_mnemonic = {outcome.command.mnemonic: outcome for outcome in outcomes}
+        # Keyed by **capability**, which is what was asked for. Keying by mnemonic meant the page
+        # knowing the connected family's spelling of its own question.
+        answered = {outcome.capability: outcome for outcome in outcomes if outcome.capability}
 
-        log = by_mnemonic.get(catalog.DIAGNOSTIC_LOG.mnemonic)
+        log = answered.get(Capability.DIAGNOSTIC_LOG)
         if log is not None and log.transaction is not None and log.transaction.succeeded:
             self._entries = parse_all(log.transaction.text)
             self._redraw_log()
 
-        hours = by_mnemonic.get(catalog.LIFETIME_HOURS.mnemonic)
+        hours = answered.get(Capability.LIFETIME_HOURS)
         value = None
         if hours is not None and hours.transaction is not None:
             value = parse_integer(hours.transaction.first_line)
@@ -335,7 +377,7 @@ class DiagnosticsPage(Page):
         # claim about the hardware where a dash is a statement about the read.
         self._lifetime.setText(DASH if value is None else f"{value:,} h")
 
-        count = by_mnemonic.get(catalog.LOG_COUNT.mnemonic)
+        count = answered.get(Capability.LOG_COUNT)
         reported = None
         if count is not None and count.transaction is not None:
             reported = parse_integer(count.transaction.first_line)
@@ -365,7 +407,7 @@ class DiagnosticsPage(Page):
         runner = self._runner
         if runner is None:
             return
-        runner.run([(catalog.ERROR_QUEUE, None)], self._absorb_errors)
+        runner.run([(Capability.ERROR_QUEUE, None)], self._absorb_errors)
 
     def _absorb_errors(self, outcomes: Sequence[CommandOutcome]) -> None:
         if not outcomes or outcomes[0].transaction is None:
@@ -386,14 +428,16 @@ class DiagnosticsPage(Page):
             return
 
         subsystem = self._subsystem.currentText()
-        if not ask(catalog.RUN_SELF_TEST, subsystem, self._palette, self):
+        if not ask(
+            command_for(self._runner, Capability.RUN_SELF_TEST), subsystem, self._palette, self
+        ):
             return
 
         self._test_result.set_state(Severity.NEUTRAL, "Running…")
         self._test_detail.setText(
             "The receiver drops out of lock for this and re-acquires over several minutes."
         )
-        runner.run([(catalog.RUN_SELF_TEST, subsystem)], self._absorb_test)
+        runner.run([(Capability.RUN_SELF_TEST, subsystem)], self._absorb_test)
 
     def _absorb_test(self, outcomes: Sequence[CommandOutcome]) -> None:
         if not outcomes or outcomes[0].transaction is None:
@@ -434,9 +478,11 @@ class DiagnosticsPage(Page):
         runner = self._runner
         if runner is None:
             return
-        if not ask(catalog.CLEAR_DIAGNOSTIC_LOG, None, self._palette, self):
+        if not ask(
+            command_for(self._runner, Capability.CLEAR_DIAGNOSTIC_LOG), None, self._palette, self
+        ):
             return
-        runner.run([(catalog.CLEAR_DIAGNOSTIC_LOG, None)], lambda _o: self.refresh())
+        runner.run([(Capability.CLEAR_DIAGNOSTIC_LOG, None)], lambda _o: self.refresh())
 
     def csv_rows(self) -> Sequence[Sequence[str]]:
         """The diagnostic log as shown, **filter included**.

@@ -23,6 +23,7 @@ its reasoning in [`platform-decisions.md`](platform-decisions.md) and its argume
 | **Packaging** | MSIX, Microsoft Store | Flatpak / AppImage / PyInstaller planned | Different — D2 |
 | **Platforms** | Windows | Linux, Windows, macOS | *Addition* |
 | **Receiver families** | SmartClock | SmartClock **and NMEA 0183** | *Addition* |
+| **How pages name commands** | SCPI mnemonics | `Capability` enum | Different — see below |
 | **System accent colour (P1-11)** | Opt-in | Not offered | Neutral — nothing to read |
 | **Sequential ramp on Dark** | One ramp, both themes | Derived per surface | *Fix* — see below |
 | **Multiple receivers (P2-1)** | Not built | Not built | Same |
@@ -97,6 +98,18 @@ it is never written to, recognised by what it said before anything was asked.
 That is not a feature so much as a proof: a contract satisfied by one implementation is a contract
 nobody has tested. Registering the second found four defects in the first — see
 [`driver-contract.md`](driver-contract.md).
+
+### Pages ask for a capability, not a mnemonic
+
+WinZ3805A's pages name SCPI mnemonics and gate on them (`Views/Capability.cs`, #304). The gate is
+the same here, and it does the same job — §9.11's *disabled and explained*. What is added is that a
+page names **what it wants done** and the connected family answers with its own command or with
+nothing, so no page holds one family's spelling.
+
+The old shape worked, and that was the problem: `driver.supports(catalog.RUN_SELF_TEST)` hands the
+SmartClock's command object to whichever driver is connected, and reads as decoupled only because
+the other one answers `False`. `tests/test_layering.py` now forbids a view importing the command
+catalog at all.
 
 ### Three platforms
 
