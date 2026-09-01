@@ -361,6 +361,26 @@ QToolTip {{
     padding: {Spacing.TIGHT}px;
 }}
 
+/* The scrolling viewport. A page shorter than its window leaves the viewport showing, and with no
+   rule of its own it painted Qt's light grey — so on Dark every page whose content did not reach
+   the bottom had a pale block under it. Found by looking at Status Registers, whose one card is
+   short; the pages that happen to fill their height hid it completely.
+
+   The viewport is a child widget rather than the scroll area itself, so both are named: styling
+   only QScrollArea leaves the ground it actually paints untouched.
+
+   **QScrollArea, not QAbstractScrollArea.** The base class is also what QListWidget and
+   QTableWidget are, and Qt gives two plain type selectors equal specificity — so the later rule
+   wins, and naming the base here took the card ground off the navigation pane and the tables. */
+QScrollArea {{
+    background-color: {palette.page_background};
+    border: none;
+}}
+
+QScrollArea > QWidget > QWidget {{
+    background-color: {palette.page_background};
+}}
+
 QScrollBar:vertical {{
     background: {palette.page_background};
     width: {Spacing.MEDIUM}px;

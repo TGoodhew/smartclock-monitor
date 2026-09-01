@@ -302,6 +302,7 @@ def test_no_widget_that_paints_its_own_ground_is_left_at_the_desktop_s_palette()
         QPlainTextEdit,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QTextEdit,
         QToolBar,
     )
@@ -320,6 +321,7 @@ def test_no_widget_that_paints_its_own_ground_is_left_at_the_desktop_s_palette()
         QPlainTextEdit,
         QProgressBar,
         QPushButton,
+        QScrollArea,
         QTextEdit,
         QToolBar,
     )
