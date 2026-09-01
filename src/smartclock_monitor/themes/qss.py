@@ -15,7 +15,7 @@ hex outside the token file" checkable rather than aspirational.
 
 from __future__ import annotations
 
-from smartclock_monitor.themes.spacing import Radius, Spacing
+from smartclock_monitor.themes.spacing import MINIMUM_POINTER_TARGET, Radius, Spacing
 from smartclock_monitor.themes.tokens import Palette
 from smartclock_monitor.themes.typography import Type, TypeStyle
 
@@ -123,7 +123,7 @@ QPushButton {{
     padding: {Spacing.SMALL}px {Spacing.MEDIUM}px;
     /* §9.12's pointer-target floor is declared, never inherited from whatever a stock style
        happens to supply. */
-    min-height: {Spacing.LARGE}px;
+    min-height: {MINIMUM_POINTER_TARGET}px;
 }}
 
 QPushButton:hover {{
@@ -132,6 +132,14 @@ QPushButton:hover {{
 
 QPushButton:focus {{
     border: 2px solid {palette.accent};
+}}
+
+/* §9.12's A11Y-5: pointer targets are at least 32 px **at all times**, and that binds every
+   control a pointer can hit rather than only the buttons. Measured rather than assumed — the gate
+   in tests/test_accessibility.py found checkboxes at 15 px and spin boxes at 25 px on a build
+   whose buttons were already compliant, which is exactly the shape §9.4.5's note describes. */
+QCheckBox, QRadioButton, QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox {{
+    min-height: {MINIMUM_POINTER_TARGET}px;
 }}
 
 QPushButton:disabled {{
@@ -165,7 +173,7 @@ QComboBox {{
     border-radius: {Radius.CONTROL}px;
     padding: {Spacing.TIGHT}px {Spacing.SMALL}px;
     /* §9.12's pointer-target floor, declared rather than inherited. */
-    min-height: {Spacing.LARGE}px;
+    min-height: {MINIMUM_POINTER_TARGET}px;
     min-width: {Spacing.PAGE}px;
 }}
 
@@ -197,7 +205,7 @@ QListWidget {{
 QListWidget::item {{
     padding: {Spacing.SMALL}px;
     border-radius: {Radius.CONTROL}px;
-    min-height: {Spacing.LARGE}px;
+    min-height: {MINIMUM_POINTER_TARGET}px;
 }}
 
 QListWidget::item:selected {{
@@ -239,7 +247,7 @@ QScrollBar:vertical {{
 QScrollBar::handle:vertical {{
     background: {palette.stroke_default};
     border-radius: {Radius.CONTROL}px;
-    min-height: {Spacing.LARGE}px;
+    min-height: {MINIMUM_POINTER_TARGET}px;
 }}
 
 QScrollBar::add-line, QScrollBar::sub-line {{
