@@ -37,6 +37,14 @@ from smartclock_monitor.views.main_window import MainWindow
 #: §9.12's A11Y-5: pointer targets are at least this, at all times.
 POINTER_FLOOR = 32
 
+#: How much of the window's minimum width every page must leave unused.
+#:
+#: Not a style preference. Font metrics differ between machines at the same point size, so a page
+#: measured to fit exactly on one desktop does not fit on another — which is how the sideways-scroll
+#: gate came to pass here and fail on CI by 24 px. Ten per cent is comfortably more than the ~2 %
+#: that cost, and small enough that it does not become the thing driving the window's size.
+WIDTH_MARGIN = 0.10
+
 #: The one recorded exception, and §9.10.2 names the compliant path rather than waiving the rule:
 #: a sky-plot marker's *position is the data* and cannot be moved to make room, so the disc is
 #: inset inside a 24 px transparent hit area and the tables carry the same data at ≥ 40 px.
@@ -450,10 +458,17 @@ def test_no_details_page_needs_horizontal_scrolling_at_the_window_minimum() -> N
 
     Five of the ten pages did, at the size the Details window **opens** at — the Position page
     wanted 1358 px of a 692 px viewport. Almost all of it was explanatory text that never had
-    ``setWordWrap`` called on it: wrapping was being set at the call site, and two page modules had
-    none at all. It is a property of the text now, so ``views.pages.label()`` decides it from the
-    role, and only prose wraps — a monospace device literal or a readout on two lines reads as a
-    rendering fault rather than as a narrow window.
+    ``setWordWrap`` called on it, which ``views.pages.label()`` now decides from the role.
+
+    **The margin is the point, not the fit.** The first version asserted only that nothing
+    scrolled, it passed here, and it failed on CI by 24 px: the runner resolves a slightly wider
+    font at the same point size, and the window's minimum had been set from measurements taken on
+    this machine. A page that only just fits is not fitting for a reason — it is fitting by
+    coincidence of font metrics. So each page must fit with :data:`WIDTH_MARGIN` to spare.
+
+    Simulating the wider font directly does not work, and the first attempt at that shipped a loop
+    which enforced nothing: §9's stylesheet sets ``font-size`` on ``QWidget``, so it overrides
+    ``QApplication.setFont`` and the page measured identically at +2 pt and +6 pt.
 
     Vertical scrolling is fine and expected. This is only about the axis that hides content.
     """
@@ -468,7 +483,8 @@ def test_no_details_page_needs_horizontal_scrolling_at_the_window_minimum() -> N
     QApplication.processEvents()
 
     try:
-        too_wide: list[str] = []
+        budget = window.minimumWidth() * (1.0 - WIDTH_MARGIN)
+        cramped: list[str] = []
         for index, page in enumerate(window.pages):
             window._navigation.setCurrentRow(index)
             QApplication.processEvents()
@@ -476,14 +492,25 @@ def test_no_details_page_needs_horizontal_scrolling_at_the_window_minimum() -> N
             area = window._stack.currentWidget()
             if not isinstance(area, QScrollArea):
                 continue
-            # The scrollbar's own range, not a size hint. A hint does not answer the question —
-            # it ignores size policies, so a table allowed to shrink and scroll inside itself still
-            # reports the width its columns would like. The bar having anywhere to travel is the
-            # fact the user meets.
+            content, viewport = area.widget(), area.viewport()
+            if content is None or viewport is None:
+                continue
+
+            # The scrollbar's range says whether it scrolls *today*; the content's minimum says
+            # whether it does so with room to spare. Both, because a hint alone ignores size
+            # policies and a bar alone leaves no margin.
             bar = area.horizontalScrollBar()
             if bar is not None and bar.maximum() > 0:
-                too_wide.append(f"{page.title} scrolls {bar.maximum()} px sideways")
+                cramped.append(f"{page.title} already scrolls {bar.maximum()} px sideways")
+                continue
 
-        assert not too_wide, "these pages scroll sideways when opened: " + "; ".join(too_wide)
+            needed = content.minimumSizeHint().width() + (window.width() - viewport.width())
+            if needed > budget:
+                cramped.append(
+                    f"{page.title} needs {needed} px of a {window.minimumWidth()} px window, "
+                    f"inside the {WIDTH_MARGIN:.0%} margin"
+                )
+
+        assert not cramped, "; ".join(cramped)
     finally:
         window.close()

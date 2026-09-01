@@ -424,6 +424,11 @@ class SatellitesPage(Page):
         table_layout.addWidget(self._table)
         self._attach_table_menu()
 
+        # **Two rows, not one.** All five controls in a single row needed 450 px, which made this
+        # card — and so the page, and so the window — as wide as the longest button caption in
+        # whatever font the desktop happens to have. It failed on CI for exactly that reason after
+        # passing here: the runner's fonts are wider than this machine's, and a minimum measured on
+        # one machine's metrics is not a minimum.
         controls = QHBoxLayout()
         controls.addWidget(label("Elevation mask", "caption"))
         self._mask = QSpinBox()
@@ -437,17 +442,21 @@ class SatellitesPage(Page):
         self._apply_mask.clicked.connect(self._send_mask)
         controls.addWidget(self._apply_mask)
         controls.addStretch(1)
+        table_layout.addLayout(controls)
+
+        actions = QHBoxLayout()
+        actions.addStretch(1)
         self._save_image = QPushButton("Save image…")
         self._save_image.setAccessibleName("Save the sky plot as a picture")
         self._save_image.setToolTip("Save the plot, with a caption naming the mask and the time")
         self._save_image.clicked.connect(self.save_image)
-        controls.addWidget(self._save_image)
+        actions.addWidget(self._save_image)
 
         self._manage = QPushButton("Manage…")
         self._manage.setAccessibleName("Choose which satellites the receiver may track")
         self._manage.clicked.connect(self._manage_satellites)
-        controls.addWidget(self._manage)
-        table_layout.addLayout(controls)
+        actions.addWidget(self._manage)
+        table_layout.addLayout(actions)
         layout.addWidget(table_card, 1)
 
     def show_reading(self, reading: Reading) -> None:
