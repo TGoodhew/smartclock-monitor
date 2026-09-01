@@ -336,11 +336,6 @@ class DetailsWindow(QMainWindow):
         if self.exit_requested is not None:
             self.exit_requested()
 
-    def set_can_keep_running(self, possible: bool) -> None:
-        settings = self.page_named(SettingsPage.title)
-        if isinstance(settings, SettingsPage):
-            settings.set_can_keep_running(possible)
-
     def apply_preferences(self, preferences: Preferences) -> None:
         """Add or remove §10.11's console, and remember the rest.
 
