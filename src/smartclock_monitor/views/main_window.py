@@ -212,13 +212,16 @@ class MainWindow(QMainWindow):
             self._theme_picker.addItem(available.value.replace("-", " ").title(), available)
         self._theme_picker.setCurrentIndex(list(ALL_THEMES).index(theme))
         self._theme_picker.setAccessibleName("Theme")
-        # Sized from its own longest entry. The shared QComboBox rule sets a 32 px min-width, which
-        # is a pointer floor rather than a width for words: in the header row this picker shrank to
-        # a single letter, so the control naming the current theme did not name it.
+        # Sized from its own longest entry, **in pixels the font actually measures**. The shared
+        # QComboBox rule sets a 32 px min-width, which is a pointer floor rather than a width for
+        # words, so the header row squeezed this to a single letter and the control naming the
+        # current theme did not name it.
+        #
+        # An explicit minimum width, not `setMinimumContentsLength`: that counts *characters* and
+        # Qt turns them into pixels with an average width, which is close enough on the face this
+        # was written against and was not on Windows — CI found the picker back at 50 px there.
         self._theme_picker.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        self._theme_picker.setMinimumContentsLength(
-            max(len(self._theme_picker.itemText(index)) for index in range(len(ALL_THEMES)))
-        )
+        self._theme_picker.setMinimumWidth(_widest_entry(self._theme_picker) + Spacing.PAGE)
         self._theme_picker.currentIndexChanged.connect(self._on_theme_changed)
 
         self.setStatusBar(QStatusBar())
@@ -581,6 +584,20 @@ class MainWindow(QMainWindow):
         self._ffom.set_value(_number(status.ffom))
         self._interval.set_value(_nanoseconds(status.one_pps_ti_nanoseconds))
         self._efc.set_value(_number(reading.efc_percent, decimals=1))
+
+
+def _widest_entry(picker: QComboBox) -> int:
+    """The pixel width of the picker's longest item, measured in its own font.
+
+    Measured rather than estimated from a character count, because the two differ by enough to
+    matter on a face with wide capitals — which is how this control came back at 50 px on Windows
+    after being fixed on Linux.
+    """
+    metrics = picker.fontMetrics()
+    return max(
+        (metrics.horizontalAdvance(picker.itemText(index)) for index in range(picker.count())),
+        default=0,
+    )
 
 
 def _outputs_state(status: ReceiverStatus) -> tuple[Severity, str]:
