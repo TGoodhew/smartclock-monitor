@@ -25,11 +25,14 @@ from __future__ import annotations
 from collections.abc import Sequence
 from datetime import datetime
 
+from PySide6.QtCore import QUrl
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
+    QLabel,
     QLineEdit,
     QPushButton,
     QTableWidget,
@@ -39,9 +42,12 @@ from PySide6.QtWidgets import (
 )
 
 from smartclock_device.commands import catalog
+from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.models.diagnostic_log_entry import DiagnosticLogEntry
 from smartclock_device.parsing.diagnostic_log import parse_all
 from smartclock_device.parsing.scalars import parse_integer
+from smartclock_device.transport.transaction import Transaction
+from smartclock_monitor.platform.paths import log_directory
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.session import CommandOutcome
@@ -77,6 +83,8 @@ class DiagnosticsPage(Page):
         layout.addWidget(self._build_log())
         layout.addWidget(self._build_queue())
         layout.addWidget(self._build_lifetime())
+        layout.addWidget(self._build_application_log())
+        layout.addWidget(self._build_experimental())
         layout.addStretch(1)
 
         self._retune()
@@ -171,6 +179,101 @@ class DiagnosticsPage(Page):
         )
         return holder
 
+    def _build_application_log(self) -> QWidget:
+        """§10.9's first omitted card: **what this application saw**, as distinct from what the
+        receiver logged.
+
+        The two are different records and the page carries both, because the question "did the
+        receiver drop out" and the question "did we lose the port" look identical from the outside
+        and have completely different answers.
+        """
+        holder, holder_layout = card("Application log")
+        row = QHBoxLayout()
+        self._log_path = label(str(log_directory()), "device")
+        self._log_path.setWordWrap(True)
+        row.addWidget(self._log_path, 1)
+        self._show_folder = QPushButton("Show log folder")
+        self._show_folder.setAccessibleName("Open the folder this application logs into")
+        self._show_folder.clicked.connect(self.open_log_folder)
+        row.addWidget(self._show_folder)
+        holder_layout.addLayout(row)
+        holder_layout.addWidget(
+            label(
+                "The port opening, the settings auto-detect settled on, every connection change, "
+                "and the receiver's mode and satellite count whenever they move.",
+                "tertiary",
+            )
+        )
+        return holder
+
+    def _build_experimental(self) -> QWidget:
+        """§8.5's card. Present only while the Settings switch is on.
+
+        **Exactly six, fixed on every model**, and each runs on explicit click — never on a poll
+        timer. Results are shown as raw text and any SCPI error is displayed rather than swallowed:
+        ``E-113`` is SCPI's *undefined header*, which for a card whose entire purpose is asking
+        undocumented questions is a result, and the most useful one available for five of the six.
+        """
+        holder, holder_layout = card("Undocumented read-only queries")
+        holder_layout.addWidget(
+            label(
+                "These are present in the receiver's command parser but absent from the published "
+                "manual. They may return errors or nonsense. No setting is changed.",
+                "caption",
+            )
+        )
+
+        self._experimental_rows: dict[str, QLabel] = {}
+        self._experimental_buttons: list[QPushButton] = []
+        for command in catalog.EXPERIMENTAL:
+            row = QHBoxLayout()
+            name = label(command.mnemonic, "device")
+            row.addWidget(name)
+            answer = label(DASH, "device")
+            answer.setWordWrap(True)
+            self._experimental_rows[command.mnemonic] = answer
+            row.addWidget(answer, 1)
+            run = QPushButton("Run")
+            run.setAccessibleName(f"Run {command.mnemonic}")
+            run.clicked.connect(lambda _checked=False, c=command: self._run_experimental(c))
+            self._experimental_buttons.append(run)
+            row.addWidget(run)
+            holder_layout.addLayout(row)
+
+        holder.setVisible(False)
+        self._experimental_card = holder
+        return holder
+
+    def set_experimental_visible(self, shown: bool) -> None:
+        """§8.5's opt-in. The card is added and removed rather than merely greyed, so a switch
+        that is off leaves nothing for a keyboard user to tab into."""
+        self._experimental_card.setVisible(shown)
+
+    def _run_experimental(self, command: ScpiCommand) -> None:
+        runner = self._runner
+        if runner is None:
+            return
+        self._experimental_rows[command.mnemonic].setText("Running…")
+        runner.run([(command, None)], self._absorb_experimental)
+
+    def _absorb_experimental(self, outcomes: Sequence[CommandOutcome]) -> None:
+        for outcome in outcomes:
+            row = self._experimental_rows.get(outcome.command.mnemonic)
+            if row is None:
+                continue
+            if outcome.transaction is None:
+                row.setText("no answer")
+                continue
+            # Raw text, and any SCPI error displayed rather than swallowed.
+            row.setText(_experimental_answer(outcome.transaction))
+
+    def open_log_folder(self) -> str:
+        """Open the log folder in the desktop's file manager, and return the path either way."""
+        path = log_directory()
+        path.mkdir(parents=True, exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(path)))
+        return str(path)
+
     # -- Wiring ----------------------------------------------------------------------------------
 
     def set_command_runner(self, runner: CommandRunner | None) -> None:
@@ -187,6 +290,8 @@ class DiagnosticsPage(Page):
     def _retune(self) -> None:
         live = self._runner is not None and self._runner.is_connected
         for button in (self._run, self._refresh_log, self._clear_log, self._read_errors):
+            button.setEnabled(live)
+        for button in self._experimental_buttons:
             button.setEnabled(live)
 
     # -- Reading ---------------------------------------------------------------------------------
@@ -376,6 +481,30 @@ class DiagnosticsPage(Page):
     @property
     def subsystem_box(self) -> QComboBox:
         return self._subsystem
+
+
+def _experimental_answer(transaction: Transaction) -> str:
+    """What §8.5's card shows for one query.
+
+    **A body is shown verbatim.** Where there is none, the receiver answered with the prompt
+    alone, and the prompt's ``E-nnn`` token is what §8.5 expects for five of the six — SCPI's
+    *undefined header*, which for a card whose purpose is asking undocumented questions is a
+    result rather than a failure.
+
+    **It is worded as the queue's state, not as this query's answer.** §7.2 measured the
+    difference: with a single error queued, three successive commands that each succeeded and
+    returned correct data all carried an ``E-113`` prompt, because the prompt names the *newest
+    queued* error while ``:SYST:ERR?`` returns the oldest first. Writing "this returned E-113"
+    would be a claim the prompt does not support.
+    """
+    body = transaction.text.strip()
+    if body:
+        return body
+
+    token = transaction.prompt_status
+    if token:
+        return f"no answer; the receiver's error queue reported {token}"
+    return "no answer"
 
 
 def _severity_of(entry: DiagnosticLogEntry) -> Severity:

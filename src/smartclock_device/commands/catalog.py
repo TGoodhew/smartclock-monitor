@@ -608,6 +608,59 @@ ARC_MINUTES: Final = (0, 59)
 ARC_SECONDS: Final = (0.0, 59.999)
 HEIGHT_METRES: Final = (-1000.00, 18000.00)
 
+# ---- §8.5's experimental queries -----------------------------------------------------------------
+#
+# **Query-only, and this list is fixed at exactly six.** The keywords come from the Z3801A firmware
+# string dump named in §16 — a *sibling* model — so being in that dump means the node exists in that
+# firmware's parser and says nothing about any other. Run against the bench Z3805A on 20 Aug 2026,
+# five of the six answered E-113 and the error queue held exactly five entries afterwards.
+#
+# **E-113 is an answer, not a failure.** It is SCPI's *undefined header*: the node is not in this
+# firmware's parser. For a card whose entire purpose is asking undocumented questions, "this
+# receiver does not have that one" is a result, and the most useful one available for five of six.
+#
+# **The list is not filtered to what the connected receiver supports.** The application would have
+# to probe all six to know, which is what the card does anyway; a list that changed shape by model
+# would make the specification's "exactly" untrue; and a user who opted into asking undocumented
+# questions is owed the answer rather than a shorter list.
+
+EXPERIMENTAL: Final[tuple[ScpiCommand, ...]] = (
+    ScpiCommand(
+        mnemonic=":DIAG:ROSC:EFC:ABS?",
+        # Answers +436061 on the bench receiver while the documented relative query returns
+        # -16.83 per cent at the same moment. **Nothing states the units of the first, and nothing
+        # may assume them**: it is shown as raw text and no part of the application computes
+        # anything from it.
+        summary="Oscillator EFC, absolute — units undocumented",
+        response=ResponseFormat.TEXT,
+    ),
+    ScpiCommand(
+        mnemonic=":DIAG:ROSC:EFC:TCO?",
+        summary="Oscillator EFC temperature coefficient — undocumented",
+        response=ResponseFormat.TEXT,
+    ),
+    ScpiCommand(
+        mnemonic=":SYST:STAT:SLOG?",
+        summary="System status short log — undocumented",
+        response=ResponseFormat.TEXT,
+    ),
+    ScpiCommand(
+        mnemonic=":DIAG:STAC?",
+        summary="Diagnostic stack — undocumented",
+        response=ResponseFormat.TEXT,
+    ),
+    ScpiCommand(
+        mnemonic=":DIAG:PROC?",
+        summary="Diagnostic process information — undocumented",
+        response=ResponseFormat.TEXT,
+    ),
+    ScpiCommand(
+        mnemonic=":DIAG:MEM?",
+        summary="Diagnostic memory information — undocumented",
+        response=ResponseFormat.TEXT,
+    ),
+)
+
 #: Every catalogued command. **The allowlist.**
 ALL: Final[tuple[ScpiCommand, ...]] = (
     IDENTITY,
@@ -659,6 +712,7 @@ ALL: Final[tuple[ScpiCommand, ...]] = (
     ADOPT_SURVEYED_POSITION,
     RESTORE_LAST_POSITION,
     SET_SURVEY_ON_POWER_UP,
+    *EXPERIMENTAL,
 )
 
 _BY_MNEMONIC: Final[MappingProxyType[str, ScpiCommand]] = MappingProxyType(

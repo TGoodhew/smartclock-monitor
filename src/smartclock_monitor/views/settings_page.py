@@ -80,12 +80,14 @@ class SettingsPage(Page):
             "send — the catalog is the same allowlist every other page uses.",
             holder_layout,
         )
-        holder_layout.addWidget(
-            label(
-                "Undocumented read-only queries (§8.5) are not built yet, so there is no switch "
-                "for them here rather than one that toggles nothing.",
-                "tertiary",
-            )
+        # §8.5's own wording, verbatim — it is the one place a user is told what they are opting
+        # into, and paraphrasing a safety notice is how the guarantee drifts.
+        self._undocumented = self._switch(
+            "Undocumented read-only queries",
+            "Enable undocumented read-only queries. These are present in the receiver's command "
+            "parser but absent from the published manual. They may return errors or nonsense. "
+            "No setting is changed.",
+            holder_layout,
         )
         return holder
 
@@ -181,6 +183,7 @@ class SettingsPage(Page):
         self._settling = True
         try:
             self._console.setChecked(self._preferences.advanced_console)
+            self._undocumented.setChecked(self._preferences.undocumented_queries)
             self._alert.setChecked(self._preferences.alert_on_lock_loss)
             self._keep_running.setChecked(self._preferences.keep_running_when_closed)
         finally:
@@ -195,6 +198,7 @@ class SettingsPage(Page):
         self._preferences = replace(
             self._preferences,
             advanced_console=self._console.isChecked(),
+            undocumented_queries=self._undocumented.isChecked(),
             alert_on_lock_loss=self._alert.isChecked(),
             keep_running_when_closed=self._keep_running.isChecked(),
         )
@@ -209,6 +213,10 @@ class SettingsPage(Page):
     @property
     def console_switch(self) -> QCheckBox:
         return self._console
+
+    @property
+    def undocumented_switch(self) -> QCheckBox:
+        return self._undocumented
 
     @property
     def alert_switch(self) -> QCheckBox:
