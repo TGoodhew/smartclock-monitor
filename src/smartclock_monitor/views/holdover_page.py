@@ -52,6 +52,7 @@ from smartclock_monitor.services.session import CommandOutcome
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
+from smartclock_monitor.views.capability import gate
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.pages import DASH, FieldGrid, Page, card, label
 from smartclock_monitor.widgets.severity_pill import SeverityPill
@@ -209,10 +210,18 @@ class HoldoverPage(Page):
 
     def _retune(self) -> None:
         live = self._runner is not None and self._runner.is_connected
-        for button in (self._force, self._recover, self._ignore):
-            button.setEnabled(live)
-        # Apply stays disabled while the limit is unread — there being nothing to apply.
-        self._apply.setEnabled(live and self._limit_known)
+        driver = self._runner.driver if live and self._runner is not None else None
+
+        # §9.11 through §12's seam: a family without a command gets a greyed control and a
+        # sentence naming it, not a missing control and not a crash on navigation.
+        gate(self._force, driver, catalog.HOLDOVER_FORCE)
+        gate(self._recover, driver, catalog.HOLDOVER_RECOVER)
+        gate(self._ignore, driver, catalog.HOLDOVER_IGNORE_RECOVERY_LIMIT)
+
+        # Apply stays disabled while the limit is unread — there being nothing to apply — and
+        # the capability gate is asked first, so "this family cannot" outranks "nothing read yet".
+        if gate(self._apply, driver, catalog.SET_HOLDOVER_DURATION_THRESHOLD):
+            self._apply.setEnabled(self._limit_known)
 
     # -- Reading ---------------------------------------------------------------------------------
 

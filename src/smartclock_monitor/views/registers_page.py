@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 )
 
 from smartclock_device.commands import catalog
+from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.models import status_register_map as registers
 from smartclock_device.models.status_register_map import StatusRegisterMap
 from smartclock_device.models.status_register_reading import StatusRegisterReading
@@ -43,6 +44,7 @@ from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.session import CommandOutcome
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
+from smartclock_monitor.views.capability import gate
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.pages import DASH, Page, card, label
 
@@ -155,8 +157,13 @@ class StatusRegistersPage(Page):
 
     def _retune(self) -> None:
         live = self._runner is not None and self._runner.is_connected
-        self._refresh.setEnabled(live)
-        self._apply.setEnabled(live and self._reading.has_any_value)
+        driver = self._runner.driver if live and self._runner is not None else None
+
+        gate(self._refresh, driver, *[command for command, _ in self._field_queries()])
+        # Every mask setter, not any: a control whose action sends three commands and can send two
+        # would do half of what it says.
+        if gate(self._apply, driver, *catalog.REGISTER_SETTERS):
+            self._apply.setEnabled(self._reading.has_any_value)
         self._discard.setEnabled(self._reading.has_any_value)
 
     # -- Reading ---------------------------------------------------------------------------------
@@ -167,21 +174,23 @@ class StatusRegistersPage(Page):
         self._rebuild()
         self.refresh()
 
+    def _field_queries(self) -> list[tuple[ScpiCommand, object]]:
+        root = f":STAT:{self._register.node}"
+        found: list[tuple[ScpiCommand, object]] = []
+        for field, _ in catalog.REGISTER_FIELDS:
+            command = catalog.register_query(root, field)
+            if command is not None:
+                found.append((command, None))
+        return found
+
     def refresh(self) -> None:
         """Read all five fields of the selected register."""
         runner = self._runner
         if runner is None or not runner.is_connected:
             return
 
-        root = f":STAT:{self._register.node}"
-        commands = []
-        for field, _ in catalog.REGISTER_FIELDS:
-            command = catalog.register_query(root, field)
-            if command is not None:
-                commands.append((command, None))
-
         self._summary.setText("Reading…")
-        runner.run(commands, self._absorb)
+        runner.run(self._field_queries(), self._absorb)
 
     def _absorb(self, outcomes: Sequence[CommandOutcome]) -> None:
         """Fold the five answers in.

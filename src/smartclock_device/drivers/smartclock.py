@@ -14,6 +14,7 @@ from typing import Final
 from smartclock_device.clock import Clock
 from smartclock_device.commands import catalog
 from smartclock_device.commands.blocked import is_blocked as _is_blocked
+from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import Cadence, PollPlan
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.parsing.scalars import (
@@ -59,6 +60,15 @@ class SmartClockDriver:
     def is_allowed(self, mnemonic: str | None) -> bool:
         """The point-of-send allowlist check (§8.1)."""
         return catalog.is_allowed(mnemonic)
+
+    def supports(self, command: ScpiCommand) -> bool:
+        """This family's catalog **is** the SmartClock catalog, so membership is the answer.
+
+        Compared by mnemonic rather than by identity: a command object built elsewhere that names
+        a catalogued mnemonic is the same command, and one that does not is not this family's
+        however it was constructed.
+        """
+        return catalog.is_allowed(command.mnemonic)
 
     def is_blocked(self, mnemonic: str | None) -> bool:
         """§8.4, routed through the driver so the application never imports the module itself."""

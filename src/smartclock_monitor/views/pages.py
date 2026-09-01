@@ -60,6 +60,7 @@ from smartclock_monitor.services.trend_store import (
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
+from smartclock_monitor.views.capability import gate
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.manage_satellites import ask_to_manage, parse_exclusions
 from smartclock_monitor.widgets import sky_image
@@ -415,8 +416,19 @@ class SatellitesPage(Page):
     def set_command_runner(self, runner: CommandRunner | None) -> None:
         self._runner = runner
         live = runner is not None and runner.is_connected
-        self._apply_mask.setEnabled(live)
-        self._manage.setEnabled(live)
+        driver = runner.driver if live and runner is not None else None
+
+        gate(self._apply_mask, driver, catalog.SET_ELEVATION_MASK)
+        # §12's #304 keeps the manage dialog's own five lookups as assertions, gated by the same
+        # five on the button: the dialog may assume what the button already checked.
+        gate(
+            self._manage,
+            driver,
+            catalog.EXCLUDED_SATELLITES,
+            catalog.EXCLUDE_SATELLITES,
+            catalog.EXCLUDE_ALL_SATELLITES,
+            catalog.CLEAR_EXCLUSIONS,
+        )
         if live:
             self.refresh_exclusions()
 
@@ -660,9 +672,12 @@ class PositionPage(_FieldsExport, Page):
     def set_command_runner(self, runner: CommandRunner | None) -> None:
         self._runner = runner
         live = runner is not None and runner.is_connected
-        for button in (self._start_survey, self._adopt, self._cancel_survey):
-            button.setEnabled(live)
-        self._on_power_up.setEnabled(live)
+        driver = runner.driver if live and runner is not None else None
+
+        gate(self._start_survey, driver, catalog.START_SURVEY)
+        gate(self._adopt, driver, catalog.ADOPT_SURVEYED_POSITION)
+        gate(self._cancel_survey, driver, catalog.RESTORE_LAST_POSITION)
+        gate(self._on_power_up, driver, catalog.SET_SURVEY_ON_POWER_UP)
         if live:
             self.refresh_survey()
 
@@ -911,8 +926,10 @@ class TimingPage(Page):
         self._cable.setEnabled(from_cable)
         self._length.setEnabled(from_cable)
         self._computed.setVisible(from_cable)
+
         live = self._runner is not None and self._runner.is_connected
-        self._apply_delay.setEnabled(live)
+        driver = self._runner.driver if live and self._runner is not None else None
+        gate(self._apply_delay, driver, catalog.SET_ANTENNA_DELAY)
         self._recompute_delay()
 
     def _recompute_delay(self) -> None:
