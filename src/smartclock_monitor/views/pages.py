@@ -20,12 +20,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
+    QCheckBox,
     QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
+    QProgressBar,
     QPushButton,
     QRadioButton,
     QSizePolicy,
@@ -39,7 +41,7 @@ from PySide6.QtWidgets import (
 from smartclock_device.commands import catalog
 from smartclock_device.models import antenna_cable, coordinates
 from smartclock_device.models.receiver_status import ReceiverStatus, SignalStrengthKind
-from smartclock_device.parsing.scalars import parse_decimal, parse_integer
+from smartclock_device.parsing.scalars import parse_decimal, parse_integer, parse_keyword
 from smartclock_monitor.services.allan import allan_deviation, summarise
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.drift import FIT_MARGIN, advise
@@ -514,6 +516,7 @@ class PositionPage(_FieldsExport, Page):
     title = "Position"
 
     def __init__(self, palette: Palette = LIGHT, parent: QWidget | None = None) -> None:
+        self._runner: CommandRunner | None = None
         super().__init__(palette, parent)
         layout = QVBoxLayout(self)
         layout.setSpacing(Spacing.MEDIUM)
@@ -524,8 +527,152 @@ class PositionPage(_FieldsExport, Page):
         )
         frame_layout.addWidget(self._fields)
         layout.addWidget(frame)
+        layout.addWidget(self._build_survey())
         layout.addStretch(1)
         self._exported = (("Position", self._fields),)
+
+    def _show_survey(self, status: ReceiverStatus) -> None:
+        """The progress bar and the receiver's own suspension reason."""
+        percent = status.survey_percent_complete
+        surveying = percent is not None
+        self._progress.setVisible(surveying)
+        if percent is not None:
+            self._progress.setValue(int(percent))
+
+        reason = status.survey_suspended_reason
+        if reason.name != "NONE":
+            # The receiver's own reason, not one inferred here (§11.3).
+            self._survey_note.setText(f"Suspended: {reason.name.replace('_', ' ').lower()}")
+        elif surveying:
+            self._survey_note.setText(f"Surveying — {percent:.1f} % complete.")
+        elif not self._survey_note.text():
+            self._survey_note.setText("Not surveying.")
+
+    def _build_survey(self) -> QFrame:
+        holder, holder_layout = card("Survey")
+
+        self._progress = QProgressBar()
+        self._progress.setRange(0, 100)
+        self._progress.setAccessibleName("How far through the survey the receiver is")
+        holder_layout.addWidget(self._progress)
+
+        # §10.6, amended by #316: **no remaining-time estimate.** The receiver reports a
+        # percentage and nothing else — there is no rate on the wire — so a time computed from a
+        # single percentage would be a guess presented as a measurement. What the line carries
+        # instead is the suspension reason, which the receiver does report (§11.3).
+        self._survey_note = label("", "caption")
+        self._survey_note.setWordWrap(True)
+        holder_layout.addWidget(self._survey_note)
+
+        buttons = QHBoxLayout()
+        self._start_survey = QPushButton("Start survey")
+        self._start_survey.setProperty("role", "destructive")
+        self._start_survey.clicked.connect(self._begin_survey)
+        self._adopt = QPushButton("Adopt computed position")
+        self._adopt.setProperty("role", "destructive")
+        self._adopt.clicked.connect(
+            lambda: self._send_survey_command(catalog.ADOPT_SURVEYED_POSITION)
+        )
+        self._cancel_survey = QPushButton("Cancel")
+        self._cancel_survey.setProperty("role", "destructive")
+        self._cancel_survey.clicked.connect(
+            lambda: self._send_survey_command(catalog.RESTORE_LAST_POSITION)
+        )
+        for button in (self._start_survey, self._adopt, self._cancel_survey):
+            buttons.addWidget(button)
+        buttons.addStretch(1)
+        holder_layout.addLayout(buttons)
+
+        self._on_power_up = QCheckBox("Survey on power-up")
+        self._on_power_up.setAccessibleName("Whether the receiver surveys when powered on")
+        self._on_power_up.clicked.connect(self._send_power_up)
+        holder_layout.addWidget(self._on_power_up)
+
+        holder_layout.addWidget(
+            label(
+                "Setting a position by hand is not offered yet: the command's argument format is "
+                "not stated in the guide this was written from, and guessing at one that changes "
+                "every timing solution is not worth the risk (issue #12).",
+                "tertiary",
+            )
+        )
+        return holder
+
+    # -- Survey -----------------------------------------------------------------------------------
+
+    def set_command_runner(self, runner: CommandRunner | None) -> None:
+        self._runner = runner
+        live = runner is not None and runner.is_connected
+        for button in (self._start_survey, self._adopt, self._cancel_survey):
+            button.setEnabled(live)
+        self._on_power_up.setEnabled(live)
+        if live:
+            self.refresh_survey()
+
+    def refresh_survey(self) -> None:
+        runner = self._runner
+        if runner is None or not runner.is_connected:
+            return
+        runner.run([(catalog.SURVEY_ON_POWER_UP, None)], self._absorb_survey)
+
+    def _absorb_survey(self, outcomes: Sequence[CommandOutcome]) -> None:
+        if not outcomes or outcomes[0].transaction is None:
+            return
+        answer = parse_keyword(outcomes[0].transaction.first_line)
+        if answer is None:
+            return
+        # §11.1: only a recognised answer moves the box. An unreadable one leaves it alone rather
+        # than clearing it, which would show a setting the user never made.
+        self._on_power_up.setChecked(answer in {"ON", "1"})
+
+    def _send_survey_command(self, command: object) -> None:
+        runner = self._runner
+        if runner is None:
+            return
+        if not ask(command, None, self._palette, self):  # type: ignore[arg-type]
+            return
+        runner.run([(command, None)], self._report)  # type: ignore[list-item]
+
+    def _begin_survey(self) -> None:
+        self._send_survey_command(catalog.START_SURVEY)
+
+    def _send_power_up(self) -> None:
+        runner = self._runner
+        if runner is None:
+            return
+        wanted = "ON" if self._on_power_up.isChecked() else "OFF"
+        if not ask(catalog.SET_SURVEY_ON_POWER_UP, wanted, self._palette, self):
+            # Put the box back: the user declined, and a box that stayed moved would show a
+            # setting the receiver does not have.
+            self._on_power_up.setChecked(not self._on_power_up.isChecked())
+            return
+        runner.run([(catalog.SET_SURVEY_ON_POWER_UP, wanted)], lambda _o: self.refresh_survey())
+
+    def _report(self, outcomes: Sequence[CommandOutcome]) -> None:
+        """Say what happened, and attach §10.6's advice to −300 **only**.
+
+        #229: a receiver already holding a position refuses ``:GPS:POS:SURV:STAT ONCE`` with −300,
+        and no command in §8.2 or in any of the three family manuals releases the hold — the route
+        is survey-on-power-up, which is the checkbox above. A timeout or any other code gets the
+        receiver's own words and nothing added: −300 is device-specific by definition and the
+        receiver has not said why, so offering this explanation for the wrong failure would send
+        someone to power-cycle an instrument over a loose cable.
+        """
+        if not outcomes:
+            return
+        outcome = outcomes[0]
+        if outcome.succeeded:
+            self._survey_note.setText("Sent.")
+            return
+
+        error = outcome.error or (outcome.refusal.reason if outcome.refusal else "")
+        if error and error.lstrip("+").startswith("-300"):
+            self._survey_note.setText(
+                f"{error} — a receiver already holding a position refuses this, and nothing "
+                f"releases the hold. Tick 'Survey on power-up' and power-cycle the receiver."
+            )
+        else:
+            self._survey_note.setText(error or "The receiver did not answer.")
 
     def show_reading(self, reading: Reading) -> None:
         status = reading.status
@@ -562,6 +709,7 @@ class PositionPage(_FieldsExport, Page):
             else f"{status.survey_percent_complete:.1f} %",
         )
         self._fields.set("Suspended", status.survey_suspended_reason.name.replace("_", " ").title())
+        self._show_survey(status)
 
 
 # ---- §10.7 Timing -------------------------------------------------------------------------------
