@@ -143,3 +143,63 @@ def test_the_icon_draws_the_same_shapes_as_everything_else(severity: Severity) -
     # nothing, which is what the type: ignore in this function was hiding.
     drawn = icon.pixmap(32, 32).toImage()
     assert any(drawn.pixelColor(x, y).alpha() > 0 for x in range(0, 32, 4) for y in range(0, 32, 4))
+
+
+# ---- P1-6's other half: always on top ----------------------------------------------------------
+
+
+def test_always_on_top_is_off_by_default() -> None:
+    """A window that outranks everything else is a decision about the *desktop* rather than about
+    this application, and §9.1's user has a spectrum analyser to look at too."""
+    assert Preferences().always_on_top is False
+    assert MainWindow(Theme.DARK).is_always_on_top is False
+
+
+def test_the_preference_raises_and_lowers_the_window() -> None:
+    window = MainWindow(Theme.DARK)
+
+    window.set_always_on_top(True)
+    assert window.is_always_on_top is True
+
+    window.set_always_on_top(False)
+    assert window.is_always_on_top is False
+
+
+def test_a_visible_window_stays_visible_across_the_change() -> None:
+    """Changing this flag makes Qt drop a visible window — it vanishes and does not come back on
+    its own, which reads as a crash."""
+    window = MainWindow(Theme.DARK)
+    window.show()
+
+    window.set_always_on_top(True)
+
+    assert window.isVisible() is True
+    window.close()
+
+
+def test_a_hidden_window_is_not_brought_back() -> None:
+    """§10.3.1 hides it on close deliberately, and a preference change is not a request to bring
+    it back — which re-showing unconditionally would make it."""
+    window = MainWindow(Theme.DARK)
+    window.hide()
+
+    window.set_always_on_top(True)
+
+    assert window.isVisible() is False
+
+
+def test_setting_it_to_what_it_already_is_does_nothing() -> None:
+    """Qt drops the window on a flag change, so a no-op change would still flicker it."""
+    window = MainWindow(Theme.DARK)
+    window.show()
+    window.set_always_on_top(False)
+
+    assert window.isVisible() is True
+    window.close()
+
+
+def test_the_settings_switch_drives_it() -> None:
+    page = SettingsPage()
+    page.on_top_switch.setChecked(True)
+
+    assert page.preferences.always_on_top is True
