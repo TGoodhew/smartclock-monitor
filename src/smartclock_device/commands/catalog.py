@@ -161,10 +161,14 @@ LIFETIME_HOURS: Final = ScpiCommand(
 
 # ---- §10.8 Holdover ----------------------------------------------------------------------------
 
+#: **A value list, not a bare decimal**, and that was found by asking the receiver: it answers
+#: ``+7.80000E+001,0`` — the figure and a validity flag. ``parse_decimal`` returns ``None`` for
+#: that, so the page would have shown a dash for a value the receiver had given it. The same shape
+#: applies to both uncertainty queries below.
 HOLDOVER_DURATION: Final = ScpiCommand(
     mnemonic=":SYNC:HOLD:DUR?",
     summary="How long the receiver has been in holdover",
-    response=ResponseFormat.DECIMAL,
+    response=ResponseFormat.VALUE_LIST,
     unit="s",
 )
 
@@ -187,14 +191,14 @@ HOLDOVER_DURATION_EXCEEDED: Final = ScpiCommand(
 HOLDOVER_UNCERTAINTY_PREDICTED: Final = ScpiCommand(
     mnemonic=":SYNC:HOLD:TUNC:PRED?",
     summary="Predicted 24 hour holdover uncertainty",
-    response=ResponseFormat.DECIMAL,
+    response=ResponseFormat.VALUE_LIST,
     unit="s",
 )
 
 HOLDOVER_UNCERTAINTY_PRESENT: Final = ScpiCommand(
     mnemonic=":SYNC:HOLD:TUNC:PRES?",
     summary="Present holdover time error",
-    response=ResponseFormat.DECIMAL,
+    response=ResponseFormat.VALUE_LIST,
     unit="s",
 )
 
@@ -244,10 +248,12 @@ LEAP_DURATION: Final = ScpiCommand(
     unit="s",
 )
 
+#: Answers ``0`` rather than a keyword — asked, and it did. A KEYWORD format here would have had
+#: the page render the string "0" as though it were a state name.
 LEAP_STATE: Final = ScpiCommand(
     mnemonic=":PTIM:LEAP:STAT?",
     summary="Whether a leap second is pending",
-    response=ResponseFormat.KEYWORD,
+    response=ResponseFormat.BOOLEAN,
 )
 
 # ---- §10.10 Status registers -------------------------------------------------------------------

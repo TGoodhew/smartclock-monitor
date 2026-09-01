@@ -38,6 +38,7 @@ from smartclock_device.transport.settings import (
     StopBits,
 )
 from smartclock_monitor.platform.paths import trend_database
+from smartclock_monitor.services.commands import SessionCommands
 from smartclock_monitor.services.polling import PollingService, Reading
 from smartclock_monitor.services.replay import ReplayTransport
 from smartclock_monitor.services.session import DeviceSession
@@ -179,6 +180,8 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
     identity = session.identity
     named = identity.model if identity is not None else "receiver"
     window.set_connection_text(f"Connected to {named} — {session.description}")
+
+    window.set_command_runner(SessionCommands(session))
 
     service = PollingService(session=session, driver=driver, clock=clock)
     service.on_reading = _publish(window, store)
