@@ -68,3 +68,8 @@ RADII: Final[tuple[int, ...]] = (Radius.CONTROL, Radius.CARD)
 #: written for was in a non-button widget, which is why the floor is a number here rather than a
 #: property of one control.
 MINIMUM_POINTER_TARGET: Final = 32
+
+#: §9.12's touch floor, for the modes this application does not have (#186). Named because §10.5's
+#: tables meet it deliberately: they are the compliant alternate to a control that can meet neither
+#: floor, so that argument should rest on the stronger number rather than the one it needs.
+MINIMUM_TOUCH_TARGET: Final = 40
