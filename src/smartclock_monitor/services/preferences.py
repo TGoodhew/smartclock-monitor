@@ -42,8 +42,8 @@ class Preferences:
     #: §10.11's console. Off — it reveals a surface a user has to go looking for.
     advanced_console: bool = False
 
-    #: §8.5's queries. Off, for the same reason; and that card is not built here yet, so the switch
-    #: says so rather than toggling nothing.
+    #: §8.5's queries. Off for the same reason, and §8.5 says so itself: they may return errors or
+    #: nonsense, and a user who has not asked for them should not meet them.
     undocumented_queries: bool = False
 
     #: P1-9. **On**, because it exists precisely for the user who is *not* looking.
@@ -56,6 +56,10 @@ class Preferences:
     #: Off. An application that starts with no window is indistinguishable from one that failed to
     #: start.
     start_in_notification_area: bool = False
+
+    #: P1-6. Off, because a window that outranks everything else is a decision about the *desktop*
+    #: rather than about this application, and §9.1's user has a spectrum analyser to look at too.
+    always_on_top: bool = False
 
 
 DEFAULTS: Final = Preferences()

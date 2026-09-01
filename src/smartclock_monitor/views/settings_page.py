@@ -13,6 +13,10 @@ Two of §10.13's rows are not switches here, and each says why on screen:
   D3 makes about high contrast.
 - **Start in the notification area** needs a tray, which is issue #6's decision and not settled.
 
+**Keep running when I close the window is disabled where there is no notification area**, rather
+than left enabled to do something that would strand the user — §10.3.1's hide is only safe where
+there is a way back to the window.
+
 **Poll cadences are deliberately not offered**, and that is a refusal rather than a gap. §7.3 fixes
 them at 1 s and 10 s and §12 gives the poller sole ownership of both, so a switch here would
 contradict two sections rather than implement one. Making them user-visible is an amendment to §7.3
@@ -46,6 +50,7 @@ class SettingsPage(Page):
         layout = QVBoxLayout(self)
         layout.setSpacing(Spacing.MEDIUM)
         layout.addWidget(self._build_advanced())
+        layout.addWidget(self._build_appearance())
         layout.addWidget(self._build_alerts())
         layout.addWidget(self._build_background())
         layout.addWidget(self._build_not_here())
@@ -145,6 +150,17 @@ class SettingsPage(Page):
         if self.on_exit is not None:
             self.on_exit()
 
+    def _build_appearance(self) -> QFrame:
+        holder, holder_layout = card("Appearance")
+        self._on_top = self._switch(
+            "Keep the window above others",
+            "Off by default: a window that outranks everything else is a decision about the "
+            "desktop rather than about this application, and there is usually a spectrum "
+            "analyser to look at too.",
+            holder_layout,
+        )
+        return holder
+
     def _build_not_here(self) -> QFrame:
         holder, holder_layout = card("Not here, and why")
         for text in (
@@ -184,6 +200,7 @@ class SettingsPage(Page):
         try:
             self._console.setChecked(self._preferences.advanced_console)
             self._undocumented.setChecked(self._preferences.undocumented_queries)
+            self._on_top.setChecked(self._preferences.always_on_top)
             self._alert.setChecked(self._preferences.alert_on_lock_loss)
             self._keep_running.setChecked(self._preferences.keep_running_when_closed)
         finally:
@@ -199,6 +216,7 @@ class SettingsPage(Page):
             self._preferences,
             advanced_console=self._console.isChecked(),
             undocumented_queries=self._undocumented.isChecked(),
+            always_on_top=self._on_top.isChecked(),
             alert_on_lock_loss=self._alert.isChecked(),
             keep_running_when_closed=self._keep_running.isChecked(),
         )
@@ -217,6 +235,10 @@ class SettingsPage(Page):
     @property
     def undocumented_switch(self) -> QCheckBox:
         return self._undocumented
+
+    @property
+    def on_top_switch(self) -> QCheckBox:
+        return self._on_top
 
     @property
     def alert_switch(self) -> QCheckBox:

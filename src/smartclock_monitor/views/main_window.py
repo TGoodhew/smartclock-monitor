@@ -307,6 +307,26 @@ class MainWindow(QMainWindow):
 
     # -- §9.6.2's compact mode -------------------------------------------------------------------
 
+    def set_always_on_top(self, on_top: bool) -> None:
+        """P1-6's other half: keep the window above others.
+
+        **Re-shown afterwards, and only when it already was.** Changing this flag on a visible
+        window makes Qt drop it — the window vanishes and does not come back on its own, which
+        reads as a crash. Re-showing one that was hidden would be worse: §10.3.1 hides it on close
+        deliberately, and a preference change is not a request to bring it back.
+        """
+        if bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint) == on_top:
+            return
+
+        was_visible = self.isVisible()
+        self.setWindowFlag(Qt.WindowType.WindowStaysOnTopHint, on_top)
+        if was_visible:
+            self.show()
+
+    @property
+    def is_always_on_top(self) -> bool:
+        return bool(self.windowFlags() & Qt.WindowType.WindowStaysOnTopHint)
+
     def set_compact(self, compact: bool) -> None:
         """§9.6.2's compact state: a 64 px medallion, the mode text, and nothing else.
 
@@ -529,6 +549,7 @@ class MainWindow(QMainWindow):
         """§10.13: a write that fails is not reported. A preference is by definition something the
         user can set again, and nothing load-bearing lives in one of these files."""
         self._preferences = updated
+        self.set_always_on_top(updated.always_on_top)
         preferences.save(updated)
         if self.on_preferences_changed is not None:
             self.on_preferences_changed(updated)
