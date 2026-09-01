@@ -48,6 +48,7 @@ from smartclock_monitor.services.session import DeviceSession
 from smartclock_monitor.services.supervisor import Supervisor
 from smartclock_monitor.services.trend_store import TrendStore, TrendStoreError
 from smartclock_monitor.themes.tokens import Theme
+from smartclock_monitor.views.connection_dialog import ConnectionChoice
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -192,9 +193,25 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         watch, "enabled", updated.alert_on_lock_loss
     )
 
+    #: What the next attempt should use. Mutable, because §10.12's dialog can change it while the
+    #: supervisor is running — the cycle re-reads it on every attempt rather than capturing it
+    #: once, which is the difference between a Connect button and a restart.
+    chosen: dict[str, object] = {
+        "port": arguments.port,
+        "settings": None if arguments.auto_detect else settings_from(arguments),
+    }
+
+    def take(choice: ConnectionChoice) -> None:
+        chosen["port"] = choice.port
+        chosen["settings"] = choice.settings
+        supervisor.stay_connected = choice.reconnect_automatically
+        supervisor.reconnect()
+
+    window.on_connection_chosen = take
+
     async def connect() -> DeviceSession | None:
         """One connection attempt. Called again by the supervisor after every drop."""
-        if arguments.demo or not arguments.port:
+        if arguments.demo or not chosen["port"]:
             window.set_connection_text("Demo — replaying captured status screens")
             session = DeviceSession(ReplayTransport(clock), driver, clock)
             try:
@@ -205,7 +222,13 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
                 return None
             return session
 
-        return await _connect_serial(arguments, driver, clock, window)
+        return await _connect_serial(
+            str(chosen["port"]),
+            chosen["settings"],  # type: ignore[arg-type]
+            driver,
+            clock,
+            window,
+        )
 
     def announce(session: DeviceSession | None) -> None:
         """Rewire the window as sessions come and go.
@@ -243,7 +266,11 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
 
 
 async def _connect_serial(
-    arguments: argparse.Namespace, driver: object, clock: SystemClock, window: object
+    port: str,
+    settings: SerialSettings | None,
+    driver: object,
+    clock: SystemClock,
+    window: object,
 ) -> DeviceSession | None:
     """Open the named port, walking §7.1's sequence if asked to.
 
@@ -262,18 +289,17 @@ async def _connect_serial(
         return SerialTransport(port, settings)
 
     try:
-        if not arguments.auto_detect:
-            settings = settings_from(arguments)
-            window.set_connection_text(f"Connecting to {arguments.port} @ {settings}…")
-            return await open_with(arguments.port, settings, driver, clock, build)
+        if settings is not None:
+            window.set_connection_text(f"Connecting to {port} @ {settings}…")
+            return await open_with(port, settings, driver, clock, build)
 
         found = await detect(
-            arguments.port,
+            port,
             driver,
             clock,
             build,
-            on_progress=lambda settings, index, total: window.set_connection_text(
-                f"Trying {settings} on {arguments.port} — {index} of {total}…"
+            on_progress=lambda candidate, index, total: window.set_connection_text(
+                f"Trying {candidate} on {port} — {index} of {total}…"
             ),
         )
     except TransportError as error:
@@ -283,8 +309,7 @@ async def _connect_serial(
     if found is None:
         # Distinct from a port that would not open: the port was fine and nothing on it answered.
         window.set_connection_text(
-            f"Nothing answered on {arguments.port} at any of "
-            f"{len(AUTO_DETECT_SEQUENCE)} known settings."
+            f"Nothing answered on {port} at any of {len(AUTO_DETECT_SEQUENCE)} known settings."
         )
         return None
 

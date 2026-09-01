@@ -269,3 +269,95 @@ def test_stop_retrying_ends_the_cycle() -> None:
         assert task.done() is True
 
     asyncio.run(run())
+
+
+# ---- A deliberate reconnect (§10.12's Connect button) --------------------------------------------
+
+
+def test_reconnecting_skips_the_countdown() -> None:
+    """Asked for, so no penalty: the next attempt is the first one. A user who has just picked a
+    port should not wait out a backoff earned by a previous failure."""
+    attempts = 0
+    said: list[str] = []
+
+    async def run() -> None:
+        nonlocal attempts
+
+        async def connect() -> DeviceSession | None:
+            nonlocal attempts
+            attempts += 1
+            session = await a_session()
+            session._state = ConnectionState.LOST
+            return session
+
+        supervisor = Supervisor(
+            connect=connect,
+            driver=SmartClockDriver(clock=clock()),
+            clock=clock(),
+            on_status=said.append,
+            # A punishing backoff, so anything that waits it out fails this test.
+            backoff=lambda _attempt: 30,
+        )
+        task = asyncio.ensure_future(supervisor.run())
+        await asyncio.sleep(0.2)
+
+        before = attempts
+        supervisor.reconnect()
+        await asyncio.sleep(0.3)
+
+        assert attempts > before, "it waited out a backoff it had been told to skip"
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+
+
+def test_a_deliberate_reconnect_is_not_reported_as_a_fault() -> None:
+    """Closing the transport under a live poll is exactly the case the transport reports as a
+    removal. Telling a user who has just pressed Connect that their adapter "was disconnected"
+    would be the application misreading its own instruction."""
+    said: list[str] = []
+
+    async def run() -> None:
+        async def connect() -> DeviceSession | None:
+            return await a_session()
+
+        supervisor = Supervisor(
+            connect=connect,
+            driver=SmartClockDriver(clock=clock()),
+            clock=clock(),
+            on_status=said.append,
+            backoff=lambda _attempt: 0,
+        )
+        task = asyncio.ensure_future(supervisor.run())
+        await asyncio.sleep(0.2)
+
+        supervisor.reconnect()
+        await asyncio.sleep(0.3)
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+
+    assert any("Reconnecting" in line for line in said)
+    assert not any("disconnected" in line for line in said)
+    assert not any("Lost the connection" in line for line in said)
+
+
+def test_reconnecting_clears_a_stop() -> None:
+    """Pressing Connect after Stop retrying must work. The two controls are not modes."""
+    supervisor = Supervisor(
+        connect=lambda: _none(), driver=SmartClockDriver(clock=clock()), clock=clock()
+    )
+    supervisor.stop_retrying()
+    supervisor.reconnect()
+
+    assert supervisor._stopped is False
+
+
+async def _none() -> DeviceSession | None:
+    return None

@@ -22,6 +22,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QComboBox,
+    QDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -48,6 +49,7 @@ from smartclock_monitor.themes.qss import stylesheet
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import ALL_THEMES, Theme, palette_for
+from smartclock_monitor.views.connection_dialog import ConnectionChoice, ConnectionDialog
 from smartclock_monitor.views.details_window import DetailsWindow
 from smartclock_monitor.widgets.medallion import StatusMedallion
 from smartclock_monitor.widgets.severity_pill import SeverityPill
@@ -172,6 +174,11 @@ class MainWindow(QMainWindow):
         self._retry.clicked.connect(self.retry_now)
         self._retry.setVisible(False)
 
+        self._connect_button = QPushButton("Connect…")
+        self._connect_button.setAccessibleName("Choose a port and connect")
+        self._connect_button.setToolTip("Choose a serial port and connect (Ctrl+Shift+C)")
+        self._connect_button.clicked.connect(self.choose_connection)
+
         self._details_button = QPushButton("Details…")
         self._details_button.setAccessibleName("Open the details window")
         self._details_button.setToolTip("Satellites, position and timing (Ctrl+D)")
@@ -183,7 +190,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("F5"), self, lambda: self._in_details("refresh_current"))
         QShortcut(QKeySequence("Ctrl+E"), self, lambda: self._in_details("export_current"))
         QShortcut(QKeySequence("Ctrl+,"), self, lambda: self._in_details("show_settings"))
-        QShortcut(QKeySequence("Ctrl+Shift+C"), self, self.retry_now)
+        QShortcut(QKeySequence("Ctrl+Shift+C"), self, self.choose_connection)
 
         self._theme_picker = QComboBox()
         for available in ALL_THEMES:
@@ -231,6 +238,7 @@ class MainWindow(QMainWindow):
         header.setSpacing(Spacing.SMALL)
         header.addWidget(_label(APPLICATION_NAME, "title"))
         header.addStretch(1)
+        header.addWidget(self._connect_button)
         header.addWidget(self._retry)
         header.addWidget(self._details_button)
         header.addWidget(_label("Theme", "caption"))
@@ -355,6 +363,29 @@ class MainWindow(QMainWindow):
         if details is None:
             return
         getattr(details, command)()
+
+    #: Set by whoever owns the window. Called with what the user chose in §10.12's dialog; it is
+    #: the owner that knows how to open a port, not the window.
+    on_connection_chosen: Callable[[ConnectionChoice], None] | None = None
+
+    def choose_connection(self) -> ConnectionChoice | None:
+        """§10.12's dialog. Returns what was chosen, or ``None`` if the user cancelled."""
+        dialog = ConnectionDialog(palette_for(self._theme), self)
+        if dialog.exec() != QDialog.DialogCode.Accepted:
+            return None
+
+        choice = dialog.choice()
+        if choice is None:
+            return None
+
+        self.set_connection_text(
+            f"Connecting to {choice.port}"
+            + ("" if choice.is_automatic else f" @ {choice.settings}")
+            + "…"
+        )
+        if self.on_connection_chosen is not None:
+            self.on_connection_chosen(choice)
+        return choice
 
     def retry_now(self) -> None:
         if self._supervisor is not None:
