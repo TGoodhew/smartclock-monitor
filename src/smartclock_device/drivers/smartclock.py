@@ -72,6 +72,12 @@ class SmartClockDriver(QueryResponseDefaults):
         """
         return identity is not None and identity.receiver is not ReceiverModel.UNKNOWN
 
+    @property
+    def commands(self) -> tuple[ScpiCommand, ...]:
+        """This family's allowlist. §8.4's exclusions are not in it, because they are not in it —
+        the catalog has no entry for them to be filtered out of."""
+        return catalog.ALL
+
     def supports(self, command: ScpiCommand) -> bool:
         """This family's catalog **is** the SmartClock catalog, so membership is the answer.
 
