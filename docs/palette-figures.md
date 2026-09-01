@@ -12,7 +12,7 @@ them.** A derivation nobody can reproduce is an assertion.
 ## §9.4.4's sequential ramp, on the Dark card
 
 Issue [#9](https://github.com/TGoodhew/smartclock-monitor/issues/9), and
-[TGoodhew/WinZ3805A#1](https://github.com/TGoodhew/WinZ3805A/issues/1) — the same values are
+[TGoodhew/WinZ3805A#367](https://github.com/TGoodhew/WinZ3805A/issues/367) — the same values are
 resolved from one dictionary there, so the same defect is expected.
 
 §9.4.4 gives the ramp as **one** column of seven values, pale → dark teal, with no per-theme

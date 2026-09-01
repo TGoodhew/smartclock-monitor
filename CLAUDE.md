@@ -136,7 +136,7 @@ this project's house style would buy nothing and cost that.
 **`sequential.py` is the one addition**, and it is written in that repository's style rather
 than this one's, so the copy back is a copy. Every carried file is still byte-identical; the
 *directory* is not, and that is tracked as
-[TGoodhew/WinZ3805A#1](https://github.com/TGoodhew/WinZ3805A/issues/1). It derives §9.4.4's
+[TGoodhew/WinZ3805A#367](https://github.com/TGoodhew/WinZ3805A/issues/367). It derives §9.4.4's
 sequential ramp for a dark surface, which the specification does not provide. Figures in
 `docs/palette-figures.md`, re-checked by `validate.py`.
 

@@ -32,7 +32,7 @@ lightness, so used verbatim on the Dark card the encoding is exactly inverted. I
 
 **The same defect is expected upstream**, where the same values are resolved from one dictionary
 for both themes, and it is filed as
-[TGoodhew/WinZ3805A#1](https://github.com/TGoodhew/WinZ3805A/issues/1). Copying this file there
+[TGoodhew/WinZ3805A#367](https://github.com/TGoodhew/WinZ3805A/issues/367). Copying this file there
 restores the directory to identical. It is written in that repository's style, not this one's, so
 that the copy is a copy.
 

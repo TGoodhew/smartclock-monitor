@@ -80,7 +80,7 @@ This port derives a ramp for the dark surface instead. Figures in
 [`palette-figures.md`](palette-figures.md).
 
 **If WinZ3805A resolves `WzSequential1..7` from one dictionary in both themes, it has the same
-defect** — filed as [TGoodhew/WinZ3805A#1](https://github.com/TGoodhew/WinZ3805A/issues/1). This is
+defect** — filed as [TGoodhew/WinZ3805A#367](https://github.com/TGoodhew/WinZ3805A/issues/367). This is
 the one place a colour differs between the two repositories, and it is meant to stop differing.
 
 ---
