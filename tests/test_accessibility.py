@@ -365,3 +365,69 @@ def _qt_bases(name: str) -> list[str]:
     if kind is None:
         return [name]
     return [base.__name__ for base in kind.__mro__ if base.__name__.startswith("Q")]
+
+
+# ---- §10.3's outputs pill says which of the four states it is ------------------------------------
+
+
+def test_every_output_validity_gets_its_own_wording_and_severity() -> None:
+    """§11.1 calls the middle state *"the distinction between usable but drifting and do not use"*
+    and *"the single most important thing the main window has to convey"*.
+
+    It was falling through a catch-all and reporting **Outputs unknown** in neutral grey — the one
+    state where saying nothing is worst, rendered as if nothing had been read at all. Written as an
+    exhaustive match now, so a fifth state fails mypy rather than becoming grey.
+    """
+    from conftest import NOW
+    from smartclock_device.models.receiver_status import OutputValidity, ReceiverStatus
+    from smartclock_monitor.themes.severity import Severity
+    from smartclock_monitor.views.main_window import _outputs_state
+
+    seen: dict[OutputValidity, tuple[Severity, str]] = {}
+    for validity in OutputValidity:
+        seen[validity] = _outputs_state(ReceiverStatus(captured_at=NOW, outputs=validity))
+
+    assert len({text for _, text in seen.values()}) == len(OutputValidity), (
+        "two states share a wording, so one of them is unreportable"
+    )
+    assert seen[OutputValidity.VALID][0] is Severity.SUCCESS
+    assert seen[OutputValidity.INVALID][0] is Severity.CRITICAL
+    assert seen[OutputValidity.UNKNOWN][0] is Severity.NEUTRAL
+
+    # §9.4.1's caution row is "recovering, waiting, reduced accuracy, stale data" in as many words.
+    severity, text = seen[OutputValidity.VALID_REDUCED]
+    assert severity is Severity.CAUTION
+    assert "reduced" in text.lower()
+
+
+def test_the_theme_picker_is_wide_enough_to_name_the_theme() -> None:
+    """The shared QComboBox rule sets a 32 px min-width — a pointer floor, not a width for words.
+    In §10.3's header row this picker shrank to a single letter, so the control naming the current
+    theme did not name it."""
+    from smartclock_monitor.views.main_window import MAIN_MINIMUM, MainWindow
+
+    window = MainWindow(Theme.DARK)
+    # At §10.3's own minimum, which is where it broke: a wider window hides the crowding.
+    window.resize(*MAIN_MINIMUM)
+    window.show()
+    # The layout has not run until the event loop turns, and an unlaid-out widget reports its hint
+    # rather than its width — which is the number this test exists not to trust.
+    QApplication.processEvents()
+    try:
+        picker = window._theme_picker
+        longest = max(
+            (
+                picker.fontMetrics().horizontalAdvance(picker.itemText(index))
+                for index in range(picker.count())
+            ),
+            default=0,
+        )
+        # The **laid-out width**, not the size hint. The hint was already 142 px against a 97 px
+        # longest entry and stayed there while the header squeezed the control itself to 50 — so an
+        # assertion on the hint passed in exactly the state that put one letter on screen.
+        assert picker.width() >= longest, (
+            f"the picker is {picker.width()} px and its longest entry needs {longest}, "
+            f"so it cannot name the theme it is showing"
+        )
+    finally:
+        window.close()

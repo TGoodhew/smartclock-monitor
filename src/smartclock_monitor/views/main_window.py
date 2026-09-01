@@ -216,6 +216,13 @@ class MainWindow(QMainWindow):
             self._theme_picker.addItem(available.value.replace("-", " ").title(), available)
         self._theme_picker.setCurrentIndex(list(ALL_THEMES).index(theme))
         self._theme_picker.setAccessibleName("Theme")
+        # Sized from its own longest entry. The shared QComboBox rule sets a 32 px min-width, which
+        # is a pointer floor rather than a width for words: in the header row this picker shrank to
+        # a single letter, so the control naming the current theme did not name it.
+        self._theme_picker.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
+        self._theme_picker.setMinimumContentsLength(
+            max(len(self._theme_picker.itemText(index)) for index in range(len(ALL_THEMES)))
+        )
         self._theme_picker.currentIndexChanged.connect(self._on_theme_changed)
 
         self.setStatusBar(QStatusBar())
@@ -255,12 +262,19 @@ class MainWindow(QMainWindow):
 
         header = QHBoxLayout()
         header.setSpacing(Spacing.SMALL)
-        header.addWidget(_label(APPLICATION_NAME, "title"))
+
+        # **No in-window title.** §10.3's sketch has none: the name is the window's own title bar,
+        # which is where every other application on the desktop puts it. A QLabel carrying it here
+        # would not shrink below its own text, so at §10.3's 380 px minimum the layout took the
+        # space out of whatever *could* shrink — and the theme picker came out 50 px wide, showing
+        # one letter of the theme it exists to name. Eliding the title instead only moved the
+        # damage: at the default 640 px it read "Sm…".
         header.addStretch(1)
         header.addWidget(self._connect_button)
         header.addWidget(self._retry)
         header.addWidget(self._details_button)
-        header.addWidget(_label("Theme", "caption"))
+        # No "Theme" caption. The picker shows the current theme's name and carries "Theme" as its
+        # accessible name, so the caption cost 50 px to say what the control beside it says.
         header.addWidget(self._theme_picker)
         outer.addLayout(header)
 
@@ -648,12 +662,25 @@ class MainWindow(QMainWindow):
 
 
 def _outputs_state(status: ReceiverStatus) -> tuple[Severity, str]:
+    """§10.3's outputs pill.
+
+    **All four states, and the middle one is the point.** ``VALID_REDUCED`` fell through a catch-all
+    and reported *Outputs unknown* in neutral grey — on the state §11.1's model calls "the single
+    most important thing the main window has to convey", describing it as the distinction between
+    "usable but drifting" and "do not use". The window said neither.
+
+    Caution, because §9.4.1's caution row is *"recovering, waiting, reduced accuracy, stale data"*
+    in as many words. Unknown keeps neutral: nothing was read, which is not the same as something
+    read and found wanting.
+    """
     match status.outputs:
         case OutputValidity.VALID:
             return Severity.SUCCESS, "Outputs valid"
+        case OutputValidity.VALID_REDUCED:
+            return Severity.CAUTION, "Outputs valid, reduced accuracy"
         case OutputValidity.INVALID:
             return Severity.CRITICAL, "Outputs not valid"
-        case _:
+        case OutputValidity.UNKNOWN:
             return Severity.NEUTRAL, "Outputs unknown"
 
 
