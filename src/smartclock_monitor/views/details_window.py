@@ -30,11 +30,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.trend_store import TrendStore
 from smartclock_monitor.themes.qss import stylesheet
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import Theme, palette_for
+from smartclock_monitor.views.diagnostics_page import DiagnosticsPage
+from smartclock_monitor.views.holdover_page import HoldoverPage
 from smartclock_monitor.views.pages import (
     OverviewPage,
     Page,
@@ -42,6 +45,7 @@ from smartclock_monitor.views.pages import (
     SatellitesPage,
     TimingPage,
 )
+from smartclock_monitor.views.registers_page import StatusRegistersPage
 
 #: How wide the navigation pane is. §9.6.1 gives 260 for the Medium breakpoint.
 _NAVIGATION_WIDTH = 260
@@ -79,6 +83,9 @@ class DetailsWindow(QMainWindow):
             SatellitesPage(palette_for(theme)),
             PositionPage(palette_for(theme)),
             TimingPage(palette_for(theme)),
+            HoldoverPage(palette_for(theme)),
+            DiagnosticsPage(palette_for(theme)),
+            StatusRegistersPage(palette_for(theme)),
         ]
 
         self._navigation = QListWidget()
@@ -123,6 +130,17 @@ class DetailsWindow(QMainWindow):
         self.setStyleSheet(stylesheet(palette))
         for page in self._pages:
             page.set_palette_tokens(palette)
+
+    def set_command_runner(self, runner: CommandRunner | None) -> None:
+        """Give the pages that send commands something to send them with.
+
+        Asked of every page rather than of a named few: which pages issue commands is a fact about
+        those pages, and a list here would be a second place to update when one starts.
+        """
+        for page in self._pages:
+            setter = getattr(page, "set_command_runner", None)
+            if setter is not None:
+                setter(runner)
 
     def set_trend_store(self, store: TrendStore | None) -> None:
         """Forwarded to whichever pages want history. Only §10.7's does today; asking every page

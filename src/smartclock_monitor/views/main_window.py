@@ -37,6 +37,7 @@ from smartclock_device.models.receiver_status import (
     ReceiverStatus,
     SmartClockMode,
 )
+from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.trend_store import TrendStore
 from smartclock_monitor.themes.qss import stylesheet
@@ -155,6 +156,7 @@ class MainWindow(QMainWindow):
         # demand and the store is opened at startup — and because a run whose store failed to open
         # must reach the page as None rather than as an absent attribute.
         self._store: TrendStore | None = None
+        self._runner: CommandRunner | None = None
         self._details_button = QPushButton("Details…")
         self._details_button.setAccessibleName("Open the details window")
         self._details_button.setToolTip("Satellites, position and timing (Ctrl+D)")
@@ -291,12 +293,19 @@ class MainWindow(QMainWindow):
             self._details = DetailsWindow(self._theme, self)
             self._details.setWindowFlag(Qt.WindowType.Window, True)
             self._details.set_trend_store(self._store)
+            self._details.set_command_runner(self._runner)
             if self._last_reading is not None:
                 self._details.show_reading(self._last_reading)
 
         self._details.show()
         self._details.raise_()
         self._details.activateWindow()
+
+    def set_command_runner(self, runner: CommandRunner | None) -> None:
+        """Held for a details window opened later, forwarded to one already open."""
+        self._runner = runner
+        if self._details is not None:
+            self._details.set_command_runner(runner)
 
     def set_trend_store(self, store: TrendStore | None) -> None:
         """Hand the window its history. Forwarded to the details window if one is already open,

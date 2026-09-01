@@ -16,6 +16,8 @@ assembled its own text from a template would reintroduce exactly that, one templ
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
@@ -49,6 +51,7 @@ class ConfirmDialog(QDialog):
         argument: object = None,
         palette: Palette = LIGHT,
         parent: QWidget | None = None,
+        detail: Sequence[str] | None = None,
     ) -> None:
         super().__init__(parent)
         self._command = command
@@ -72,11 +75,15 @@ class ConfirmDialog(QDialog):
 
         # What is actually going to be sent. §9.5.1's device-literal rule: this is machine text and
         # a user checking a destructive command against the manual needs it exactly.
+        # ``detail`` is for a batched apply — §10.10's mask change sends up to three setters for
+        # one user action, and a dialog naming only the first would understate what is about to
+        # happen. The confirmation is per action; the lines are per command.
         rendered = command.rendered(argument)
-        self._detail = QLabel(rendered or "")
+        lines = list(detail) if detail is not None else ([rendered] if rendered else [])
+        self._detail = QLabel("\n".join(lines))
         self._detail.setProperty("role", "device")
         self._detail.setAccessibleName("The command that will be sent")
-        self._detail.setVisible(bool(rendered))
+        self._detail.setVisible(bool(lines))
         layout.addWidget(self._detail)
 
         self._tick: QCheckBox | None = None
@@ -167,6 +174,7 @@ def ask(
     argument: object = None,
     palette: Palette = LIGHT,
     parent: QWidget | None = None,
+    detail: Sequence[str] | None = None,
 ) -> bool:
     """Show the dialog and say whether the user confirmed.
 
@@ -177,5 +185,5 @@ def ask(
     if not command.needs_confirmation:
         return True
 
-    dialog = ConfirmDialog(command, argument, palette, parent)
+    dialog = ConfirmDialog(command, argument, palette, parent, detail)
     return dialog.exec() == QDialog.DialogCode.Accepted
