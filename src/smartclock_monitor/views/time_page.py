@@ -41,6 +41,7 @@ from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
 from smartclock_monitor.views.pages import DASH, FieldGrid, Page, card, label
+from smartclock_monitor.views.wording import humanise
 from smartclock_monitor.widgets.severity_pill import SeverityPill
 
 
@@ -239,7 +240,7 @@ class TimePage(Page):
             # The zone is always named — never an unlabelled wall-clock time (§11.2, #95).
             self._zone_name.setText(f"{_zone_name(shown)} · {shown:%d %b %Y}")
 
-        self._clock_fields.set("Time scale", status.time_scale.name)
+        self._clock_fields.set("Time scale", humanise(status.time_scale))
         # §7.4: the receiver's own date beside the corrected one, never instead of it.
         self._clock_fields.set(
             "Reported by receiver",
@@ -385,4 +386,4 @@ def _direction(seconds: int | None, pending: LeapSecondPending | None) -> str:
         return "Adds a second" if seconds > 0 else "Removes a second"
     if pending is None or pending is LeapSecondPending.NONE:
         return DASH
-    return pending.name.replace("_", " ").title()
+    return humanise(pending)

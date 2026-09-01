@@ -68,6 +68,7 @@ from smartclock_monitor.themes.tokens import LIGHT, Palette
 from smartclock_monitor.views.capability import gate
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.manage_satellites import ask_to_manage, parse_exclusions
+from smartclock_monitor.views.wording import humanise
 from smartclock_monitor.widgets import sky_image
 from smartclock_monitor.widgets.copy_menu import attach_table_menu, attach_value_menu
 from smartclock_monitor.widgets.severity_pill import SeverityPill
@@ -276,10 +277,10 @@ class OverviewPage(_FieldsExport, Page):
 
     def show_reading(self, reading: Reading) -> None:
         status = reading.status
-        self._fields.set("Mode", status.mode.name.replace("_", " ").title())
+        self._fields.set("Mode", humanise(status.mode))
         self._fields.set("Detail", status.mode_detail or DASH, device_literal=True)
         self._fields.set("Outputs", OUTPUT_VALIDITY_TEXT[status.outputs])
-        self._fields.set("Time scale", status.time_scale.name)
+        self._fields.set("Time scale", humanise(status.time_scale))
         self._fields.set("Captured", status.captured_at.strftime("%Y-%m-%d %H:%M:%S"))
         self._fields.set(
             "Warnings", "; ".join(status.parse_warnings) if status.parse_warnings else "None"
@@ -863,16 +864,16 @@ class PositionPage(_FieldsExport, Page):
                 DASH if position.height_metres is None else f"{position.height_metres:.2f} m",
             )
 
-        self._fields.set("Datum", status.height_datum.name.replace("_", " ").title())
-        self._fields.set("Mode", status.position_mode.name.replace("_", " ").title())
-        self._fields.set("Qualifier", status.position_qualifier.name.replace("_", " ").title())
+        self._fields.set("Datum", humanise(status.height_datum))
+        self._fields.set("Mode", humanise(status.position_mode))
+        self._fields.set("Qualifier", humanise(status.position_qualifier))
         self._fields.set(
             "Survey",
             DASH
             if status.survey_percent_complete is None
             else f"{status.survey_percent_complete:.1f} %",
         )
-        self._fields.set("Suspended", status.survey_suspended_reason.name.replace("_", " ").title())
+        self._fields.set("Suspended", humanise(status.survey_suspended_reason))
         self._show_survey(status)
 
 
@@ -1396,7 +1397,7 @@ class TimingPage(Page):
             else status.device_date_time.strftime("%Y-%m-%d %H:%M:%S"),
             device_literal=True,
         )
-        self._clock.set("Time scale", status.time_scale.name)
+        self._clock.set("Time scale", humanise(status.time_scale))
         self._clock.set("Provisional", "Yes" if status.device_time_is_provisional else "No")
         self._clock.set("Rollover epochs", str(status.week_rollover_epochs))
         self._clock.set(
@@ -1405,7 +1406,7 @@ class TimingPage(Page):
             if status.corrected_date_time is None
             else status.corrected_date_time.strftime("%Y-%m-%d %H:%M:%S"),
         )
-        self._clock.set("Leap", status.leap_pending.name.replace("_", " ").title())
+        self._clock.set("Leap", humanise(status.leap_pending))
 
         self._holdover.set(
             "Duration", DASH if status.holdover_duration is None else str(status.holdover_duration)

@@ -435,7 +435,7 @@ def test_the_theme_picker_is_wide_enough_to_name_the_theme() -> None:
         window.close()
 
 
-# ---- No page scrolls sideways at the size its window opens at -------------------------------------
+# ---- No page scrolls sideways at the size its window opens at ----------------------------------
 
 
 def test_no_details_page_needs_horizontal_scrolling_at_the_window_minimum() -> None:
