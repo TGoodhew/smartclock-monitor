@@ -46,10 +46,34 @@ from smartclock_monitor.services.polling import Reading
 #: ``PRAGMA user_version``, which is what SQLite provides for exactly this and costs no table.
 SCHEMA_VERSION: Final = 1
 
-#: How much history to keep. §10.7's longest range is 7 d; the margin is what lets the 7 d range
-#: actually contain seven days rather than seven days minus however long ago the last prune ran,
-#: and it covers §10.7.1's fit reaching slightly further back than the chart draws.
-RETENTION: Final = timedelta(days=8)
+#: How much history to keep, per §12: **eight weeks**.
+#:
+#: Not the eight days this first kept. §12 states the reason and calls the shipped store the
+#: design: *"weeks of history is what makes an ageing slope readable, which is the point of keeping
+#: it at all."* §10.7.1's drift card is the consumer — it refuses a projection from under a day of
+#: data, and refuses one reaching more than a hundred spans past what was observed, so a store that
+#: could offer at most eight days capped every projection it could ever make at 800 days.
+RETENTION: Final = timedelta(days=56)
+
+#: How much is kept at the resolution it arrived at. §12: 24 h at full resolution, thinned beyond.
+FULL_RESOLUTION: Final = timedelta(hours=24)
+
+#: What older readings are thinned to — one sample per this interval.
+#:
+#: **Which sample is a choice §12 does not make, and this takes the unbiased one**: the reading
+#: nearest each boundary, which is a plain decimation in time.
+#:
+#: Keeping each bucket's *extreme* was the other candidate and it is what §9.10.2 argues for — but
+#: that argument is about **drawing**, where the alternative is an excursion disappearing off a
+#: chart. Here it would bias the stored series: every retained sample would be an extreme, and the
+#: σ and the Allan deviation computed over old data would both read high, on data nobody could
+#: check. A chart that under-draws an old excursion is a smaller lie than a statistic that
+#: over-reports one.
+#:
+#: Excursions older than a day are lost either way. That is the trade §12 makes by specifying
+#: thinning at all, and the 24 h of full resolution above it is what covers the case where detail
+#: still matters.
+THINNED_TO: Final = timedelta(seconds=10)
 
 #: §10.7.1: samples inside the first 24 h after a power-up are excluded from the drift fit,
 #: because the loop is settling and those readings bend it. §10.8's power-up guard uses the same
@@ -294,6 +318,9 @@ class TrendStore:
 
         self._since_prune += 1
         if self._since_prune >= _PRUNE_EVERY:
+            # Compaction first: pruning a file that has never been thinned deletes the oldest rows
+            # while leaving five million recent ones, which is the wrong end of the problem.
+            self.compact()
             self.prune()
 
     def prune(self) -> int:
@@ -302,6 +329,41 @@ class TrendStore:
         cutoff = _epoch(self._clock.utc_now() - self._retention)
         with self._guarded() as connection:
             cursor = connection.execute("DELETE FROM reading WHERE captured_at < ?", (cutoff,))
+        return cursor.rowcount if cursor.rowcount > 0 else 0
+
+    def compact(self) -> int:
+        """§12's thinning: keep one reading per 10 s beyond the last 24 hours.
+
+        Returns how many rows went. **Idempotent** — run twice, the second finds nothing, because
+        the survivors are already one per bucket.
+
+        Without this, eight weeks at the 1 s cadence is about five million rows. With it, a day at
+        full resolution and fifty-five days at 10 s is a few hundred thousand, which is what §12
+        means by "a few megabytes once compaction has run".
+
+        The row kept in each bucket is the one nearest its start. Any consistent rule works; this
+        one is stable under a re-run, which is what makes the operation idempotent.
+        """
+        self._since_prune = 0
+        boundary = _epoch(self._clock.utc_now() - FULL_RESOLUTION)
+        bucket = THINNED_TO.total_seconds()
+
+        with self._guarded() as connection:
+            # Keep, per bucket, the row with the smallest rowid among those with the smallest
+            # captured_at — the second tiebreak matters, because two readings can share an instant
+            # and DELETE has to leave exactly one.
+            cursor = connection.execute(
+                """
+                DELETE FROM reading
+                WHERE captured_at < ?
+                  AND rowid NOT IN (
+                      SELECT MIN(rowid) FROM reading
+                      WHERE captured_at < ?
+                      GROUP BY CAST(captured_at / ? AS INTEGER)
+                  )
+                """,
+                (boundary, boundary, bucket),
+            )
         return cursor.rowcount if cursor.rowcount > 0 else 0
 
     # -- Reading ---------------------------------------------------------------------------------
