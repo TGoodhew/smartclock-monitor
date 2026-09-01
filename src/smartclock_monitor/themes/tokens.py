@@ -27,12 +27,19 @@ from typing import Final
 
 
 class Theme(Enum):
-    """The three token sets."""
+    """The two token sets.
+
+    **There is no high-contrast theme, deliberately** — D3, settled 1 Sep 2026 (#3). Windows
+    resolves those tokens to the user's *own* system colours, and no desktop this port targets
+    offers an equivalent contract. A hand-authored third set would have asserted our contrast in
+    place of theirs, which is a different and weaker service to someone who has configured a
+    specific scheme for a specific impairment. Saying so plainly is the honest answer; shipping a
+    lookalike and calling it high contrast is not. `docs/divergences.md` records it as the
+    reduction against WinZ3805A that it is.
+    """
 
     LIGHT = "light"
     DARK = "dark"
-    #: Hand-authored, and a weaker promise than Windows'. See the module docstring and issue #3.
-    HIGH_CONTRAST = "high-contrast"
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,79 +256,10 @@ DARK: Final = Palette(
     theme=Theme.DARK,
 )
 
-#: Hand-authored, and a **weaker promise** than the Windows original (issue #3).
-#:
-#: On Windows these resolve to the user's own system colours. Here they are ours. The values are
-#: chosen to be unambiguous rather than tasteful: pure black and white surfaces, a single yellow
-#: accent, and severity colours that stay distinguishable at maximum contrast.
-#:
-#: The series ramp does **not** flatten to the text colour, which is what the Windows high-contrast
-#: dictionary does. That flattening exists there because the system colours are outside the app's
-#: control and a chart line could otherwise resolve to the page background — the defect that gate
-#: was written for. Here the values are ours, so the ramp can stay distinguishable, and each entry
-#: is checked against the background rather than assumed.
-HIGH_CONTRAST: Final = Palette(
-    page_background="#000000",
-    layer_fill="#000000",
-    card_fill="#000000",
-    card_fill_secondary="#1A1A1A",
-    overlay_fill="#000000",
-    stroke_subtle="#FFFFFF",
-    stroke_default="#FFFFFF",
-    text_primary="#FFFFFF",
-    text_secondary="#FFFFFF",
-    text_tertiary="#D6D6D6",
-    text_disabled="#A6A6A6",
-    accent="#FFFF00",
-    accent_foreground="#000000",
-    success="#3FF23F",
-    caution="#FFD700",
-    critical="#FF5C5C",
-    info="#66D9FF",
-    neutral="#D6D6D6",
-    series=(
-        "#FFFFFF",
-        "#FFFF00",
-        "#00FFFF",
-        "#FF80FF",
-        "#80FF80",
-        "#FFB060",
-        "#8CB4FF",
-        "#D6D6D6",
-    ),
-    # Neither ramp flattens, for the reason given above: §9.4.4 flattens the sequential ramp to
-    # SystemColorWindowTextColor because on Windows the steps are the user's colours and steps 1
-    # and 2 resolved to the page background (#218). Here they are ours, so the ramp can stay
-    # readable — and a flattened sequential ramp would draw every satellite the same colour, which
-    # is what the strength encoding is for.
-    #
-    # Ordered by lightness rather than by hue. Under high contrast lightness is the channel that
-    # survives, and every step clears §9.4.5's 3:1 against the black surfaces.
-    sequential=(
-        "#8C8C8C",
-        "#A0A0A0",
-        "#B4B4B4",
-        "#C8C8C8",
-        "#DCDCDC",
-        "#EEEEEE",
-        "#FFFFFF",
-    ),
-    # Sign is carried by hue and strength by saturation, because on black the normal ramp's
-    # device — dark for strongly negative — would put the strongest readings in the background.
-    diverging=(
-        "#00E5E5",
-        "#7FD4FF",
-        "#FFFFFF",
-        "#FFC08A",
-        "#FF8A3D",
-    ),
-    theme=Theme.HIGH_CONTRAST,
-)
 
 _BY_THEME: Final[dict[Theme, Palette]] = {
     Theme.LIGHT: LIGHT,
     Theme.DARK: DARK,
-    Theme.HIGH_CONTRAST: HIGH_CONTRAST,
 }
 
 

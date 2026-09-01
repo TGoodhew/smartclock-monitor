@@ -15,10 +15,10 @@ Three properties §10.5 makes normative rather than incidental:
    tracked and predicted counts, and the elevation mask in force. The mask is not decoration — the
    same sky under a 10° mask and a 25° mask produces two legitimate plots with different
    satellites missing, so a record omitting it cannot be compared with anything.
-3. **No theme substitution.** The export is whatever theme the user is in, high contrast included,
-   where the colours are the user's own choices and this application has no standing to replace
-   them. §9.4.3's colour + shape + text encoding is what keeps a greyscale printout readable, so
-   nothing is lost by declining to force a light theme.
+3. **No theme substitution.** The export is whatever theme the user is in. A picture that came
+   back in colours the user had not chosen would not be the thing they were looking at, and
+   §9.4.3's colour + shape + text encoding is what keeps a greyscale printout readable — so
+   nothing is lost by declining to force a light theme on the way out.
 """
 
 from __future__ import annotations

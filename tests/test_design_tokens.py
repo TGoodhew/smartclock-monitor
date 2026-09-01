@@ -308,10 +308,18 @@ def test_every_theme_defines_every_token() -> None:
             assert getattr(palette, name) is not None, f"{theme.value} is missing {name}."
 
 
-def test_there_are_three_themes_per_decision_d3() -> None:
-    """`docs/platform-decisions.md` D3, issue #3. Reversing to Light and Dark alone is deleting one
-    column of the token table — which is what "cheap to reverse" was supposed to mean."""
-    assert set(ALL_THEMES) == {Theme.LIGHT, Theme.DARK, Theme.HIGH_CONTRAST}
+def test_there_are_two_themes_per_decision_d3() -> None:
+    """`docs/platform-decisions.md` D3, settled 1 Sep 2026 (issue #3): **Light and Dark only.**
+
+    Windows resolves high-contrast tokens to the user's *own* system colours, and no desktop this
+    port targets offers an equivalent contract. The third set that used to be here asserted our
+    contrast in place of theirs, which is a weaker service to the person who configured a scheme
+    for a specific impairment — and it is worse than saying so, because it looks like the feature.
+
+    Pinned as an equality rather than a floor: a third theme appearing without that decision being
+    revisited is the thing to catch. `docs/divergences.md` records the reduction.
+    """
+    assert set(ALL_THEMES) == {Theme.LIGHT, Theme.DARK}
 
 
 def test_the_series_ramp_has_eight_entries_in_every_theme() -> None:
@@ -338,9 +346,11 @@ def test_the_sequential_ramp_rises_monotonically_in_prominence() -> None:
 
     **The invariant is contrast against the surface, not lightness in a fixed direction.** §9.4.4's
     ramp runs pale to dark because it was drawn for a light surface: the low end recedes and the
-    high end asserts itself. On the black high-contrast surface the same intent inverts, and a gate
-    written as "light to dark" would demand a ramp whose strongest signals were nearly invisible —
-    #218's defect, arrived at by way of a test."""
+    high end asserts itself. On a dark surface the same intent inverts, and a gate written as
+    "light to dark" would demand a ramp whose strongest signals were nearly invisible — #218's
+    defect, arrived at by way of a test. (That reasoning was first written about the
+    high-contrast theme, which D3 has since removed; it applies to Dark unchanged, which is why
+    the gate outlived the theme that motivated it.)"""
     for theme in ALL_THEMES:
         palette = palette_for(theme)
         steps = [contrast(colour, palette.card_fill) for colour in palette.sequential]
