@@ -37,6 +37,19 @@ from smartclock_monitor.views.main_window import MainWindow
 #: §9.12's A11Y-5: pointer targets are at least this, at all times.
 POINTER_FLOOR = 32
 
+#: The only files that may turn a severity into a colour. §9.13 item 10 and A11Y-12: a page that
+#: resolved one itself would be a bare coloured shape away from meaning-by-colour-alone.
+#:
+#: One list, read by both the gate and its staleness check. `platform/tray.py` was here until D5
+#: removed the tray, and the copy in the staleness check had to be found separately.
+SANCTIONED_COLOUR_CALLERS = frozenset(
+    {
+        "themes/severity.py",  # defines it
+        "widgets/severity_pill.py",  # §9.13's one renderer
+        "widgets/medallion.py",  # §9.10.2's ring, which carries the word beneath it
+    }
+)
+
 #: How much of the window's minimum width every page must leave unused.
 #:
 #: Not a style preference. Font metrics differ between machines at the same point size, so a page
@@ -184,12 +197,7 @@ def test_only_the_sanctioned_renderers_resolve_a_severity_to_a_colour() -> None:
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent / "src" / "smartclock_monitor"
-    allowed = {
-        "themes/severity.py",  # defines it
-        "widgets/severity_pill.py",  # §9.13's one renderer
-        "widgets/medallion.py",  # §9.10.2's ring, which carries the word beneath it
-        "platform/tray.py",  # §9.4.3.1's shell surface, from the same rasteriser
-    }
+    allowed = SANCTIONED_COLOUR_CALLERS
 
     offenders = []
     for path in sorted(root.rglob("*.py")):
@@ -207,17 +215,19 @@ def test_only_the_sanctioned_renderers_resolve_a_severity_to_a_colour() -> None:
 
 def test_the_sanctioned_list_is_not_stale() -> None:
     """Guarding the guard: a list naming files that no longer resolve a colour would be a rule
-    that had quietly stopped covering anything."""
+    that had quietly stopped covering anything.
+
+    Reads the **same constant** the gate does. It used to keep its own copy, so removing
+    `platform/tray.py` with D5 broke it in two places and each had to be found separately — a
+    duplicated allowlist is the failure this test exists to describe, arrived at from the inside.
+    """
     from pathlib import Path
 
     root = Path(__file__).resolve().parent.parent / "src" / "smartclock_monitor"
-    for relative in (
-        "themes/severity.py",
-        "widgets/severity_pill.py",
-        "widgets/medallion.py",
-        "platform/tray.py",
-    ):
-        assert "colour_for" in (root / relative).read_text(encoding="utf-8"), relative
+    for relative in sorted(SANCTIONED_COLOUR_CALLERS):
+        source = root / relative
+        assert source.exists(), f"{relative} is sanctioned and does not exist"
+        assert "colour_for" in source.read_text(encoding="utf-8"), relative
 
 
 def test_no_two_markers_overlap_at_the_plot_s_minimum_size() -> None:

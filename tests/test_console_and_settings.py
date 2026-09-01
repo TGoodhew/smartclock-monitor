@@ -47,11 +47,18 @@ def test_the_advanced_defaults_are_off() -> None:
     assert DEFAULTS.undocumented_queries is False
 
 
-def test_the_alert_and_keep_running_defaults_are_on() -> None:
-    """The alert exists precisely for the user who is *not* looking; and a close that stopped
-    polling would stop it exactly when the window was being got out of the way."""
-    assert DEFAULTS.alert_on_lock_loss is True
-    assert DEFAULTS.keep_running_when_closed is True
+def test_the_only_preference_defaulting_on_is_gone_with_its_channel() -> None:
+    """P1-9's lock alert and §10.3.1's keep-running were the two that defaulted *on*, and both
+    needed a notification area to mean anything. D5 (issue #6) removed it, so they went with it —
+    a switch that cannot do what it says is worse than an absent one, because the user sets it and
+    then believes it."""
+    import dataclasses
+
+    on_by_default = {
+        field.name for field in dataclasses.fields(Preferences) if field.default is True
+    }
+
+    assert on_by_default == set(), f"{on_by_default} default on and nothing drives them"
 
 
 def test_a_missing_file_reads_as_the_defaults(tmp_path: Path) -> None:
@@ -89,7 +96,7 @@ def test_an_unknown_key_does_not_cost_the_known_ones(tmp_path: Path) -> None:
 
 def test_preferences_round_trip(tmp_path: Path) -> None:
     path = tmp_path / "nested" / "preferences.json"
-    wanted = Preferences(advanced_console=True, alert_on_lock_loss=False)
+    wanted = Preferences(advanced_console=True, undocumented_queries=True)
 
     assert save(wanted, path) is True
     assert load(path) == wanted
@@ -319,9 +326,9 @@ def test_a_preference_change_reaches_whoever_is_saving() -> None:
 
     settings = window.page_named(SettingsPage.title)
     assert isinstance(settings, SettingsPage)
-    settings.alert_switch.setChecked(False)
+    settings.on_top_switch.setChecked(True)
 
-    assert saved and saved[-1].alert_on_lock_loss is False
+    assert saved and saved[-1].always_on_top is True
 
 
 def test_setting_preferences_does_not_report_a_change_nobody_made() -> None:
@@ -331,7 +338,7 @@ def test_setting_preferences_does_not_report_a_change_nobody_made() -> None:
     window = DetailsWindow(Theme.DARK)
     window.settings_changed = saved.append
 
-    window.apply_preferences(Preferences(advanced_console=True, alert_on_lock_loss=False))
+    window.apply_preferences(Preferences(advanced_console=True, always_on_top=True))
 
     assert saved == []
 

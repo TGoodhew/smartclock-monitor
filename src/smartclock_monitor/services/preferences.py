@@ -11,6 +11,11 @@ disk went wrong — which is the wrong direction for a failure to point.
 again, and nothing load-bearing may live in one of these files. An error dialog because a setting
 could not be saved would be interrupting the user about the least important thing on screen.
 
+**Three preferences were removed with D5** (issue #6): the lock-loss alert, keep-running-when-closed
+and start-in-the-notification-area. Each of them could only ever be honoured by a tray or a desktop
+notifier, and this port ships neither — a switch that cannot do what it says is worse than an absent
+one, because the user sets it and believes it.
+
 **Opting in changes what is reachable, never what is permitted.** No preference here may add a
 command, and none may relax a §8.3 confirmation. The Advanced Console is a picker over the same §8.1
 allowlist every other page uses, so enabling it adds nothing the application could not already send;
@@ -45,17 +50,6 @@ class Preferences:
     #: §8.5's queries. Off for the same reason, and §8.5 says so itself: they may return errors or
     #: nonsense, and a user who has not asked for them should not meet them.
     undocumented_queries: bool = False
-
-    #: P1-9. **On**, because it exists precisely for the user who is *not* looking.
-    alert_on_lock_loss: bool = True
-
-    #: §10.3.1. **On**: §9.1's user leaves this docked for weeks, and a close that stopped polling
-    #: would stop it exactly when the window was being got out of the way.
-    keep_running_when_closed: bool = True
-
-    #: Off. An application that starts with no window is indistinguishable from one that failed to
-    #: start.
-    start_in_notification_area: bool = False
 
     #: P1-6. Off, because a window that outranks everything else is a decision about the *desktop*
     #: rather than about this application, and §9.1's user has a spectrum analyser to look at too.

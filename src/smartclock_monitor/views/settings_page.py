@@ -5,17 +5,19 @@ works and does nothing applies to a settings page more than to most, so a switch
 not exist on this platform is written as a sentence rather than drawn as a toggle nobody has wired
 up. §10.13's own "Not on this page, and why" table is where that habit comes from.
 
-Two of §10.13's rows are not switches here, and each says why on screen:
+Three of §10.13's rows are not switches here, and each says why on screen:
 
 - **Use the Windows accent colour** has nothing to read on Linux or macOS. §9.4.2's guarantee is
   that the brand accent is chosen for hue separation from the severity colours, and there is no
-  cross-platform contract that would preserve it — the same argument as `docs/platform-decisions.md`
-  D3 makes about high contrast.
-- **Start in the notification area** needs a tray, which is issue #6's decision and not settled.
-
-**Keep running when I close the window is disabled where there is no notification area**, rather
-than left enabled to do something that would strand the user — §10.3.1's hide is only safe where
-there is a way back to the window.
+  cross-platform contract that would preserve it.
+- **Start in the notification area** and **Keep running when I close the window** both need a
+  notification area, and D5 (issue #6) settled that this port ships none. §10.3.1's hide is only
+  safe where there is a way back to the window, and without an icon there is not — so close means
+  close, and neither switch exists rather than being drawn and disabled.
+- **Tell me when the receiver loses GPS lock** went with them. P1-9 exists "precisely for the user
+  who is not looking", and a message shown only inside the window they are not looking at does not
+  serve that — so the honest answer is to remove it rather than to keep the switch and weaken what
+  it promises.
 
 **Poll cadences are deliberately not offered**, and that is a refusal rather than a gap. §7.3 fixes
 them at 1 s and 10 s and §12 gives the poller sole ownership of both, so a switch here would
@@ -51,8 +53,7 @@ class SettingsPage(Page):
         layout.setSpacing(Spacing.MEDIUM)
         layout.addWidget(self._build_advanced())
         layout.addWidget(self._build_appearance())
-        layout.addWidget(self._build_alerts())
-        layout.addWidget(self._build_background())
+        layout.addWidget(self._build_quitting())
         layout.addWidget(self._build_not_here())
         layout.addStretch(1)
 
@@ -96,51 +97,27 @@ class SettingsPage(Page):
         )
         return holder
 
-    def _build_alerts(self) -> QFrame:
-        holder, holder_layout = card("Alerts")
-        self._alert = self._switch(
-            "Tell me when the receiver loses GPS lock",
-            "On by default, because it exists precisely for the user who is not looking.",
-            holder_layout,
-        )
-        return holder
+    def _build_quitting(self) -> QFrame:
+        holder, holder_layout = card("Quitting")
 
-    def _build_background(self) -> QFrame:
-        holder, holder_layout = card("Running in the background")
-        self._keep_running = self._switch(
-            "Keep running when I close the window",
-            "On by default: a receiver is left docked for weeks, and a close that stopped polling "
-            "would stop it exactly when the window was being got out of the way.",
-            holder_layout,
-        )
-        # §10.3.1: **the application must be quittable from its own surface**, not only from the
-        # notification area. There the argument is that Windows does not promote a newly
-        # registered icon; here it is stronger, because a desktop may have no icon at all.
+        # §10.3.1: **the application must be quittable from its own surface.** That argument was
+        # written against a notification area this port does not have, and it survives the removal
+        # unchanged — a window's close button is a surface, but so is a button that says what it
+        # does, and the two cost nothing together.
         self._quit = QPushButton("Exit")
         self._quit.setProperty("role", "destructive")
         self._quit.setAccessibleName("Quit the application")
         self._quit.clicked.connect(lambda: self._exit())
         holder_layout.addWidget(self._quit)
 
-        self._no_tray = label(
-            "This desktop has no notification area, so closing the window exits. Hiding it would "
-            "leave no way to get it back.",
+        note = label(
+            "Closing the window stops the application and stops polling. There is no notification "
+            "area to hide into on these desktops, and a hidden window with no icon could not be "
+            "got back.",
             "tertiary",
         )
-        self._no_tray.setWordWrap(True)
-        self._no_tray.setVisible(False)
-        holder_layout.addWidget(self._no_tray)
+        holder_layout.addWidget(note)
         return holder
-
-    def set_can_keep_running(self, possible: bool) -> None:
-        """Tell the page whether hiding on close is possible here.
-
-        §9.11's rule about a control that looks like it works, applied to a switch: where there is
-        no notification area the switch cannot do what it says, so it is disabled and the reason is
-        on screen rather than left for the user to discover by closing the window.
-        """
-        self._keep_running.setEnabled(possible)
-        self._no_tray.setVisible(not possible)
 
     #: Called when the user presses Exit. Set by whoever owns the page — quitting is not something
     #: a page decides.
@@ -170,8 +147,12 @@ class SettingsPage(Page):
             "Use the Windows accent colour has nothing to read on this platform, and §9.4.2's "
             "accent is chosen for hue separation from the severity colours — a setting that "
             "abandoned that would make the guarantee depend on a control panel.",
-            "Start in the notification area needs a tray, which is not settled for these "
-            "desktops (issue #6).",
+            "Start in the notification area and Keep running when I close the window both need "
+            "a notification area. D5 settled that this port ships none, so closing the window "
+            "stops the application (issue #6).",
+            "Tell me when the receiver loses GPS lock went with them: P1-9 exists for the user "
+            "who is not looking, and a message inside the window they are not looking at does "
+            "not serve that.",
             "The display time zone is set on the clock itself and on the Time page, which is "
             "one preference with two places to set it rather than duplicated state.",
         ):
@@ -201,8 +182,6 @@ class SettingsPage(Page):
             self._console.setChecked(self._preferences.advanced_console)
             self._undocumented.setChecked(self._preferences.undocumented_queries)
             self._on_top.setChecked(self._preferences.always_on_top)
-            self._alert.setChecked(self._preferences.alert_on_lock_loss)
-            self._keep_running.setChecked(self._preferences.keep_running_when_closed)
         finally:
             self._settling = False
 
@@ -217,8 +196,6 @@ class SettingsPage(Page):
             advanced_console=self._console.isChecked(),
             undocumented_queries=self._undocumented.isChecked(),
             always_on_top=self._on_top.isChecked(),
-            alert_on_lock_loss=self._alert.isChecked(),
-            keep_running_when_closed=self._keep_running.isChecked(),
         )
         if self._on_change is not None:
             self._on_change(self._preferences)
@@ -239,14 +216,6 @@ class SettingsPage(Page):
     @property
     def on_top_switch(self) -> QCheckBox:
         return self._on_top
-
-    @property
-    def alert_switch(self) -> QCheckBox:
-        return self._alert
-
-    @property
-    def keep_running_switch(self) -> QCheckBox:
-        return self._keep_running
 
     @property
     def exit_button(self) -> QPushButton:

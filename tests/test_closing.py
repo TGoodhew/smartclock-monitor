@@ -1,13 +1,14 @@
-"""§10.3.1: closing the window, and staying alive.
+"""§10.3.1: closing the window.
 
-**Hiding a window is only safe if there is a way back to it.** §10.3.1 makes hiding the default so
-the trend keeps filling while the window is out of the way — but its own argument for the Settings
-*Exit* button is that an application whose only exit is an invisible icon is quittable in principle
-and by Task Manager in practice. On a desktop with **no tray at all** that goes further: a hidden
-window with no icon cannot be reached by any means the user has.
+**Close means close.** §10.3.1's design hides the window on close so the trend keeps filling while
+it is out of the way, and both halves of that rested on a notification icon to come back to. D5
+(issue #6) settled that this port ships none, and §10.3.1's own argument then decides the rest: a
+hidden window with no icon "cannot be reached by any means the user has", so hiding would not be an
+inconvenience but a loss of the application.
 
-This session has no tray (WSLg reports none), so the fallback is the path these run against — which
-is the one that matters, because it is the one that could lose somebody their application.
+So the window closes, the poll stops, and the Settings *Exit* button stays — §10.3.1 wants the
+application quittable from its own surface, and that argument survives the removal of the surface
+it was written against.
 """
 
 from __future__ import annotations
@@ -19,12 +20,10 @@ import pytest
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtGui import QCloseEvent
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication
 
-from smartclock_monitor.platform import tray
 from smartclock_monitor.services.preferences import Preferences
-from smartclock_monitor.themes.severity import Severity
-from smartclock_monitor.themes.tokens import Theme, palette_for
+from smartclock_monitor.themes.tokens import Theme
 from smartclock_monitor.views.main_window import MainWindow
 from smartclock_monitor.views.settings_page import SettingsPage
 
@@ -35,57 +34,31 @@ def application() -> QApplication:
     return existing if isinstance(existing, QApplication) else QApplication([])
 
 
-# ---- With no notification area -----------------------------------------------------------------
+# ---- Closing ------------------------------------------------------------------------------------
 
 
-def test_no_tray_here_which_is_the_case_worth_testing() -> None:
-    """Asked at the moment it matters rather than inferred from the platform: WSLg reports no tray
-    on a system that calls itself Linux, and a check on ``sys.platform`` would have got it wrong."""
-    assert tray.is_available() is False
-
-
-def test_attaching_a_tray_says_whether_it_worked() -> None:
+def test_closing_the_window_exits() -> None:
+    """The whole of §10.3.1 for this port. There is nowhere to hide to, and a window that vanished
+    with no icon behind it would be the worst available outcome — which is the case §10.3.1 named
+    and the one D5 made permanent."""
     window = MainWindow(Theme.DARK)
-
-    assert window.attach_tray() is False
-    assert window.tray is None
-    assert window.can_keep_running is False
-
-
-def test_closing_exits_when_there_is_nowhere_to_hide_to() -> None:
-    """The preference is on by default, and honouring it here would leave the user with a running
-    process, no window, and no icon — a loss of the application rather than an inconvenience."""
-    window = MainWindow(Theme.DARK)
-    window.attach_tray()
-    assert window.preferences.keep_running_when_closed is True
 
     event = QCloseEvent()
     window.closeEvent(event)
 
-    assert event.isAccepted() is True, "it must close"
+    assert event.isAccepted() is True, "the close was swallowed; the window would have hidden"
 
 
-def test_the_settings_switch_says_why_it_cannot_work() -> None:
-    """§9.11's rule about a control that looks like it works, applied to a switch. The reason is on
-    screen rather than left for the user to discover by closing the window."""
-    page = SettingsPage()
-    page.set_can_keep_running(False)
+def test_no_preference_can_turn_that_into_hiding() -> None:
+    """The switch is gone, not defaulted off. A preference that could re-enable hiding would be a
+    preference that strands the user, since the icon it hid to does not exist."""
+    import dataclasses
 
-    assert page.keep_running_switch.isEnabled() is False
+    names = {field.name for field in dataclasses.fields(Preferences)}
 
-    text = " ".join(child.text() for child in page.findChildren(QLabel))
-    assert "no notification area" in text
-    assert "no way to get it back" in text
-
-
-def test_the_switch_is_live_where_a_tray_exists() -> None:
-    page = SettingsPage()
-    page.set_can_keep_running(True)
-
-    assert page.keep_running_switch.isEnabled() is True
-
-
-# ---- The exit route ----------------------------------------------------------------------------
+    assert "keep_running_when_closed" not in names
+    assert "start_in_notification_area" not in names
+    assert "alert_on_lock_loss" not in names, "P1-9's switch outlived the channel it drove"
 
 
 def test_the_application_is_quittable_from_its_own_surface() -> None:
@@ -113,39 +86,7 @@ def test_a_page_does_not_decide_to_quit() -> None:
     page.exit_button.click()  # must not raise, must not quit
 
 
-# ---- Turning the preference off ----------------------------------------------------------------
-
-
-def test_switching_keep_running_off_makes_close_exit() -> None:
-    window = MainWindow(Theme.DARK)
-    window.apply_theme(Theme.DARK)
-    window._preferences = Preferences(keep_running_when_closed=False)
-
-    event = QCloseEvent()
-    window.closeEvent(event)
-
-    assert event.isAccepted() is True
-
-
-# ---- The icon's vocabulary ---------------------------------------------------------------------
-
-
-@pytest.mark.parametrize("severity", list(Severity))
-def test_the_icon_draws_the_same_shapes_as_everything_else(severity: Severity) -> None:
-    """§9.4.3.1: both shell surfaces draw from one rasteriser, so a hexagon cannot come to mean
-    different things in two places. The shape comes from what SeverityPill draws with."""
-    icon = tray.render_icon(severity, palette_for(Theme.DARK))
-
-    assert not icon.isNull()
-    assert icon.availableSizes() != []
-
-    # Drawn, not blank: a null-coloured brush would have produced an icon that exists and shows
-    # nothing, which is what the type: ignore in this function was hiding.
-    drawn = icon.pixmap(32, 32).toImage()
-    assert any(drawn.pixelColor(x, y).alpha() > 0 for x in range(0, 32, 4) for y in range(0, 32, 4))
-
-
-# ---- P1-6's other half: always on top ----------------------------------------------------------
+# ---- Always on top (P1-6) ----------------------------------------------------------------------
 
 
 def test_always_on_top_is_off_by_default() -> None:

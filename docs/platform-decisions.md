@@ -218,22 +218,39 @@ silently invalidates them — part 12's own warning.
 
 ## D5 — Tray and notifications on desktops that have neither
 
-**Status: Provisional** ([#6](https://github.com/TGoodhew/smartclock-monitor/issues/6)). Behind
-`platform/`, with a no-op fallback and a visible degradation.
+**Status: Settled** (1 Sep 2026, [#6](https://github.com/TGoodhew/smartclock-monitor/issues/6)).
+**Neither is shipped.** No tray, no desktop notifications, no taskbar badge.
 
-§10.3.1's close-to-tray design assumes a tray exists. `QSystemTrayIcon` works, but GNOME has no
-tray without a shell extension, and some desktops have none at all.
+§10.3.1's close-to-tray design assumes a tray exists. `QSystemTrayIcon` works, but GNOME has none
+without a shell extension and some desktops have none at all — so the provisional answer was to
+probe for one and degrade visibly. That answer was built, and reviewing it turned up the objection
+it could not meet: **every fallback path was the only path.** The development desktop reports no
+tray, the CI runners have none, and a feature exercised on nobody's machine that appears on
+somebody's is worse than one that never appears at all.
 
-- **Tray:** probe `QSystemTrayIcon.isSystemTrayAvailable()` at startup. Where there is no tray,
-  **close means close** and the keep-running preference is disabled with a reason shown, rather
-  than the window vanishing to nowhere. A window that disappears with no way back is the worst
-  available outcome and is what the naive port produces.
-- **Notifications:** the D-Bus `org.freedesktop.Notifications` interface, or `notify-send`.
-  Straightforward — but note the history: the App SDK notification path in WinZ3805A never worked
-  and was fixed by *removing* it. **Keep the `IToastSink` seam and its no-op fallback**; that seam
-  is the thing that made removal possible without touching callers.
-- **Taskbar overlay badge:** dropped. No cross-desktop equivalent; the Unity launcher D-Bus API
-  works on some desktops and not others.
+So the seam went with the feature, rather than being kept for a caller that no longer exists.
+
+- **Tray:** removed. Close means close, and the poll stops with it. §10.3.1's own argument settles
+  what to do without an icon: a hidden window with no icon "cannot be reached by any means the
+  user has", so hiding would be a loss of the application rather than an inconvenience.
+- **Notifications:** removed, and the history rhymes. The App SDK notification path in WinZ3805A
+  never worked and was fixed by *removing* it; the seam that made that possible is here honoured
+  by taking the same decision earlier rather than by keeping an unused abstraction.
+- **Taskbar overlay badge:** dropped, as it already was. No cross-desktop equivalent.
+
+### What went with them
+
+**P1-9, the lock-loss alert.** §13 makes it a P1 and §10.13 defaults it *on*, because it exists
+"precisely for the user who is *not* looking". A message shown only inside the window they are not
+looking at does not serve that, so the honest move is to remove it rather than keep a switch that
+promises less than its name. This is a **reduction against WinZ3805A** and is recorded as one.
+
+**§10.3.1's keep-running-when-closed**, and **start-in-the-notification-area**. Both were switches
+that only a notification area could honour. A switch that cannot do what it says is worse than an
+absent one, because the user sets it and then believes it.
+
+The Settings *Exit* button stays. §10.3.1 wants the application quittable from its own surface, and
+that argument survives the removal of the surface it was written against.
 
 ---
 
@@ -306,8 +323,15 @@ was someone trying to use the application.
 | D2 | G5 / Microsoft Store | **Settled** | [#5](https://github.com/TGoodhew/smartclock-monitor/issues/5) | — |
 | D3 | High contrast — **not shipped** | **Settled** | [#3](https://github.com/TGoodhew/smartclock-monitor/issues/3) | — |
 | D4 | Typeface — **Noto Sans** + Cascadia Mono | **Settled** | [#4](https://github.com/TGoodhew/smartclock-monitor/issues/4) | — |
-| D5 | Tray and notifications | Provisional | [#6](https://github.com/TGoodhew/smartclock-monitor/issues/6) | Confined to `platform/` |
+| D5 | Tray and notifications — **not shipped** | **Settled** | [#6](https://github.com/TGoodhew/smartclock-monitor/issues/6) | — |
 | D6 | Relationship — §8.4 sync | **Settled** (safety half) | — | Not reversible. See above. |
 
-**Every provisional row was chosen to be cheap to reverse**, which is the only honest way to take
-a decision on someone else's behalf. D3 is the one to look at first.
+**Every provisional row was chosen to be cheap to reverse**, which is the only honest way to take a
+decision on someone else's behalf — and all five were reviewed on 1 Sep 2026. Two were reversed
+(D3 and D5), one was tightened from a deferral into a name (D4), and one was confirmed (D2). The
+reversals cost what they were predicted to cost, which is the only reason taking them provisionally
+was defensible.
+
+Nothing on this page is provisional now. The differences those decisions create against the Windows
+sibling are collected in [`divergences.md`](divergences.md), which is the document to hand someone
+who knows WinZ3805A and is meeting this port for the first time.
