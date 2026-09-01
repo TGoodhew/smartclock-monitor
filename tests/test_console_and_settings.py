@@ -394,3 +394,40 @@ def test_a_disconnected_runner_leaves_the_picker_alone() -> None:
     page.set_command_runner(FakeRunner(connected=False))
 
     assert page.command_box.count() == len(catalog.ALL)
+
+
+def test_an_empty_picker_says_why_it_is_empty() -> None:
+    """§9.11: **absent means disabled and explained, never hidden.** An empty picker with no words
+    is neither — it reads as a page that failed to load."""
+    page = ConsolePage()
+
+    assert page.command_box.count() == 0
+    assert page._why_empty.isVisible() or page._why_empty.text()
+    assert "Not connected" in page._why_empty.text()
+
+
+def test_a_talker_s_empty_picker_names_the_family() -> None:
+    """Two different facts, and a user can act on the difference: nothing is connected, or the
+    connected family has no command parser. Naming the family is what §12's capability gate does
+    everywhere else, for the same reason."""
+    page = ConsolePage(driver=NmeaDriver(clock=FixedClock(NOW)))
+
+    text = page._why_empty.text()
+    assert "NMEA 0183 talker" in text
+    assert "read only" in text
+
+
+def test_the_explanation_goes_away_when_a_receiver_arrives() -> None:
+    """A control that says why it is empty while being full is worse than one that says nothing.
+
+    Written first as "a console built with a driver explains nothing", which asserted nothing at
+    all: that console never had an explanation to clear, so it passed against a version that only
+    ever *set* the text and never unset it. It has to be the transition.
+    """
+    page = ConsolePage()
+    assert page._why_empty.text(), "the unbound console should be explaining itself"
+
+    page.set_command_runner(FakeRunner())
+
+    assert page.command_box.count() == len(catalog.ALL)
+    assert page._why_empty.text() == "", "the explanation outlived the reason for it"
