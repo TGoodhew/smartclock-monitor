@@ -46,6 +46,7 @@ from smartclock_monitor.views.pages import (
     TimingPage,
 )
 from smartclock_monitor.views.registers_page import StatusRegistersPage
+from smartclock_monitor.views.time_page import TimePage
 
 #: How wide the navigation pane is. §9.6.1 gives 260 for the Medium breakpoint.
 _NAVIGATION_WIDTH = 260
@@ -86,6 +87,7 @@ class DetailsWindow(QMainWindow):
             HoldoverPage(palette_for(theme)),
             DiagnosticsPage(palette_for(theme)),
             StatusRegistersPage(palette_for(theme)),
+            TimePage(palette_for(theme)),
         ]
 
         self._navigation = QListWidget()
