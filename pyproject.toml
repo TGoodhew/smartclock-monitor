@@ -49,6 +49,11 @@ Homepage = "https://github.com/TGoodhew/smartclock-monitor"
 [tool.hatch.build.targets.wheel]
 packages = ["src/smartclock_device", "src/smartclock_monitor"]
 
+# §9.7.5's F1 opens the guide "carried in the package". A wheel that shipped the code and not the
+# document would give an installed copy a help key that opens an apology.
+[tool.hatch.build.targets.wheel.force-include]
+"docs/how-to-use.md" = "smartclock_monitor/resources/how-to-use.md"
+
 # ---------------------------------------------------------------------------
 # mypy --strict from the first commit, not later.
 #

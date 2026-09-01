@@ -168,7 +168,18 @@ class DetailsWindow(QMainWindow):
         self._settings_action.triggered.connect(self.show_settings)
         bar.addAction(self._settings_action)
 
-        for action in (self._refresh_action, self._export_action, self._settings_action):
+        self._help_action = QAction("Help", self)
+        self._help_action.setShortcut(QKeySequence("F1"))
+        self._help_action.setToolTip("How to use SmartClock Monitor (F1)")
+        self._help_action.triggered.connect(self._open_help)
+        bar.addAction(self._help_action)
+
+        for action in (
+            self._refresh_action,
+            self._export_action,
+            self._settings_action,
+            self._help_action,
+        ):
             action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
             self.addAction(action)
 
@@ -184,6 +195,14 @@ class DetailsWindow(QMainWindow):
             self._jumps.append(action)
 
         self._navigation.currentRowChanged.connect(lambda _row: self._retune_commands())
+
+    #: Set by whoever owns this window: F1 opens one guide, and which window it belongs to is not
+    #: this one's decision.
+    help_requested: Callable[[], None] | None = None
+
+    def _open_help(self) -> None:
+        if self.help_requested is not None:
+            self.help_requested()
 
     def _jump_to(self, row: int) -> None:
         if 0 <= row < self._navigation.count():
