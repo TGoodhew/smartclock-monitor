@@ -304,6 +304,16 @@ class HoldoverPage(Page):
             return None
         return self._now - self._connected_at
 
+    def csv_rows(self) -> Sequence[Sequence[str]]:
+        """Both cards, plus the duration limit — which lives in a spin box rather than a grid and
+        would otherwise be the one figure on the page the export omitted."""
+        rows: list[Sequence[str]] = [["Card", "Field", "Value"]]
+        for name, grid in (("Current state", self._fields), ("Thresholds", self._uncertainty)):
+            rows.extend([name, field, value] for field, value in grid.rows())
+        if self._limit_known:
+            rows.append(["Thresholds", "Holdover duration limit", str(self._limit.value())])
+        return rows
+
     # -- What a test may read --------------------------------------------------------------------
 
     @property

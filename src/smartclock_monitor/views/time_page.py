@@ -299,6 +299,18 @@ class TimePage(Page):
         length = time_code_format.message_length(self._format)
         self._time_code.set("Message length", DASH if length is None else f"{length} characters")
 
+    def csv_rows(self) -> Sequence[Sequence[str]]:
+        rows: list[Sequence[str]] = [["Card", "Field", "Value"]]
+        rows.append(["Receiver clock", "Time", self._clock.text()])
+        rows.append(["Receiver clock", "Zone", self._zone_name.text()])
+        for name, grid in (
+            ("Receiver clock", self._clock_fields),
+            ("Leap second", self._leap_fields),
+            ("Time code output", self._time_code),
+        ):
+            rows.extend([name, field, value] for field, value in grid.rows())
+        return rows
+
     # -- What a test may read --------------------------------------------------------------------
 
     @property

@@ -324,6 +324,25 @@ class DiagnosticsPage(Page):
             return
         runner.run([(catalog.CLEAR_DIAGNOSTIC_LOG, None)], lambda _o: self.refresh())
 
+    def csv_rows(self) -> Sequence[Sequence[str]]:
+        """The diagnostic log as shown, **filter included**.
+
+        §9.7.4 scopes Export to the current view, so someone who has narrowed the log to
+        "holdover" and pressed Export wants those entries — handing them all 222 would silently
+        discard the narrowing they had just done.
+        """
+        if self._log.rowCount() == 0:
+            return ()
+
+        rows: list[Sequence[str]] = [["#", "When", "Entry"]]
+        for row in range(self._log.rowCount()):
+            cells = []
+            for column in (1, 2, 3):
+                item = self._log.item(row, column)
+                cells.append(item.text() if item is not None else "")
+            rows.append(cells)
+        return rows
+
     # -- What a test may read --------------------------------------------------------------------
 
     @property

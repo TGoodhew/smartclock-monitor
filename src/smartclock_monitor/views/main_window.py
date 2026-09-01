@@ -175,6 +175,13 @@ class MainWindow(QMainWindow):
         self._details_button.setToolTip("Satellites, position and timing (Ctrl+D)")
         self._details_button.clicked.connect(self.open_details)
         QShortcut(QKeySequence("Ctrl+D"), self, self.open_details)
+        # §9.7.5's remaining accelerators. They open the details window first, because that is
+        # where the commands live — a shortcut that silently did nothing because the wrong window
+        # had focus is the failure a keyboard-only user cannot diagnose.
+        QShortcut(QKeySequence("F5"), self, lambda: self._in_details("refresh_current"))
+        QShortcut(QKeySequence("Ctrl+E"), self, lambda: self._in_details("export_current"))
+        QShortcut(QKeySequence("Ctrl+,"), self, lambda: self._in_details("show_settings"))
+        QShortcut(QKeySequence("Ctrl+Shift+C"), self, self.retry_now)
 
         self._theme_picker = QComboBox()
         for available in ALL_THEMES:
@@ -328,6 +335,14 @@ class MainWindow(QMainWindow):
         countdown. This is what those reach."""
         self._supervisor = supervisor
         self._retry.setVisible(supervisor is not None)
+
+    def _in_details(self, command: str) -> None:
+        """Run one of the details window's commands, opening it if it is not already up."""
+        self.open_details()
+        details = self._details
+        if details is None:
+            return
+        getattr(details, command)()
 
     def retry_now(self) -> None:
         if self._supervisor is not None:

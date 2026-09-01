@@ -18,9 +18,13 @@ after being switched to, which is exactly when someone is looking at it.
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (
+    QFileDialog,
     QHBoxLayout,
     QListWidget,
     QListWidgetItem,
@@ -28,11 +32,13 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QStackedWidget,
     QStatusBar,
+    QToolBar,
     QVBoxLayout,
     QWidget,
 )
 
 from smartclock_monitor.services.commands import CommandRunner
+from smartclock_monitor.services.export import machine_rows, suggested_filename, to_csv
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.preferences import Preferences
 from smartclock_monitor.services.trend_store import TrendStore
@@ -55,6 +61,10 @@ from smartclock_monitor.views.time_page import TimePage
 
 #: How wide the navigation pane is. §9.6.1 gives 260 for the Medium breakpoint.
 _NAVIGATION_WIDTH = 260
+
+#: §9.7.5: Ctrl+1 … Ctrl+9. There is no Ctrl+10 — §10.2's cap is twelve destinations but only the
+#: first nine can carry an accelerator, so the pane's order decides which are one keystroke away.
+_MAX_ACCELERATED = 9
 
 
 def _scrolled(page: Page) -> QScrollArea:
@@ -80,6 +90,7 @@ class DetailsWindow(QMainWindow):
         self._theme = theme
         self._runner: CommandRunner | None = None
         self._preferences = Preferences()
+        self._last_reading_at: datetime | None = None
 
         self.setWindowTitle("Details")
         # §9.6.2's minimum for the two-column arrangement: the sky plot caps at 360 and the table
@@ -120,9 +131,137 @@ class DetailsWindow(QMainWindow):
         assert isinstance(settings, SettingsPage)
         settings.on_change(self._preferences_changed)
 
+        self._build_commands()
         self.setStatusBar(QStatusBar())
         self.setCentralWidget(self._build())
         self.apply_theme(theme)
+
+    def _build_commands(self) -> None:
+        """§9.7.4's title-bar commands and §9.7.5's accelerators.
+
+        **Attached to the window rather than to the buttons**, which is the same conclusion the
+        original reached: a control that lives in a collapsible area takes its accelerator with it
+        when it collapses — precisely the state a keyboard-only user needs it in. The tooltips
+        carry the key by hand for the same reason.
+        """
+        bar = QToolBar("Commands")
+        bar.setMovable(False)
+        self.addToolBar(bar)
+
+        self._refresh_action = QAction("Refresh", self)
+        self._refresh_action.setShortcut(QKeySequence("F5"))
+        self._refresh_action.setToolTip("Re-read the full status now (F5)")
+        self._refresh_action.triggered.connect(self.refresh_current)
+        bar.addAction(self._refresh_action)
+
+        self._export_action = QAction("Export…", self)
+        self._export_action.setShortcut(QKeySequence.StandardKey.Save)
+        self._export_action.setShortcut(QKeySequence("Ctrl+E"))
+        self._export_action.setToolTip("Export what this page is showing, as CSV (Ctrl+E)")
+        self._export_action.triggered.connect(self.export_current)
+        bar.addAction(self._export_action)
+
+        self._settings_action = QAction("Settings", self)
+        self._settings_action.setShortcut(QKeySequence("Ctrl+,"))
+        self._settings_action.setToolTip("Settings (Ctrl+,)")
+        self._settings_action.triggered.connect(self.show_settings)
+        bar.addAction(self._settings_action)
+
+        for action in (self._refresh_action, self._export_action, self._settings_action):
+            action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+            self.addAction(action)
+
+        # §9.7.5: Ctrl+1 … Ctrl+9 jump to a destination, and there is no Ctrl+10 — only the first
+        # nine can carry an accelerator, so the pane's order decides which are one keystroke away.
+        self._jumps: list[QAction] = []
+        for index in range(_MAX_ACCELERATED):
+            action = QAction(f"Destination {index + 1}", self)
+            action.setShortcut(QKeySequence(f"Ctrl+{index + 1}"))
+            action.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
+            action.triggered.connect(lambda _checked=False, row=index: self._jump_to(row))
+            self.addAction(action)
+            self._jumps.append(action)
+
+        self._navigation.currentRowChanged.connect(lambda _row: self._retune_commands())
+
+    def _jump_to(self, row: int) -> None:
+        if 0 <= row < self._navigation.count():
+            self._navigation.setCurrentRow(row)
+
+    def _retune_commands(self) -> None:
+        """§9.11: a command that looks like it works and does nothing is worse than a disabled one.
+
+        Export is disabled where the current page has nothing to give, which is a real state — a
+        page whose first reading has not arrived, a register nobody has read, a log that is empty.
+        """
+        page = self.current_page()
+        self._export_action.setEnabled(bool(page is not None and page.csv_rows()))
+        self._refresh_action.setEnabled(
+            page is not None and hasattr(page, "refresh") and self._runner is not None
+        )
+
+    def current_page(self) -> Page | None:
+        row = self._navigation.currentRow()
+        return self._pages[row] if 0 <= row < len(self._pages) else None
+
+    def refresh_current(self) -> None:
+        """F5. Asks the current page to re-read, where it has anything to re-read."""
+        page = self.current_page()
+        refresh = getattr(page, "refresh", None)
+        if refresh is not None:
+            refresh()
+
+    def show_settings(self) -> None:
+        """Ctrl+,."""
+        for row, page in enumerate(self._pages):
+            if page.title == SettingsPage.title:
+                self._navigation.setCurrentRow(row)
+                return
+
+    def export_current(self) -> str | None:
+        """Ctrl+E. Writes the current page's rows, and returns the path it wrote.
+
+        ``None`` where the user cancelled or there was nothing to write. The rows go through
+        :func:`machine_rows` first — §9.5.3's minus sign and hair space are right on screen and
+        make a spreadsheet cell text.
+        """
+        page = self.current_page()
+        if page is None:
+            return None
+
+        rows = page.csv_rows()
+        if not rows:
+            return None
+
+        stamp = self._stamp()
+        suggested = str(Path.home() / suggested_filename(page.title, stamp))
+        chosen, _filter = QFileDialog.getSaveFileName(
+            self, f"Export {page.title}", suggested, "CSV files (*.csv)"
+        )
+        if not chosen:
+            return None
+
+        try:
+            Path(chosen).write_text(to_csv(machine_rows(rows)), encoding="utf-8", newline="")
+        except OSError as error:
+            bar = self.statusBar()
+            if bar is not None:
+                bar.showMessage(f"Could not write {chosen}: {error}")
+            return None
+
+        bar = self.statusBar()
+        if bar is not None:
+            bar.showMessage(f"Exported {len(rows) - 1} rows to {chosen}")
+        return chosen
+
+    def _stamp(self) -> str:
+        """The timestamp in an exported filename.
+
+        Taken from the last reading rather than from a clock, because there is no clock here and
+        §7.4 is the reason there is not: the instant that matters is the one the data came from.
+        """
+        moment = self._last_reading_at
+        return "unknown" if moment is None else moment.strftime("%Y%m%d-%H%M%S")
 
     def _build(self) -> QWidget:
         root = QWidget()
@@ -218,8 +357,10 @@ class DetailsWindow(QMainWindow):
 
     def show_reading(self, reading: Reading) -> None:
         """Feed every page, visible or not — see the module docstring."""
+        self._last_reading_at = reading.captured_at or reading.status.captured_at
         for page in self._pages:
             page.show_reading(reading)
+        self._retune_commands()
 
         bar = self.statusBar()
         if bar is not None:
