@@ -433,3 +433,51 @@ def test_the_theme_picker_is_wide_enough_to_name_the_theme() -> None:
         )
     finally:
         window.close()
+
+
+# ---- No page scrolls sideways at the size its window opens at -------------------------------------
+
+
+def test_no_details_page_needs_horizontal_scrolling_at_the_window_minimum() -> None:
+    """§9.11: the explanation is the part that has to arrive, and a sentence that runs off the
+    right of a card is a sentence nobody reads.
+
+    Five of the ten pages did, at the size the Details window **opens** at — the Position page
+    wanted 1358 px of a 692 px viewport. Almost all of it was explanatory text that never had
+    ``setWordWrap`` called on it: wrapping was being set at the call site, and two page modules had
+    none at all. It is a property of the text now, so ``views.pages.label()`` decides it from the
+    role, and only prose wraps — a monospace device literal or a readout on two lines reads as a
+    rendering fault rather than as a narrow window.
+
+    Vertical scrolling is fine and expected. This is only about the axis that hides content.
+    """
+    from PySide6.QtWidgets import QScrollArea
+
+    from smartclock_monitor.views.details_window import DetailsWindow
+
+    window = DetailsWindow(Theme.DARK)
+    window.apply_preferences(Preferences(advanced_console=True, undocumented_queries=True))
+    window.resize(window.minimumWidth(), window.minimumHeight())
+    window.show()
+    QApplication.processEvents()
+
+    try:
+        too_wide: list[str] = []
+        for index, page in enumerate(window.pages):
+            window._navigation.setCurrentRow(index)
+            QApplication.processEvents()
+
+            area = window._stack.currentWidget()
+            if not isinstance(area, QScrollArea):
+                continue
+            # The scrollbar's own range, not a size hint. A hint does not answer the question —
+            # it ignores size policies, so a table allowed to shrink and scroll inside itself still
+            # reports the width its columns would like. The bar having anywhere to travel is the
+            # fact the user meets.
+            bar = area.horizontalScrollBar()
+            if bar is not None and bar.maximum() > 0:
+                too_wide.append(f"{page.title} scrolls {bar.maximum()} px sideways")
+
+        assert not too_wide, "these pages scroll sideways when opened: " + "; ".join(too_wide)
+    finally:
+        window.close()
