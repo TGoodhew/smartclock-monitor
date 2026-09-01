@@ -142,6 +142,13 @@ class DetailsWindow(QMainWindow):
             self._stack.addWidget(_scrolled(page))
 
         self._navigation.currentRowChanged.connect(self._stack.setCurrentIndex)
+        # **Recomputed on every page change, not only at startup.** A QStackedWidget lays out only
+        # its current page, so a page reports a hint from a layout that has never run until it is
+        # first shown — and a window sized from those hints is sized from nine guesses and one
+        # measurement. Switching to a page is exactly when its real width becomes knowable, so
+        # that is when to ask. It settles: the maximum only ever grows, and each page contributes
+        # once.
+        self._navigation.currentRowChanged.connect(lambda _row: self._adopt_content_minimum())
         self._navigation.setCurrentRow(0)
 
         settings = self.page_named(SettingsPage.title)
@@ -173,6 +180,18 @@ class DetailsWindow(QMainWindow):
         `test_accessibility.py` fails there rather than letting it pass silently.
         """
         chrome = _NAVIGATION_WIDTH + Spacing.PAGE * 2
+
+        # **Polished and laid out first, or the hints are of a font nothing draws in.** §9's
+        # stylesheet is where the typeface comes from, and a page measured before it is applied
+        # reports the default font's metrics. Worse, a QStackedWidget lays out only its *current*
+        # page, so the other nine answer from a layout that has never run. On CI's Windows runner
+        # that under-reported enough for two pages to scroll at the size this computes.
+        for page in self._pages:
+            page.ensurePolished()
+            layout = page.layout()
+            if layout is not None:
+                layout.activate()
+
         widest = max(
             (page.minimumSizeHint().width() for page in self._pages),
             default=0,

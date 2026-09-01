@@ -19,7 +19,7 @@ from collections.abc import Callable
 from datetime import datetime
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QKeySequence, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -221,7 +221,7 @@ class MainWindow(QMainWindow):
         # Qt turns them into pixels with an average width, which is close enough on the face this
         # was written against and was not on Windows — CI found the picker back at 50 px there.
         self._theme_picker.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToContents)
-        self._theme_picker.setMinimumWidth(_widest_entry(self._theme_picker) + Spacing.PAGE)
+        self._size_theme_picker()
         self._theme_picker.currentIndexChanged.connect(self._on_theme_changed)
 
         self.setStatusBar(QStatusBar())
@@ -449,6 +449,25 @@ class MainWindow(QMainWindow):
     #: Set by whoever owns the window, to hear about a preference the user changed. ``None`` means
     #: nobody is listening, which is what a test wants.
     on_preferences_changed: Callable[[Preferences], None] | None = None
+
+    def _size_theme_picker(self) -> None:
+        """Give the picker room for its longest entry, measured in the font it will actually use.
+
+        **After the stylesheet has been applied, which is why this is not a one-liner.** §9's
+        stylesheet is where the typeface comes from, and a widget measured before it is polished
+        reports the *default* font's metrics: 28 px here against 36 after, and 18 against 75 on
+        CI's Windows runner, whose fallback face is wider. Sizing at construction therefore pinned
+        the control at 50 px — the width of a font nothing would be drawn in.
+
+        Called again from ``showEvent`` for the same reason, and idempotent: the second call
+        measures the same font and asks for the same width.
+        """
+        self._theme_picker.ensurePolished()
+        self._theme_picker.setMinimumWidth(_widest_entry(self._theme_picker) + Spacing.PAGE)
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 - Qt's own casing
+        super().showEvent(event)
+        self._size_theme_picker()
 
     # -- §10.3.1 closing ---------------------------------------------------------------------------
     #
