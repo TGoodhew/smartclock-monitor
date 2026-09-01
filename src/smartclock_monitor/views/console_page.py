@@ -95,8 +95,13 @@ class ConsolePage(Page):
         holder_layout.addWidget(self._commands)
 
         self._summary = label("", "caption")
-        self._summary.setWordWrap(True)
         holder_layout.addWidget(self._summary)
+
+        # §9.11: **absent means disabled and explained, never hidden.** An empty picker with no
+        # words is neither — it reads as a page that failed to load rather than as one waiting for
+        # a receiver, or serving a family that has no commands to offer.
+        self._why_empty = label("", "caption")
+        holder_layout.addWidget(self._why_empty)
 
         parameter = QHBoxLayout()
         self._parameter_label = label("Parameter", "caption")
@@ -182,6 +187,29 @@ class ConsolePage(Page):
         self._driver = live
         self._repopulate()
 
+    def _explain_empty(self) -> None:
+        """Say why the picker has nothing in it, when it has nothing in it.
+
+        Two different facts, and a user can act on the difference: no receiver is connected, or the
+        connected family has no command parser at all. Naming the family in the second case is what
+        §12's capability gate does everywhere else, for the same reason.
+        """
+        if self._offered():
+            self._why_empty.setText("")
+            self._why_empty.setVisible(False)
+            return
+
+        self._why_empty.setVisible(True)
+        if self._driver is None:
+            self._why_empty.setText(
+                "Not connected. This picker lists the connected receiver's catalogued commands."
+            )
+        else:
+            self._why_empty.setText(
+                f"{self._driver.name} has no commands to send — it is read only, and speaks "
+                f"without being spoken to. Nothing is written to it."
+            )
+
     def _repopulate(self) -> None:
         selected = self.selected()
         self._commands.blockSignals(True)
@@ -195,6 +223,7 @@ class ConsolePage(Page):
             index = self._commands.findData(selected.mnemonic)
             if index >= 0:
                 self._commands.setCurrentIndex(index)
+        self._explain_empty()
         self._choose(self._commands.currentIndex())
 
     def selected(self) -> ScpiCommand | None:
