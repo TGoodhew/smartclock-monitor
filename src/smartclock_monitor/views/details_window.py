@@ -17,6 +17,8 @@ after being switched to, which is exactly when someone is looking at it.
 
 from __future__ import annotations
 
+from collections.abc import Callable
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QHBoxLayout,
@@ -32,10 +34,12 @@ from PySide6.QtWidgets import (
 
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.polling import Reading
+from smartclock_monitor.services.preferences import Preferences
 from smartclock_monitor.services.trend_store import TrendStore
 from smartclock_monitor.themes.qss import stylesheet
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import Theme, palette_for
+from smartclock_monitor.views.console_page import ConsolePage
 from smartclock_monitor.views.diagnostics_page import DiagnosticsPage
 from smartclock_monitor.views.holdover_page import HoldoverPage
 from smartclock_monitor.views.pages import (
@@ -46,6 +50,7 @@ from smartclock_monitor.views.pages import (
     TimingPage,
 )
 from smartclock_monitor.views.registers_page import StatusRegistersPage
+from smartclock_monitor.views.settings_page import SettingsPage
 from smartclock_monitor.views.time_page import TimePage
 
 #: How wide the navigation pane is. §9.6.1 gives 260 for the Medium breakpoint.
@@ -73,6 +78,8 @@ class DetailsWindow(QMainWindow):
     def __init__(self, theme: Theme = Theme.DARK, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self._theme = theme
+        self._runner: CommandRunner | None = None
+        self._preferences = Preferences()
 
         self.setWindowTitle("Details")
         # §9.6.2's minimum for the two-column arrangement: the sky plot caps at 360 and the table
@@ -88,7 +95,12 @@ class DetailsWindow(QMainWindow):
             DiagnosticsPage(palette_for(theme)),
             StatusRegistersPage(palette_for(theme)),
             TimePage(palette_for(theme)),
+            SettingsPage(palette_for(theme)),
         ]
+
+        #: §10.13: the switch **adds and removes the destination** rather than hiding it, so a
+        #: disabled console is not an item a keyboard user can still reach.
+        self._console = ConsolePage(palette_for(theme))
 
         self._navigation = QListWidget()
         self._navigation.setFixedWidth(_NAVIGATION_WIDTH)
@@ -103,6 +115,10 @@ class DetailsWindow(QMainWindow):
 
         self._navigation.currentRowChanged.connect(self._stack.setCurrentIndex)
         self._navigation.setCurrentRow(0)
+
+        settings = self.page_named(SettingsPage.title)
+        assert isinstance(settings, SettingsPage)
+        settings.on_change(self._preferences_changed)
 
         self.setStatusBar(QStatusBar())
         self.setCentralWidget(self._build())
@@ -133,12 +149,60 @@ class DetailsWindow(QMainWindow):
         for page in self._pages:
             page.set_palette_tokens(palette)
 
+    #: Called when the user changes a preference, so the owner can persist it. Set by whoever
+    #: constructed this window; ``None`` means nobody is saving, which is what a test wants.
+    settings_changed: Callable[[Preferences], None] | None = None
+
+    def _preferences_changed(self, updated: Preferences) -> None:
+        self.apply_preferences(updated)
+        if self.settings_changed is not None:
+            self.settings_changed(updated)
+
+    def apply_preferences(self, preferences: Preferences) -> None:
+        """Add or remove §10.11's console, and remember the rest.
+
+        §10.13: the switch adds and removes the destination rather than merely hiding it. If the
+        console is showing when it is switched off, the pane falls back to the first destination
+        rather than leaving the frame on a page it no longer lists.
+        """
+        self._preferences = preferences
+        showing = preferences.advanced_console
+        present = self._console in self._pages
+
+        if showing and not present:
+            self._pages.append(self._console)
+            item = QListWidgetItem(self._console.title)
+            item.setData(Qt.ItemDataRole.AccessibleTextRole, self._console.title)
+            self._navigation.addItem(item)
+            self._stack.addWidget(_scrolled(self._console))
+            self._console.set_command_runner(self._runner)
+        elif not showing and present:
+            index = self._pages.index(self._console)
+            was_showing = self._navigation.currentRow() == index
+            self._pages.pop(index)
+            self._navigation.takeItem(index)
+            holder = self._stack.widget(index)
+            if holder is not None:
+                self._stack.removeWidget(holder)
+                holder.setParent(None)
+            if was_showing:
+                self._navigation.setCurrentRow(0)
+
+        settings = self.page_named(SettingsPage.title)
+        if isinstance(settings, SettingsPage) and settings.preferences != preferences:
+            settings.set_preferences(preferences)
+
+    @property
+    def preferences(self) -> Preferences:
+        return self._preferences
+
     def set_command_runner(self, runner: CommandRunner | None) -> None:
         """Give the pages that send commands something to send them with.
 
         Asked of every page rather than of a named few: which pages issue commands is a fact about
         those pages, and a list here would be a second place to update when one starts.
         """
+        self._runner = runner
         for page in self._pages:
             setter = getattr(page, "set_command_runner", None)
             if setter is not None:

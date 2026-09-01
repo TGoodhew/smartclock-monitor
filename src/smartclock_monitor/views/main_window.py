@@ -37,6 +37,7 @@ from smartclock_device.models.receiver_status import (
     ReceiverStatus,
     SmartClockMode,
 )
+from smartclock_monitor.services import preferences
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.trend_store import TrendStore
@@ -157,6 +158,9 @@ class MainWindow(QMainWindow):
         # must reach the page as None rather than as an absent attribute.
         self._store: TrendStore | None = None
         self._runner: CommandRunner | None = None
+        # Loaded once at startup. §10.13: a missing or unreadable file reads as the defaults, and
+        # the default for anything advanced is off.
+        self._preferences = preferences.load()
         self._details_button = QPushButton("Details…")
         self._details_button.setAccessibleName("Open the details window")
         self._details_button.setToolTip("Satellites, position and timing (Ctrl+D)")
@@ -294,12 +298,20 @@ class MainWindow(QMainWindow):
             self._details.setWindowFlag(Qt.WindowType.Window, True)
             self._details.set_trend_store(self._store)
             self._details.set_command_runner(self._runner)
+            self._details.apply_preferences(self._preferences)
+            self._details.settings_changed = self._remember_preferences
             if self._last_reading is not None:
                 self._details.show_reading(self._last_reading)
 
         self._details.show()
         self._details.raise_()
         self._details.activateWindow()
+
+    def _remember_preferences(self, updated: preferences.Preferences) -> None:
+        """§10.13: a write that fails is not reported. A preference is by definition something the
+        user can set again, and nothing load-bearing lives in one of these files."""
+        self._preferences = updated
+        preferences.save(updated)
 
     def set_command_runner(self, runner: CommandRunner | None) -> None:
         """Held for a details window opened later, forwarded to one already open."""
