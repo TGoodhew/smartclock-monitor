@@ -56,6 +56,23 @@ def test_the_backoff_is_capped() -> None:
     assert backoff_seconds(1) == FIRST_BACKOFF
 
 
+async def _stops_promptly(task: asyncio.Task[None]) -> None:
+    """Cancel a supervisor and assert it actually stops.
+
+    **Bounded, because the failure this guards against is a hang.** A cleanup path that swallows
+    the task's own ``CancelledError`` — ``suppress(CancelledError)`` around an ``await`` cannot
+    tell whose error it caught — leaves the supervisor going round its ``while True`` for ever,
+    since a task is only cancelled once. Written as a bare ``await task`` this suite then hung
+    rather than failed: two CI jobs sat at sixteen minutes against their own two-minute twins, and
+    a hang says nothing about which test caused it.
+
+    Two seconds is enormous for a loop whose backoff the tests set to zero.
+    """
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await asyncio.wait_for(task, timeout=2.0)
+
+
 # ---- The cycle ---------------------------------------------------------------------------------
 
 
@@ -82,9 +99,7 @@ def test_it_reconnects_after_the_link_is_lost() -> None:
 
         task = asyncio.ensure_future(supervisor.run())
         await asyncio.sleep(0.4)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        await _stops_promptly(task)
 
     asyncio.run(run())
 
@@ -113,9 +128,7 @@ def test_a_failed_connection_is_retried_too() -> None:
 
         task = asyncio.ensure_future(supervisor.run())
         await asyncio.sleep(0.3)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        await _stops_promptly(task)
 
     asyncio.run(run())
 
@@ -143,9 +156,7 @@ def test_the_session_is_announced_and_withdrawn() -> None:
 
         task = asyncio.ensure_future(supervisor.run())
         await asyncio.sleep(0.3)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        await _stops_promptly(task)
 
     asyncio.run(run())
 
@@ -170,9 +181,7 @@ def test_the_countdown_is_reported() -> None:
 
         task = asyncio.ensure_future(supervisor.run())
         await asyncio.sleep(1.2)
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        await _stops_promptly(task)
 
     asyncio.run(run())
 
@@ -202,9 +211,7 @@ def test_retry_now_cuts_the_countdown_short() -> None:
             supervisor.retry_now()
             await asyncio.sleep(0.05)
 
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        await _stops_promptly(task)
 
         # Without retry_now the first backoff is two seconds, so nothing would have happened.
         assert attempts > before
@@ -243,9 +250,7 @@ def test_not_staying_connected_waits_to_be_asked() -> None:
         await asyncio.sleep(0.1)
         assert attempts == 2, "asking must work"
 
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        await _stops_promptly(task)
 
     asyncio.run(run())
 
@@ -307,9 +312,7 @@ def test_reconnecting_skips_the_countdown() -> None:
 
         assert attempts > before, "it waited out a backoff it had been told to skip"
 
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        await _stops_promptly(task)
 
     asyncio.run(run())
 
@@ -337,9 +340,7 @@ def test_a_deliberate_reconnect_is_not_reported_as_a_fault() -> None:
         supervisor.reconnect()
         await asyncio.sleep(0.3)
 
-        task.cancel()
-        with pytest.raises(asyncio.CancelledError):
-            await task
+        await _stops_promptly(task)
 
     asyncio.run(run())
 
