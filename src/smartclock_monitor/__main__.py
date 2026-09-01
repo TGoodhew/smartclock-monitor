@@ -38,8 +38,10 @@ from smartclock_device.transport.settings import (
     SerialSettings,
     StopBits,
 )
+from smartclock_monitor.platform import notifications
 from smartclock_monitor.platform.paths import trend_database
 from smartclock_monitor.services.commands import SessionCommands
+from smartclock_monitor.services.lock_watch import LockWatch
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.replay import ReplayTransport
 from smartclock_monitor.services.session import DeviceSession
@@ -169,6 +171,27 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
 
     store = _open_store(arguments, clock, window)
 
+    # P1-9. The notifier is a *second* channel — the window says the same thing either way — so a
+    # desktop with no route to one gets the no-op and nothing else changes.
+    notifier = notifications.for_this_desktop()
+
+    def show_alert(message: str) -> None:
+        """The notifier answers whether anything was shown; the watch does not care.
+
+        A caller that branched on it would be treating a second channel as a first one — the
+        window says the same thing either way.
+        """
+        notifier.notify(message)
+
+    watch = LockWatch(
+        on_lost=show_alert,
+        on_recovered=show_alert,
+        enabled=window.preferences.alert_on_lock_loss,
+    )
+    window.on_preferences_changed = lambda updated: setattr(
+        watch, "enabled", updated.alert_on_lock_loss
+    )
+
     async def connect() -> DeviceSession | None:
         """One connection attempt. Called again by the supervisor after every drop."""
         if arguments.demo or not arguments.port:
@@ -203,7 +226,7 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         driver=driver,
         clock=clock,
         on_session=announce,
-        on_reading=_publish(window, store),
+        on_reading=_publish(window, store, watch),
         on_status=window.set_connection_text,
     )
     window.set_supervisor(supervisor)
@@ -297,7 +320,9 @@ def _open_store(
     return store
 
 
-def _publish(window: object, store: TrendStore | None) -> Callable[[Reading], None]:
+def _publish(
+    window: object, store: TrendStore | None, watch: LockWatch
+) -> Callable[[Reading], None]:
     """One callback that files the reading and then draws it.
 
     **Stored before displayed, and a store that fails does not cost the display.** The reading is
@@ -309,6 +334,7 @@ def _publish(window: object, store: TrendStore | None) -> Callable[[Reading], No
     assert isinstance(window, MainWindow)
 
     def publish(reading: Reading) -> None:
+        watch.observe(reading)
         if store is not None:
             # Suppressed deliberately, and this is the one place it is right to: a failed write
             # costs a pixel of history, and letting it out of a poll-loop callback would cost the
