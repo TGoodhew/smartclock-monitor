@@ -13,7 +13,11 @@ from conftest import NOW
 from smartclock_device.clock import FixedClock
 from smartclock_device.commands import catalog
 from smartclock_device.commands.blocked import is_blocked
-from smartclock_device.commands.scpi_command import ResponseFormat, SafetyTier
+from smartclock_device.commands.scpi_command import (
+    ArgumentKind,
+    ResponseFormat,
+    SafetyTier,
+)
 from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_device.drivers.smartclock import SmartClockDriver
 
@@ -57,10 +61,118 @@ def test_a_catalogued_command_is_found_however_it_is_cased() -> None:
     assert catalog.is_allowed(":SYST:STAT?") is True
 
 
-def test_every_entry_is_safe_until_a_setter_is_added() -> None:
-    """This subset is reads and the status clear. When the first tier C setter lands, §8.3's
-    confirmation flow lands with it — this assertion is what will notice."""
-    assert all(command.tier is SafetyTier.SAFE for command in catalog.ALL)
+def test_every_confirming_command_carries_its_own_sentence() -> None:
+    """§8.3, and its own amendment note is the argument for keeping the sentence *on the command*.
+
+    ``:IGN:NONE`` shared the exclusion sentence — *"Exclude the selected satellites from
+    tracking?"* — for a command that **clears** the exclusion list, in this table and in the
+    catalog both. A user confirming it would reasonably believe they were excluding satellites
+    while making every satellite eligible again. The dialog is the safety mechanism and that one
+    named the reverse of what it was about to do.
+
+    So: no tier C entry without a sentence, and no two entries sharing one, because sharing is how
+    that defect happened.
+    """
+    confirming = [command for command in catalog.ALL if command.tier is SafetyTier.CONFIRM]
+    assert confirming, "the tier exists; something should be in it"
+
+    for command in confirming:
+        assert command.confirmation, f"{command.mnemonic} confirms with no sentence."
+        assert command.confirmation.endswith("?") or "?" in command.confirmation, (
+            f"{command.mnemonic}'s confirmation does not ask anything."
+        )
+
+
+def test_a_safe_command_carries_no_confirmation() -> None:
+    """A sentence on a tier S entry is either a miscategorised command or a sentence nothing will
+    ever show. Both are worth failing over."""
+    for command in catalog.ALL:
+        if command.tier is SafetyTier.SAFE:
+            assert command.confirmation is None, f"{command.mnemonic} is safe but has a sentence."
+            assert command.requires_acknowledgement is False
+
+
+def test_forcing_holdover_needs_the_extra_acknowledgement() -> None:
+    """§9.7.4 gates the strong variants behind a tick. Forcing holdover inside 24 hours of
+    power-up corrupts SmartClock oscillator learning, which is not undoable by clicking again."""
+    assert catalog.HOLDOVER_FORCE.requires_acknowledgement is True
+    assert "24 hours" in (catalog.HOLDOVER_FORCE.confirmation or "")
+
+
+def test_recovering_from_holdover_is_safe() -> None:
+    """§8.2 says why in as many words: both recovery commands move the unit *toward* lock, which
+    is the desired state, and cannot damage anything."""
+    assert catalog.HOLDOVER_RECOVER.tier is SafetyTier.SAFE
+    assert catalog.HOLDOVER_IGNORE_RECOVERY_LIMIT.tier is SafetyTier.SAFE
+
+
+def test_every_argument_taking_command_declares_what_it_accepts() -> None:
+    """A setter with no bounds accepts whatever a spin box hands it. The bounds are the validation
+    — there is nowhere else it happens."""
+    for command in catalog.ALL:
+        if command.argument in (ArgumentKind.INTEGER, ArgumentKind.DECIMAL):
+            assert command.minimum is not None, f"{command.mnemonic} has no lower bound."
+            assert command.maximum is not None, f"{command.mnemonic} has no upper bound."
+            assert command.minimum <= command.maximum
+        if command.argument is ArgumentKind.KEYWORD:
+            assert command.keywords, f"{command.mnemonic} accepts a keyword from nowhere."
+            assert all(word == word.upper() for word in command.keywords)
+
+
+def test_a_command_that_takes_nothing_refuses_an_argument() -> None:
+    """The allowlist is an exact match on the header, so an argument appended to a command that
+    does not take one would be text nobody validated."""
+    assert catalog.STATUS_SCREEN.rendered() == ":SYST:STAT?"
+    assert catalog.STATUS_SCREEN.rendered("ALL") is None
+
+
+def test_an_integer_argument_is_bounded_and_whole() -> None:
+    setter = catalog.SET_HOLDOVER_DURATION_THRESHOLD
+
+    assert setter.rendered(600) == ":SYNC:HOLD:DUR:THR 600"
+    assert setter.rendered(0) is None
+    assert setter.rendered(1_000_000) is None
+    assert setter.rendered(1.5) is None
+    assert setter.rendered("not a number") is None
+    assert setter.rendered(None) is None
+
+
+def test_a_keyword_argument_comes_from_the_list_or_not_at_all() -> None:
+    """§10.9's twelve subsystem keywords were probed against the live receiver rather than taken
+    on trust. Anything else is a command this application has never seen answered."""
+    assert catalog.RUN_SELF_TEST.rendered("ALL") == ":DIAG:TEST? ALL"
+    assert catalog.RUN_SELF_TEST.rendered("gps") == ":DIAG:TEST? GPS"
+    assert catalog.RUN_SELF_TEST.rendered("NOSUCH") is None
+    assert catalog.RUN_SELF_TEST.rendered(7) is None
+
+
+def test_a_decimal_argument_is_not_sent_in_exponent_notation() -> None:
+    """The antenna delay is seconds, and 60 ns is 6e-08. A receiver handed "6e-08" for a value it
+    spells plainly is a command that fails for a formatting reason."""
+    rendered = catalog.SET_ANTENNA_DELAY.rendered(6e-08)
+
+    assert rendered is not None
+    # The argument, not the whole line — ":GPS:REF:ADEL" has an "e" of its own in REF.
+    assert "e" not in rendered.split(" ", 1)[1].lower()
+    assert rendered == ":GPS:REF:ADEL 0.00000006"
+
+
+def test_every_register_has_all_five_fields() -> None:
+    """§10.10's table has a column each for condition, event, enable, PTr and NTr, over five
+    registers. A missing pair is a column of dashes on one register only."""
+    for root, _ in catalog.REGISTER_ROOTS:
+        for field, _ in catalog.REGISTER_FIELDS:
+            assert catalog.register_query(root, field) is not None, f"{root}:{field}?"
+
+
+def test_only_the_three_mask_fields_can_be_written() -> None:
+    """Condition and event are the receiver's own state. A setter for either would be an offer to
+    change what the hardware is reporting, which is not a thing that can be done."""
+    for root, _ in catalog.REGISTER_ROOTS:
+        assert catalog.register_setter(root, "COND") is None
+        assert catalog.register_setter(root, "EVEN") is None
+        for field in ("ENAB", "PTR", "NTR"):
+            assert catalog.register_setter(root, field) is not None
 
 
 def test_a_query_is_recognisable_as_one() -> None:
