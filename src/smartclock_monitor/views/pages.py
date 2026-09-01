@@ -43,7 +43,11 @@ from PySide6.QtWidgets import (
 from smartclock_device.commands import catalog
 from smartclock_device.models import antenna_cable, coordinates
 from smartclock_device.models.device_identity import DeviceIdentity
-from smartclock_device.models.receiver_status import ReceiverStatus, SignalStrengthKind
+from smartclock_device.models.receiver_status import (
+    OutputValidity,
+    ReceiverStatus,
+    SignalStrengthKind,
+)
 from smartclock_device.parsing.scalars import parse_decimal, parse_integer, parse_keyword
 from smartclock_monitor.services.allan import allan_deviation, summarise
 from smartclock_monitor.services.commands import CommandRunner
@@ -99,6 +103,19 @@ def card(title: str) -> tuple[QFrame, QVBoxLayout]:
     if title:
         layout.addWidget(label(title, "subtitle"))
     return frame, layout
+
+
+#: §10.4's *Outputs* row, in words rather than in enum spelling.
+#:
+#: ``VALID_REDUCED.name.title()`` rendered as **"Valid_Reduced"** — an identifier on screen, on the
+#: row §11.1 calls "the single most important thing the main window has to convey". The wording for
+#: the middle state follows §9.4.1's caution row, which already says *reduced accuracy*.
+OUTPUT_VALIDITY_TEXT: Final[dict[OutputValidity, str]] = {
+    OutputValidity.UNKNOWN: "Unknown",
+    OutputValidity.INVALID: "Invalid",
+    OutputValidity.VALID_REDUCED: "Valid, reduced accuracy",
+    OutputValidity.VALID: "Valid",
+}
 
 
 class Page(QWidget):
@@ -217,7 +234,10 @@ class OverviewPage(_FieldsExport, Page):
         layout = QVBoxLayout(self)
         layout.setSpacing(Spacing.MEDIUM)
 
-        summary, summary_layout = card("Receiver")
+        # §10.4 names this card *Synchronization*, in the specification's own US spelling. It read
+        # "Receiver" and so did the identity card below it, which put two cards with one title on
+        # the first page anyone opens.
+        summary, summary_layout = card("Synchronization")
         self._fields = FieldGrid(
             ("Mode", "Detail", "Outputs", "Time scale", "Captured", "Warnings")
         )
@@ -230,13 +250,13 @@ class OverviewPage(_FieldsExport, Page):
 
         layout.addWidget(self._build_receiver())
         layout.addStretch(1)
-        self._exported = (("Status", self._fields), ("Receiver", self._identity))
+        self._exported = (("Synchronization", self._fields), ("Receiver", self._identity))
 
     def show_reading(self, reading: Reading) -> None:
         status = reading.status
         self._fields.set("Mode", status.mode.name.replace("_", " ").title())
         self._fields.set("Detail", status.mode_detail or DASH, device_literal=True)
-        self._fields.set("Outputs", status.outputs.name.title())
+        self._fields.set("Outputs", OUTPUT_VALIDITY_TEXT[status.outputs])
         self._fields.set("Time scale", status.time_scale.name)
         self._fields.set("Captured", status.captured_at.strftime("%Y-%m-%d %H:%M:%S"))
         self._fields.set(

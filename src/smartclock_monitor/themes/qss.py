@@ -142,6 +142,128 @@ QCheckBox, QRadioButton, QComboBox, QLineEdit, QSpinBox, QDoubleSpinBox {{
     min-height: {MINIMUM_POINTER_TARGET}px;
 }}
 
+/* Text and number entry. **Colours, not only a height** — these carried the pointer-target rule
+   above and nothing else, so they kept Qt's own light defaults and a Dark-theme spin box was a
+   white rectangle with a value in it nobody could read. The combo box two rules down had the full
+   set from the start, which is what made the gap invisible in review: the page looked themed
+   because the control beside the broken one was. */
+QLineEdit, QSpinBox, QDoubleSpinBox, QPlainTextEdit, QTextEdit {{
+    background-color: {palette.card_fill_secondary};
+    color: {palette.text_primary};
+    border: 1px solid {palette.stroke_default};
+    border-radius: {Radius.CONTROL}px;
+    padding: {Spacing.TIGHT}px {Spacing.SMALL}px;
+    selection-background-color: {palette.accent};
+    selection-color: {palette.accent_foreground};
+}}
+
+QLineEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus,
+QPlainTextEdit:focus, QTextEdit:focus {{
+    border: 2px solid {palette.accent};
+}}
+
+QLineEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {{
+    color: {palette.text_disabled};
+    border-color: {palette.stroke_subtle};
+}}
+
+/* Placeholder text is its own colour and does not follow `color`. Left alone it renders at Qt's
+   default mid-grey, which is a contrast failure against a dark fill rather than a subtlety. */
+QLineEdit {{
+    placeholder-text-color: {palette.text_tertiary};
+}}
+
+/* The steppers are drawn from the palette, not the stylesheet, unless the fill is named. */
+QSpinBox::up-button, QSpinBox::down-button,
+QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {{
+    background-color: {palette.card_fill_secondary};
+    border: none;
+    width: {Spacing.MEDIUM}px;
+}}
+
+/* Progress. Found by the gate below this rule's absence — it paints its own ground and had none,
+   so §10.12's auto-detect bar and the self-test bar were Qt's white on both themes. */
+QProgressBar {{
+    background-color: {palette.card_fill_secondary};
+    color: {palette.text_primary};
+    border: 1px solid {palette.stroke_default};
+    border-radius: {Radius.CONTROL}px;
+    text-align: center;
+}}
+
+QProgressBar::chunk {{
+    background-color: {palette.accent};
+    border-radius: {Radius.CONTROL}px;
+}}
+
+/* §9.7.4's command bar. It is a **top-level** surface — not inside any card, inheriting nothing
+   from one — so with no rule of its own it took the *desktop's* palette: on Dark that was a light
+   system strip carrying this theme's light text, grey on near-white, the worst contrast anywhere
+   in the application and on the one row visible from every page.
+
+   QToolBar rather than QMenuBar, which this application does not use. A rule for a class nothing
+   instantiates is a rule that enforces nothing and reads as coverage. */
+QToolBar {{
+    background-color: {palette.layer_fill};
+    color: {palette.text_primary};
+    border: none;
+    border-bottom: 1px solid {palette.stroke_subtle};
+    spacing: {Spacing.TIGHT}px;
+    padding: {Spacing.TIGHT}px;
+}}
+
+QToolButton {{
+    background: transparent;
+    color: {palette.text_primary};
+    border: 1px solid transparent;
+    border-radius: {Radius.CONTROL}px;
+    padding: {Spacing.TIGHT}px {Spacing.SMALL}px;
+    /* §9.12's pointer-target floor. These are commands like any other button. */
+    min-height: {MINIMUM_POINTER_TARGET}px;
+}}
+
+QToolButton:hover {{
+    background-color: {palette.card_fill_secondary};
+    border-color: {palette.stroke_default};
+}}
+
+QToolButton:focus {{
+    border: 2px solid {palette.accent};
+}}
+
+QToolButton:disabled {{
+    color: {palette.text_disabled};
+}}
+
+/* A context menu is a separate top-level window, the same way the combo popup is, so it needs its
+   own rule for the same reason. §10's copy menus and the tray menu are both these. */
+QMenu {{
+    background-color: {palette.overlay_fill};
+    color: {palette.text_primary};
+    border: 1px solid {palette.stroke_default};
+    padding: {Spacing.TIGHT}px;
+}}
+
+QMenu::item {{
+    padding: {Spacing.TIGHT}px {Spacing.MEDIUM}px;
+    border-radius: {Radius.CONTROL}px;
+}}
+
+QMenu::item:selected {{
+    background-color: {palette.accent};
+    color: {palette.accent_foreground};
+}}
+
+QMenu::item:disabled {{
+    color: {palette.text_disabled};
+}}
+
+QMenu::separator {{
+    height: 1px;
+    background-color: {palette.stroke_subtle};
+    margin: {Spacing.TIGHT}px 0;
+}}
+
 QPushButton:disabled {{
     color: {palette.text_disabled};
     border-color: {palette.stroke_subtle};

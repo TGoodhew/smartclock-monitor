@@ -228,7 +228,10 @@ def test_exporting_writes_machine_text(tmp_path: Path, monkeypatch: pytest.Monke
     written = target.read_bytes().decode("utf-8")
     assert MINUS not in written
     assert written.endswith("\r\n"), "RFC 4180, which every spreadsheet reads unprompted"
-    assert "Status,Detail," in written, "a missing value exports as an empty cell, not a dash"
+    # The card name is §10.4's, which is "Synchronization" in the specification's own US spelling.
+    assert "Synchronization,Detail," in written, (
+        "a missing value exports as an empty cell, not a dash"
+    )
 
 
 def test_cancelling_the_dialog_writes_nothing(
