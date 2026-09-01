@@ -20,13 +20,16 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QButtonGroup,
+    QComboBox,
     QFrame,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
     QPushButton,
+    QRadioButton,
     QSizePolicy,
+    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
@@ -34,9 +37,9 @@ from PySide6.QtWidgets import (
 )
 
 from smartclock_device.commands import catalog
-from smartclock_device.models import coordinates
+from smartclock_device.models import antenna_cable, coordinates
 from smartclock_device.models.receiver_status import ReceiverStatus, SignalStrengthKind
-from smartclock_device.parsing.scalars import parse_integer
+from smartclock_device.parsing.scalars import parse_decimal, parse_integer
 from smartclock_monitor.services.allan import allan_deviation, summarise
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.drift import FIT_MARGIN, advise
@@ -53,6 +56,7 @@ from smartclock_monitor.services.trend_store import (
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
+from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.widgets.copy_menu import attach_table_menu, attach_value_menu
 from smartclock_monitor.widgets.severity_pill import SeverityPill
 from smartclock_monitor.widgets.sky_plot import SkyPlot
@@ -491,6 +495,8 @@ class TimingPage(Page):
         layout = QVBoxLayout(self)
         layout.setSpacing(Spacing.MEDIUM)
 
+        layout.addWidget(self._build_antenna())
+
         merit, merit_layout = card("Figures of merit")
         self._merit = FieldGrid(
             (
@@ -519,6 +525,140 @@ class TimingPage(Page):
 
         layout.addWidget(self._build_trends())
         layout.addStretch(1)
+
+    # -- §10.7's antenna cable delay ------------------------------------------------------------
+
+    def _build_antenna(self) -> QFrame:
+        """§10.7's first card: the delay the receiver is compensating for, and two ways to set it.
+
+        **Two ways to the same number, not two settings.** Entering the delay directly and
+        computing it from a cable produce one value; the computed figure is shown before it is
+        applied so the arithmetic is visible rather than implied.
+        """
+        holder, holder_layout = card("Antenna cable delay")
+
+        self._antenna_current = FieldGrid(("Current", "Elevation mask"))
+        holder_layout.addWidget(self._antenna_current)
+
+        direct = QHBoxLayout()
+        self._direct_mode = QRadioButton("Enter delay directly")
+        self._direct_mode.setChecked(True)
+        self._direct_mode.toggled.connect(lambda _on: self._retune_antenna())
+        direct.addWidget(self._direct_mode)
+        self._delay_ns = QSpinBox()
+        self._delay_ns.setRange(0, 999_999)
+        self._delay_ns.setSuffix(" ns")
+        self._delay_ns.setAccessibleName("Antenna delay in nanoseconds")
+        direct.addWidget(self._delay_ns)
+        direct.addStretch(1)
+        holder_layout.addLayout(direct)
+
+        computed = QHBoxLayout()
+        self._cable_mode = QRadioButton("Calculate from cable")
+        self._cable_mode.toggled.connect(lambda _on: self._retune_antenna())
+        computed.addWidget(self._cable_mode)
+        self._cable = QComboBox()
+        self._cable.setAccessibleName("Cable type")
+        for preset in antenna_cable.PRESETS:
+            self._cable.addItem(preset.name, preset.delay_ns_per_metre)
+        self._cable.currentIndexChanged.connect(lambda _i: self._recompute_delay())
+        computed.addWidget(self._cable)
+        self._length = QSpinBox()
+        self._length.setRange(0, 9_999)
+        self._length.setSuffix(" m")
+        self._length.setAccessibleName("Cable length in metres")
+        self._length.valueChanged.connect(lambda _v: self._recompute_delay())
+        computed.addWidget(self._length)
+        computed.addStretch(1)
+        holder_layout.addLayout(computed)
+
+        self._computed = label("", "caption")
+        holder_layout.addWidget(self._computed)
+
+        holder_layout.addWidget(
+            label(
+                "Changing this while locked can push the receiver into holdover.",
+                "tertiary",
+            )
+        )
+
+        apply_row = QHBoxLayout()
+        apply_row.addStretch(1)
+        self._apply_delay = QPushButton("Apply delay")
+        self._apply_delay.setProperty("role", "destructive")
+        self._apply_delay.clicked.connect(self._send_delay)
+        apply_row.addWidget(self._apply_delay)
+        holder_layout.addLayout(apply_row)
+
+        self._retune_antenna()
+        return holder
+
+    def _retune_antenna(self) -> None:
+        from_cable = self._cable_mode.isChecked()
+        self._delay_ns.setEnabled(not from_cable)
+        self._cable.setEnabled(from_cable)
+        self._length.setEnabled(from_cable)
+        self._computed.setVisible(from_cable)
+        live = self._runner is not None and self._runner.is_connected
+        self._apply_delay.setEnabled(live)
+        self._recompute_delay()
+
+    def _recompute_delay(self) -> None:
+        if not self._cable_mode.isChecked():
+            self._computed.setText("")
+            return
+        self._computed.setText(f"Computed delay {self.intended_delay_ns():.1f} ns")
+
+    def intended_delay_ns(self) -> float:
+        """The delay the Apply button would send, whichever way it was arrived at."""
+        if not self._cable_mode.isChecked():
+            return float(self._delay_ns.value())
+        per_metre = float(self._cable.currentData() or 0.0)
+        return per_metre * float(self._length.value())
+
+    def _send_delay(self) -> None:
+        runner = self._runner
+        if runner is None:
+            return
+
+        nanoseconds = self.intended_delay_ns()
+        # §11's own guard: the receiver takes seconds, and the model already knows what it will
+        # accept. Refusing here costs a message; sending it costs a round trip and an error.
+        if not antenna_cable.is_acceptable_delay(nanoseconds):
+            return
+
+        seconds = nanoseconds * 1e-9
+        if not ask(catalog.SET_ANTENNA_DELAY, seconds, self._palette, self):
+            return
+        runner.run([(catalog.SET_ANTENNA_DELAY, seconds)], lambda _o: self.refresh_antenna())
+
+    def refresh_antenna(self) -> None:
+        """Read back what the receiver took.
+
+        The same rule the holdover limit follows: what the receiver accepted need not be what was
+        sent, and this card is the only place the figure appears.
+        """
+        runner = self._runner
+        if runner is None or not runner.is_connected:
+            return
+        runner.run(
+            [(catalog.ANTENNA_DELAY, None), (catalog.ELEVATION_MASK, None)], self._absorb_antenna
+        )
+
+    def _absorb_antenna(self, outcomes: Sequence[CommandOutcome]) -> None:
+        by_mnemonic = {outcome.command.mnemonic: outcome for outcome in outcomes}
+
+        delay = by_mnemonic.get(catalog.ANTENNA_DELAY.mnemonic)
+        seconds = None
+        if delay is not None and delay.transaction is not None:
+            seconds = parse_decimal(delay.transaction.first_line)
+        self._antenna_current.set("Current", DASH if seconds is None else f"{seconds * 1e9:.1f} ns")
+
+        mask = by_mnemonic.get(catalog.ELEVATION_MASK.mnemonic)
+        degrees = None
+        if mask is not None and mask.transaction is not None:
+            degrees = parse_decimal(mask.transaction.first_line)
+        self._antenna_current.set("Elevation mask", DASH if degrees is None else f"{degrees:.0f}°")
 
     # -- §10.7's trends ------------------------------------------------------------------------
 
@@ -614,8 +754,10 @@ class TimingPage(Page):
         card could only say they had not been read, which was honest and useless.
         """
         self._runner = runner
+        self._retune_antenna()
         if runner is not None and runner.is_connected:
             runner.run([(catalog.HARDWARE_CONDITION, None)], self._absorb_register)
+            self.refresh_antenna()
 
     def _absorb_register(self, outcomes: Sequence[CommandOutcome]) -> None:
         """Fold the hardware condition register in as a bit list.
