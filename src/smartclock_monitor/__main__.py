@@ -40,9 +40,10 @@ from smartclock_device.transport.settings import (
 )
 from smartclock_monitor.platform.paths import trend_database
 from smartclock_monitor.services.commands import SessionCommands
-from smartclock_monitor.services.polling import PollingService, Reading
+from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.replay import ReplayTransport
 from smartclock_monitor.services.session import DeviceSession
+from smartclock_monitor.services.supervisor import Supervisor
 from smartclock_monitor.services.trend_store import TrendStore, TrendStoreError
 from smartclock_monitor.themes.tokens import Theme
 
@@ -167,36 +168,53 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
     driver = SmartClockDriver(clock=clock)
 
     store = _open_store(arguments, clock, window)
-    session: DeviceSession | None
 
-    if arguments.demo or not arguments.port:
-        window.set_connection_text("Demo — replaying captured status screens")
-        session = DeviceSession(ReplayTransport(clock), driver, clock)
-        try:
-            await session.open()
-        except TransportError as error:
-            window.set_connection_text(str(error))
-            return
-    else:
-        session = await _connect_serial(arguments, driver, clock, window)
+    async def connect() -> DeviceSession | None:
+        """One connection attempt. Called again by the supervisor after every drop."""
+        if arguments.demo or not arguments.port:
+            window.set_connection_text("Demo — replaying captured status screens")
+            session = DeviceSession(ReplayTransport(clock), driver, clock)
+            try:
+                await session.open()
+            except TransportError as error:
+                # §9.11's copy rule: the failure reaches the user in words they can act on.
+                window.set_connection_text(str(error))
+                return None
+            return session
+
+        return await _connect_serial(arguments, driver, clock, window)
+
+    def announce(session: DeviceSession | None) -> None:
+        """Rewire the window as sessions come and go.
+
+        The runner is cleared when the link drops, so the pages disable their controls rather than
+        offering buttons that would send into a closed port.
+        """
         if session is None:
+            window.set_command_runner(None)
             return
+        identity = session.identity
+        named = identity.model if identity is not None else "receiver"
+        window.set_connection_text(f"Connected to {named} — {session.description}")
+        window.set_command_runner(SessionCommands(session))
 
-    identity = session.identity
-    named = identity.model if identity is not None else "receiver"
-    window.set_connection_text(f"Connected to {named} — {session.description}")
-
-    window.set_command_runner(SessionCommands(session))
-
-    service = PollingService(session=session, driver=driver, clock=clock)
-    service.on_reading = _publish(window, store)
+    supervisor = Supervisor(
+        connect=connect,
+        driver=driver,
+        clock=clock,
+        on_session=announce,
+        on_reading=_publish(window, store),
+        on_status=window.set_connection_text,
+    )
+    window.set_supervisor(supervisor)
 
     try:
-        await service.run()
+        await supervisor.run()
     except asyncio.CancelledError:
         raise
     finally:
-        await session.close()
+        if supervisor.session is not None:
+            await supervisor.session.close()
         if store is not None:
             store.close()
 
