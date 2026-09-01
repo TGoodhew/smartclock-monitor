@@ -222,18 +222,26 @@ def test_each_marker_reports_its_own_name(application: QApplication) -> None:
     assert "PRN 8, elevation 14 degrees, azimuth 42 degrees, not tracked." in names
 
 
-def test_a_marker_hit_target_meets_the_pointer_floor(application: QApplication) -> None:
-    """§9.12's floor is **declared, not inherited**. The ink may be 8 px; the target is not."""
+def test_a_marker_hit_target_is_declared_at_the_documented_exception(
+    application: QApplication,
+) -> None:
+    """The target is **declared, not inherited** — the ink may be 8 px and the target is not.
+
+    §9.10.2's exception rather than §9.12's floor, and asserted as an equality rather than as
+    ``>=``: a marker larger than 24 px is the defect the exception exists to prevent, so a floor
+    written the usual way round would pass in exactly the case that matters. At the plot's 240 px
+    minimum two satellites in the fixtures sit 27.0 px apart, and 32 px targets overlap there.
+    """
     del application
-    from smartclock_monitor.themes.spacing import MINIMUM_POINTER_TARGET
+    from smartclock_monitor.themes.spacing import SKY_PLOT_POINTER_TARGET
 
     window = DetailsWindow(Theme.DARK)
     page = window.page_named("Satellites")
     page.show_reading(reading())
 
     for marker in page.plot.markers:  # type: ignore[attr-defined]
-        assert marker.width() >= MINIMUM_POINTER_TARGET
-        assert marker.height() >= MINIMUM_POINTER_TARGET
+        assert marker.width() == SKY_PLOT_POINTER_TARGET
+        assert marker.height() == SKY_PLOT_POINTER_TARGET
 
 
 def test_arrow_keys_walk_the_markers_in_prn_order(application: QApplication) -> None:

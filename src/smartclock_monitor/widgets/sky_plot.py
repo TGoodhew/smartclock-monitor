@@ -25,7 +25,7 @@ from PySide6.QtWidgets import QWidget
 
 from smartclock_device.models.receiver_status import SignalStrengthKind
 from smartclock_device.models.satellite import PredictedSatellite, TrackedSatellite
-from smartclock_monitor.themes.spacing import MINIMUM_POINTER_TARGET, Spacing
+from smartclock_monitor.themes.spacing import SKY_PLOT_POINTER_TARGET, Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
 from smartclock_monitor.widgets.sky_plot_geometry import (
     Disc,
@@ -100,8 +100,11 @@ class SatelliteMarker(QWidget):
         self._is_selected = False
 
         self.setFocusPolicy(Qt.FocusPolicy.TabFocus)
-        # §9.12's pointer-target floor. The ink may be 8 px; the target is not.
-        self.setFixedSize(MINIMUM_POINTER_TARGET, MINIMUM_POINTER_TARGET)
+        # §9.10.2's recorded exception to §9.12's floor, and the one place it applies. The ink may
+        # be 8 px and the target is 24 — four times the disc's own clickable area, without reaching
+        # a neighbour. At the full 32 the two closest satellites in the fixtures overlap at this
+        # plot's minimum size, and the marker that overlaps takes the other's clicks silently.
+        self.setFixedSize(SKY_PLOT_POINTER_TARGET, SKY_PLOT_POINTER_TARGET)
         self.setAccessibleName(
             describe(
                 marker.prn,

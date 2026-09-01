@@ -148,14 +148,17 @@ def test_the_sky_plot_marker_keeps_its_documented_hit_area() -> None:
     """A11Y-5's one recorded exception, and §9.10.2 does not waive the rule — it names the
     compliant path. The visible disc is 8–18 px and *its position is the data*; growing the target
     past a point stops helping and starts silently selecting the wrong satellite."""
-    from smartclock_monitor.themes.spacing import MINIMUM_POINTER_TARGET
+    from smartclock_monitor.themes.spacing import (
+        MINIMUM_POINTER_TARGET,
+        SKY_PLOT_POINTER_TARGET,
+    )
 
-    # This build gives markers the **full** 32 px rather than §9.10.2's 24 px exception, so it
-    # does not rely on the exception at all. §9.10.2 argues 32 is too generous on a 360 px plot —
-    # roughly 8° of projected sky, where satellites routinely sit closer — and the failure it
-    # predicts is silently selecting the wrong satellite. Filed rather than changed here: it is a
-    # hit-testing behaviour change, not a defect with one right answer.
-    assert MINIMUM_POINTER_TARGET >= SKY_PLOT_HIT_AREA
+    # The two are different numbers on purpose, and the assertion is exact rather than an
+    # inequality: ">= 24" passed while markers had the full 32, which was the state this test was
+    # written in and the state §9.10.2 warns against.
+    assert MINIMUM_POINTER_TARGET == POINTER_FLOOR
+    assert SKY_PLOT_POINTER_TARGET == SKY_PLOT_HIT_AREA
+    assert SKY_PLOT_POINTER_TARGET < MINIMUM_POINTER_TARGET
 
 
 # ---- A11Y-12 / P0-19: severity never renders as colour alone -------------------------------------
@@ -207,3 +210,69 @@ def test_the_sanctioned_list_is_not_stale() -> None:
         "platform/tray.py",
     ):
         assert "colour_for" in (root / relative).read_text(encoding="utf-8"), relative
+
+
+def test_no_two_markers_overlap_at_the_plot_s_minimum_size() -> None:
+    """§9.10.2's exception, checked against captured sky rather than against the argument for it.
+
+    The specification predicts that a 32 px target on this plot covers roughly 8° of projected sky
+    and that satellites routinely sit closer, making the failure **silently selecting the wrong
+    satellite** — worse than a small target, because a missed click is obvious and a wrong
+    selection is not.
+
+    It reproduces. At the plot's own 240 px minimum, PRN 5 and PRN 20 in
+    ``locked-stabilizing.txt`` sit 27.0 px apart: 32 px targets overlap on real sky and 24 px ones
+    do not. That is what moved this from a judgement call to a measurement.
+    """
+    import itertools
+    import math
+    from pathlib import Path
+
+    from smartclock_device.clock import SystemClock
+    from smartclock_device.drivers.smartclock import SmartClockDriver
+    from smartclock_device.transport.transaction import Transaction, TransactionOutcome
+    from smartclock_monitor.themes.spacing import SKY_PLOT_POINTER_TARGET
+    from smartclock_monitor.widgets.sky_plot import SkyPlot
+    from smartclock_monitor.widgets.sky_plot_geometry import disc_for, position
+
+    smallest = float(SkyPlot().minimumWidth())
+    driver = SmartClockDriver(clock=SystemClock())
+    fixtures = sorted((Path(__file__).resolve().parent / "fixtures").glob("*.txt"))
+    assert fixtures, "the fixtures are the oracle; a test that found none would pass vacuously"
+
+    closest = math.inf
+    for fixture in fixtures:
+        lines = tuple(fixture.read_text(encoding="latin-1").splitlines())
+        status = driver.parse_full(
+            Transaction(command=":SYST:STAT?", outcome=TransactionOutcome.COMPLETED, lines=lines),
+            None,
+        )
+        disc = disc_for(smallest, smallest)
+        # Tracked and not-tracked are different types with no common base, so they are walked
+        # separately rather than concatenated — a joined list is list[object] and mypy is right
+        # to refuse it.
+        placed: list[tuple[float, float]] = []
+        for tracked in status.tracked:
+            if tracked.elevation_degrees is not None and tracked.azimuth_degrees is not None:
+                placed.append(
+                    position(disc, float(tracked.elevation_degrees), float(tracked.azimuth_degrees))
+                )
+        for predicted in status.not_tracked:
+            if predicted.elevation_degrees is not None and predicted.azimuth_degrees is not None:
+                placed.append(
+                    position(
+                        disc, float(predicted.elevation_degrees), float(predicted.azimuth_degrees)
+                    )
+                )
+        for one, other in itertools.combinations(placed, 2):
+            closest = min(closest, math.hypot(one[0] - other[0], one[1] - other[1]))
+
+    assert closest < math.inf, "no fixture placed two satellites; nothing was compared"
+    assert closest >= SKY_PLOT_POINTER_TARGET, (
+        f"two markers are {closest:.1f} px apart at a {smallest:.0f} px plot, "
+        f"inside the {SKY_PLOT_POINTER_TARGET} px target — one would take the other's clicks"
+    )
+    assert closest < POINTER_FLOOR, (
+        "the fixtures no longer reproduce the overlap this exception exists for, so the exception "
+        "is now resting on the argument rather than on the measurement"
+    )
