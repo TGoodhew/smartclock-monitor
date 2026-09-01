@@ -415,7 +415,9 @@ def test_the_spoken_form_is_words_rather_than_the_wire_format() -> None:
 
 
 def test_the_survey_commands_all_confirm() -> None:
-    """Each starts, stops or reconfigures a two-hour operation the receiver uses for every timing
+    """P0-12.
+
+    Each starts, stops or reconfigures a two-hour operation the receiver uses for every timing
     solution afterwards."""
     for command in (
         catalog.START_SURVEY,

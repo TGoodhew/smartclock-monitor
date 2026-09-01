@@ -294,6 +294,8 @@ def _diagnostics(**overrides: object) -> tuple[DiagnosticsPage, FakeRunner]:
 
 
 def test_the_log_is_read_and_shown() -> None:
+    """P0-13: gated here."""
+
     page, _ = _diagnostics()
 
     assert len(page.entries) == 4

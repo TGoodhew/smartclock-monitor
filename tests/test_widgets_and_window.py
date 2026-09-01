@@ -87,7 +87,9 @@ def test_the_ring_is_always_a_circle_in_the_shorter_side() -> None:
 
 @pytest.mark.parametrize("size", [1, 2, 10, 96, 1000])
 def test_the_ring_survives_every_size(size: int) -> None:
-    """Including the degenerate ones. A widget is briefly 0 by 0 during layout, and a division by
+    """P0-18.
+
+    Including the degenerate ones. A widget is briefly 0 by 0 during layout, and a division by
     the shorter side is exactly where that bites."""
     geometry = ring_geometry(size, size)
 
@@ -195,6 +197,8 @@ def test_the_window_fits_g1_s_box(application: QApplication) -> None:
 
 
 def test_a_locked_reading_reaches_the_window(application: QApplication) -> None:
+    """P0-3: gated here."""
+
     del application
     from smartclock_monitor.views.main_window import MainWindow
 

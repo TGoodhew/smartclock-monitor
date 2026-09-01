@@ -71,7 +71,9 @@ def test_a_catalogued_command_is_found_however_it_is_cased() -> None:
 
 
 def test_every_confirming_command_carries_its_own_sentence() -> None:
-    """§8.3, and its own amendment note is the argument for keeping the sentence *on the command*.
+    """P0-6.
+
+    §8.3, and its own amendment note is the argument for keeping the sentence *on the command*.
 
     ``:IGN:NONE`` shared the exclusion sentence — *"Exclude the selected satellites from
     tracking?"* — for a command that **clears** the exclusion list, in this table and in the
