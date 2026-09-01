@@ -63,7 +63,7 @@ from smartclock_monitor.services.trend_store import (
     empty_series,
 )
 from smartclock_monitor.themes.severity import Severity
-from smartclock_monitor.themes.spacing import Spacing
+from smartclock_monitor.themes.spacing import TABLE_ROW_TARGET, Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
 from smartclock_monitor.views.capability import gate
 from smartclock_monitor.views.confirm_dialog import ask
@@ -90,6 +90,19 @@ DASH = "—"
 #: line; wrapping them would let the layout squeeze a timestamp onto two, which reads as a
 #: rendering fault rather than as a narrow window.
 WRAPPING_ROLES: Final[frozenset[str]] = frozenset({"body", "caption", "tertiary"})
+
+
+def _floor_row_height(table: QTableWidget) -> None:
+    """Give a table's rows §9.10.2's floor, so a selectable row is a reachable target.
+
+    Set on the vertical header rather than in QSS: a stylesheet ``min-height`` on
+    ``QTableWidget::item`` does not drive Qt's row sizing, and a rule that looks applied and is not
+    is how this went wrong in the first place — the rows measured 30 px while §9.10.2 required 40.
+    """
+    header = table.verticalHeader()
+    if header is not None:
+        header.setMinimumSectionSize(TABLE_ROW_TARGET)
+        header.setDefaultSectionSize(TABLE_ROW_TARGET)
 
 
 def label(text: str, role: str = "body", parent: QWidget | None = None) -> QLabel:
@@ -419,6 +432,7 @@ class SatellitesPage(Page):
         # does. Without this its size hint became the page's, and §10.5 was the one page that
         # scrolled *horizontally* at the window's own 900 px opening size — which is worse than a
         # narrow table, because the sky plot goes off the side with it.
+        _floor_row_height(self._table)
         self._table.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         self._table.setMinimumWidth(_TABLE_MINIMUM)
         table_layout.addWidget(self._table)
