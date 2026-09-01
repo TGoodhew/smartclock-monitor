@@ -12,6 +12,7 @@ lying, and it is the kind of lie that is impossible to spot afterwards.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from typing import Final
 
@@ -32,11 +33,15 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from smartclock_device.commands import catalog
 from smartclock_device.models import coordinates
 from smartclock_device.models.receiver_status import ReceiverStatus, SignalStrengthKind
+from smartclock_device.parsing.scalars import parse_integer
 from smartclock_monitor.services.allan import allan_deviation, summarise
+from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.drift import FIT_MARGIN, advise
 from smartclock_monitor.services.polling import Reading
+from smartclock_monitor.services.session import CommandOutcome
 from smartclock_monitor.services.statistics import deviation
 from smartclock_monitor.services.trend_store import (
     SETTLING,
@@ -398,6 +403,9 @@ class TimingPage(Page):
     def __init__(self, palette: Palette = LIGHT, parent: QWidget | None = None) -> None:
         super().__init__(palette, parent)
         self._store: TrendStore | None = None
+        self._runner: CommandRunner | None = None
+        #: The hardware condition register, or ``None`` where it has not been read.
+        self._register_bits: tuple[bool, ...] | None = None
         self._range: timedelta = TREND_RANGES[0][1]
         self._last_captured: datetime | None = None
         self._last_refresh: datetime | None = None
@@ -520,6 +528,34 @@ class TimingPage(Page):
         # second to honour it reads as the button not having worked.
         self._refresh_trends(force=True)
 
+    def set_command_runner(self, runner: CommandRunner | None) -> None:
+        """§10.7.1's hardware bits 6 and 7 are *read from the receiver rather than recomputed*.
+
+        They are the alarm and the slope is the gauge, so an inference drawn from the same EFC data
+        would not do: the bit is the hardware reporting a state. Until this page had a runner the
+        card could only say they had not been read, which was honest and useless.
+        """
+        self._runner = runner
+        if runner is not None and runner.is_connected:
+            runner.run([(catalog.HARDWARE_CONDITION, None)], self._absorb_register)
+
+    def _absorb_register(self, outcomes: Sequence[CommandOutcome]) -> None:
+        """Fold the hardware condition register in as a bit list.
+
+        A read that failed leaves ``None``, and the advisory then says the bits have not been read
+        rather than reporting them clear — an unread bit and a clear bit are different facts, and
+        reporting the first as the second is how an alarm gets missed.
+        """
+        if not outcomes or outcomes[0].transaction is None:
+            self._register_bits = None
+            return
+
+        value = parse_integer(outcomes[0].transaction.first_line)
+        self._register_bits = (
+            None if value is None else tuple(bool(value >> bit & 1) for bit in range(16))
+        )
+        self._refresh_trends(force=True)
+
     def set_trend_store(self, store: TrendStore | None) -> None:
         """Give the page its history, or take it away.
 
@@ -621,7 +657,9 @@ class TimingPage(Page):
             return
 
         moment = now if now is not None else (wider.end or NOW_FALLBACK)
-        advisory = advise(wider, now=moment, settling_until=settling)
+        advisory = advise(
+            wider, now=moment, settling_until=settling, register_bits=self._register_bits
+        )
 
         self._drift_pill.set_state(advisory.severity, advisory.headline)
         self._drift_evidence.setText("\n".join(advisory.lines))
