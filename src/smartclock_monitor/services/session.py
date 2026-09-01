@@ -22,6 +22,7 @@ from smartclock_device.clock import Clock
 from smartclock_device.commands import catalog
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import ReceiverDriver
+from smartclock_device.drivers.registry import Registry
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.model_profile import ModelProfile, for_identity
 from smartclock_device.transport import timeouts
@@ -106,9 +107,20 @@ def _error_text(queue: Transaction) -> str | None:
 class DeviceSession:
     """Owns the transport, the protocol and the driver for one receiver."""
 
-    def __init__(self, transport: Transport, driver: ReceiverDriver, clock: Clock) -> None:
+    def __init__(
+        self,
+        transport: Transport,
+        driver: ReceiverDriver,
+        clock: Clock,
+        *,
+        registry: Registry | None = None,
+    ) -> None:
         self._transport = transport
         self._driver = driver
+        #: §12: the receiver on the port can have been swapped while the link was down, so the
+        #: driver is re-selected on **every** connect rather than once at startup. ``None`` means
+        #: a single-family build that was handed its driver directly, which keeps it.
+        self._registry = registry
         self._clock = clock
         self._protocol = LineProtocol(transport, clock)
 
@@ -121,6 +133,7 @@ class DeviceSession:
         self._banner: str = ""
         self._consecutive_failures = 0
         self._last_fault: str | None = None
+        self._unrecognised = False
 
     # -- What the application asks it ---------------------------------------------------------
 
@@ -183,9 +196,14 @@ class DeviceSession:
         # it is tried first — and *IDN? is asked anyway, because a sibling model may say nothing.
         self._adopt_identity(DeviceIdentity.parse(self._banner))
 
-        identity = await self.execute("*IDN?")
-        if isinstance(identity, Transaction) and identity.succeeded:
+        identity = await self._probe_identity()
+        if identity is not None and identity.succeeded:
             self._adopt_identity(DeviceIdentity.parse(identity.first_line))
+
+        # §12: **the probe phase belongs to no driver.** The banner is absorbed and ``*IDN?`` is
+        # asked neutrally, and only now is a family chosen — choosing first would mean asking one
+        # family's questions of a receiver that may be another's.
+        self._select_driver()
 
         self._state = ConnectionState.CONNECTED
         self._consecutive_failures = 0
@@ -284,6 +302,47 @@ class DeviceSession:
         if self._consecutive_failures >= CONSECUTIVE_FAILURES_BEFORE_DISCONNECT:
             self._state = ConnectionState.LOST
             self._last_fault = describe(TransportFault.IO, self._transport.description)
+
+    async def _probe_identity(self) -> Transaction | None:
+        """Ask ``*IDN?`` **neutrally**, outside any driver's allowlist.
+
+        §12: *"the probe phase belongs to no driver."* Routing this through
+        :meth:`execute` gates it on whichever driver happens to be first in the registry — so a
+        family registered ahead of the one that actually serves the receiver refuses the identity
+        query, nothing is ever recognised, and the fallback becomes the only outcome. Found by
+        registering a reads-only talker first and watching a Z3805A go unclaimed.
+
+        **This is the one command not checked against a driver, and it is a constant.** It is not
+        a path: nothing supplies the mnemonic, no argument is appended, and §8.1's allowlist still
+        governs everything a page or the console can send. The alternative — an allowlist that
+        every driver must contain ``*IDN?`` in — would put a requirement on the contract to make
+        the probe work, which is the coupling the neutrality rule exists to avoid.
+        """
+        async with self._lock:
+            result = await self._protocol.execute(catalog.IDENTITY.mnemonic, None)
+        self._note(result)
+        return result
+
+    def _select_driver(self) -> None:
+        """Choose the family that claims this receiver, or keep the first registered."""
+        if self._registry is None:
+            return
+
+        selection = self._registry.select(self._identity)
+        self._driver = selection.driver
+
+        if not selection.recognised and self._registry.is_ambiguous:
+            # Warned only where more than one family is registered: with one, the fallback is the
+            # driver that would have served it regardless, and a warning would be noise on every
+            # connection an unidentified receiver ever makes.
+            self._unrecognised = True
+        else:
+            self._unrecognised = False
+
+    @property
+    def driver_was_recognised(self) -> bool:
+        """Whether a driver actually claimed this receiver, as opposed to being the fallback."""
+        return not self._unrecognised
 
     def _adopt_identity(self, identity: DeviceIdentity | None) -> None:
         if identity is None:

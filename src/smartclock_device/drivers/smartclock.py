@@ -16,6 +16,7 @@ from smartclock_device.commands import catalog
 from smartclock_device.commands.blocked import is_blocked as _is_blocked
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import Cadence, PollPlan
+from smartclock_device.models.device_identity import DeviceIdentity, ReceiverModel
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.parsing.scalars import (
     parse_decimal,
@@ -60,6 +61,16 @@ class SmartClockDriver:
     def is_allowed(self, mnemonic: str | None) -> bool:
         """The point-of-send allowlist check (§8.1)."""
         return catalog.is_allowed(mnemonic)
+
+    def recognises(self, identity: DeviceIdentity | None) -> bool:
+        """Whether this is a SmartClock-family receiver.
+
+        Keyed on the parsed model rather than on the manufacturer string: §8.6's profile already
+        decides which member of the family answered, and ``UNKNOWN`` means the identity did not
+        name one this build knows — which is a receiver this driver should not claim, so that a
+        later-registered family gets its turn.
+        """
+        return identity is not None and identity.receiver is not ReceiverModel.UNKNOWN
 
     def supports(self, command: ScpiCommand) -> bool:
         """This family's catalog **is** the SmartClock catalog, so membership is the answer.

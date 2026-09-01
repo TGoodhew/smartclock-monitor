@@ -24,6 +24,7 @@ from PySide6.QtWidgets import QApplication, QPushButton
 from smartclock_device.commands import catalog
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import Cadence, PollPlan, ReceiverDriver
+from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.transport.transaction import Transaction
 from smartclock_monitor.views.capability import explain, gate
@@ -65,6 +66,11 @@ class TalkerDriver:
 
     def supports(self, command: ScpiCommand) -> bool:
         return command.mnemonic in self.supported
+
+    def recognises(self, identity: DeviceIdentity | None) -> bool:
+        """Claims nothing: this stand-in exists to be the family that is *not* selected."""
+        del identity
+        return False
 
     def parse_full(
         self, transaction: Transaction, previous: ReceiverStatus | None

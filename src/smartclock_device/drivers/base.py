@@ -14,6 +14,7 @@ from datetime import timedelta
 from typing import Protocol, runtime_checkable
 
 from smartclock_device.commands.scpi_command import ScpiCommand
+from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.transport.transaction import Transaction
 
@@ -109,6 +110,19 @@ class ReceiverDriver(Protocol):
         Routed through the driver so the application never imports the exclusion module itself. A
         family with nothing it can write legitimately answers ``False`` for everything, there being
         nothing to exclude.
+        """
+        ...
+
+    def recognises(self, identity: DeviceIdentity | None) -> bool:
+        """Whether this family claims the receiver that answered ``*IDN?``.
+
+        **Required, and a family that claims nothing returns ``False``.** Making it optional was
+        the first design and it was worse: an absent method says "the author forgot" where an
+        explicit ``False`` says "I claim nothing", and the registry's fallback then reaches the
+        second on purpose rather than by accident.
+
+        ``None`` — nothing answered — is not a claim either. A receiver that says nothing is the
+        ordinary state of most of §7.1's combinations during auto-detect.
         """
         ...
 
