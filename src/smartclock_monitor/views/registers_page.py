@@ -104,7 +104,10 @@ class StatusRegistersPage(Page):
         if header is not None:
             header.setSectionResizeMode(QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(len(_COLUMNS) - 1, QHeaderView.ResizeMode.Stretch)
-        holder_layout.addWidget(self._table)
+        # The table is the page. Given no stretch it took its default height and showed five of
+        # sixteen bits with three hundred pixels of empty page under it — on §10.10, whose entire
+        # content is this table.
+        holder_layout.addWidget(self._table, 1)
 
         self._raw = label("", "device")
         self._raw.setAccessibleName("The raw register values")
@@ -131,8 +134,7 @@ class StatusRegistersPage(Page):
         buttons.addWidget(self._apply)
         holder_layout.addLayout(buttons)
 
-        layout.addWidget(holder)
-        layout.addStretch(1)
+        layout.addWidget(holder, 1)
 
         self._rebuild()
         self._retune()
