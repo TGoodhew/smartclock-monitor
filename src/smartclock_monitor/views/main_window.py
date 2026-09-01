@@ -19,8 +19,9 @@ from collections.abc import Callable
 from datetime import datetime
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QShortcut
+from PySide6.QtGui import QCloseEvent, QKeySequence, QShortcut
 from PySide6.QtWidgets import (
+    QApplication,
     QComboBox,
     QDialog,
     QFrame,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QMainWindow,
+    QMessageBox,
     QPushButton,
     QStatusBar,
     QVBoxLayout,
@@ -39,6 +41,7 @@ from smartclock_device.models.receiver_status import (
     ReceiverStatus,
     SmartClockMode,
 )
+from smartclock_monitor.platform import tray
 from smartclock_monitor.services import preferences
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.polling import Reading
@@ -164,6 +167,8 @@ class MainWindow(QMainWindow):
         self._store: TrendStore | None = None
         self._runner: CommandRunner | None = None
         self._supervisor: Supervisor | None = None
+        self._tray: tray.Tray | None = None
+        self._told_about_hiding = False
         # Loaded once at startup. §10.13: a missing or unreadable file reads as the defaults, and
         # the default for anything advanced is off.
         self._preferences = preferences.load()
@@ -326,6 +331,8 @@ class MainWindow(QMainWindow):
             self._details.set_trend_store(self._store)
             self._details.set_command_runner(self._runner)
             self._details.apply_preferences(self._preferences)
+            self._details.exit_requested = self.exit_application
+            self._details.set_can_keep_running(self.can_keep_running)
             self._details.settings_changed = self._remember_preferences
             if self._last_reading is not None:
                 self._details.show_reading(self._last_reading)
@@ -341,6 +348,99 @@ class MainWindow(QMainWindow):
     #: Set by whoever owns the window, to hear about a preference the user changed. ``None`` means
     #: nobody is listening, which is what a test wants.
     on_preferences_changed: Callable[[Preferences], None] | None = None
+
+    # -- §10.3.1 closing, and staying alive --------------------------------------------------------
+
+    def closeEvent(self, event: QCloseEvent) -> None:  # noqa: N802 - Qt's own casing
+        """Hide rather than exit, **where there is a way back to the window**.
+
+        §10.3.1 makes hiding the default so the trend keeps filling and P1-9's notifications keep
+        arriving while the window is out of the way — §9.1's user leaves this docked beside a
+        spectrum analyser for weeks. But its own argument for the Settings *Exit* button is that an
+        application whose only exit is an invisible icon is quittable in principle and by Task
+        Manager in practice. On a desktop with **no tray at all** that goes further: a hidden
+        window with no icon cannot be reached by any means the user has, so hiding would not be an
+        inconvenience but a loss of the application.
+
+        So the tray decides, and where there is none this closes.
+        """
+        if not self._preferences.keep_running_when_closed or self._tray is None:
+            event.accept()
+            return
+
+        # **The notice goes up while the window is still visible.** A notice put over a window that
+        # has already gone is a notice nobody reads, which spends the single chance and leaves the
+        # user just as surprised — which is §10.3.1's whole point about telling them once.
+        if not self._told_about_hiding:
+            self._told_about_hiding = True
+            self._explain_hiding()
+
+        event.ignore()
+        self.hide()
+
+    def _explain_hiding(self) -> None:
+        """Say what just happened, and offer the exit they may have meant.
+
+        Silently turning close into hide is the well-known way to annoy people, so §10.3.1 requires
+        this once — and only once.
+        """
+        notice = QMessageBox(self)
+        notice.setWindowTitle("Still running")
+        notice.setText(
+            "SmartClock Monitor is still running and still polling the receiver, so the trend "
+            "keeps filling while the window is out of the way."
+        )
+        notice.setInformativeText(
+            "Open it again from the notification icon, or use Exit there or in Settings to stop."
+        )
+        keep = notice.addButton("Keep running", QMessageBox.ButtonRole.AcceptRole)
+        notice.addButton("Exit now", QMessageBox.ButtonRole.DestructiveRole)
+        notice.setDefaultButton(keep)
+        notice.exec()
+
+        if notice.clickedButton() is not keep:
+            self.exit_application()
+
+    def exit_application(self) -> None:
+        """Stop, without asking again.
+
+        §10.3.1: **no confirmation on exit.** Polling is not a transaction and the trend store
+        commits as it goes, so there is nothing to lose by stopping — and a prompt would be the
+        second interruption in a job whose first one already asked a question.
+        """
+        if self._tray is not None:
+            self._tray.hide()
+        application = QApplication.instance()
+        if application is not None:
+            application.quit()
+
+    def attach_tray(self) -> bool:
+        """Register the notification icon if this desktop has one. Returns whether it did."""
+        if not tray.is_available():
+            return False
+
+        self._tray = tray.Tray(
+            palette_for(self._theme),
+            on_open=self._reopen,
+            on_exit=self.exit_application,
+            parent=self,
+        )
+        self._tray.show()
+        return True
+
+    def _reopen(self) -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    @property
+    def tray(self) -> tray.Tray | None:
+        return self._tray
+
+    @property
+    def can_keep_running(self) -> bool:
+        """Whether hiding on close is possible at all here. The Settings page asks this."""
+        return self._tray is not None
 
     def _remember_preferences(self, updated: Preferences) -> None:
         """§10.13: a write that fails is not reported. A preference is by definition something the

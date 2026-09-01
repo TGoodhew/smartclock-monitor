@@ -130,6 +130,7 @@ class DetailsWindow(QMainWindow):
         settings = self.page_named(SettingsPage.title)
         assert isinstance(settings, SettingsPage)
         settings.on_change(self._preferences_changed)
+        settings.on_exit = self._exit
 
         self._build_commands()
         self.setStatusBar(QStatusBar())
@@ -296,6 +297,18 @@ class DetailsWindow(QMainWindow):
         self.apply_preferences(updated)
         if self.settings_changed is not None:
             self.settings_changed(updated)
+
+    #: Called when the user presses Exit on the Settings page.
+    exit_requested: Callable[[], None] | None = None
+
+    def _exit(self) -> None:
+        if self.exit_requested is not None:
+            self.exit_requested()
+
+    def set_can_keep_running(self, possible: bool) -> None:
+        settings = self.page_named(SettingsPage.title)
+        if isinstance(settings, SettingsPage):
+            settings.set_can_keep_running(possible)
 
     def apply_preferences(self, preferences: Preferences) -> None:
         """Add or remove §10.11's console, and remember the rest.

@@ -25,6 +25,7 @@ import sys
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from pathlib import Path
+from typing import Final
 
 from smartclock_device.clock import SystemClock
 from smartclock_device.drivers.smartclock import SmartClockDriver
@@ -47,6 +48,7 @@ from smartclock_monitor.services.replay import ReplayTransport
 from smartclock_monitor.services.session import DeviceSession
 from smartclock_monitor.services.supervisor import Supervisor
 from smartclock_monitor.services.trend_store import TrendStore, TrendStoreError
+from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.tokens import Theme
 from smartclock_monitor.views.connection_dialog import ConnectionChoice
 
@@ -149,6 +151,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     application.setApplicationName(APPLICATION_NAME)
 
     window = MainWindow(Theme(arguments.theme))
+    # §10.3.1: registered before the window is shown, so the first close already has somewhere to
+    # hide to — a close that happened between showing and registering would exit.
+    window.attach_tray()
     window.show()
 
     loop = qasync.QEventLoop(application)
@@ -345,6 +350,41 @@ def _open_store(
     return store
 
 
+def _describe_tray(window: object, reading: Reading) -> None:
+    """Keep §9.4.3.1's shell surface accurate, in whole sentences.
+
+    Both surfaces derive the mode through one expression, because a mode is a claim about *now* and
+    a link that has dropped no longer justifies the last one the store held — which is why this is
+    fed from the reading rather than from anything cached.
+    """
+    from smartclock_monitor.views.main_window import MainWindow
+
+    assert isinstance(window, MainWindow)
+    tray = window.tray
+    if tray is None:
+        return
+
+    mode = reading.status.mode
+    severity, sentence = _TRAY_STATES.get(
+        mode.name, (Severity.NEUTRAL, "The receiver's mode is not known.")
+    )
+    count = reading.tracked_count
+    if count is not None:
+        sentence = f"{sentence[:-1]}, {count} satellites tracked."
+    tray.describe(severity, sentence)
+
+
+#: §9.4.3.1: **whole sentences.** "Holdover" alone is this application's vocabulary, and someone
+#: meeting it through a screen reader on a shell surface has no other context to read it in.
+_TRAY_STATES: Final[dict[str, tuple[Severity, str]]] = {
+    "LOCKED": (Severity.SUCCESS, "Locked to GPS."),
+    "RECOVERY": (Severity.CAUTION, "Reacquiring GPS after a loss of lock."),
+    "HOLDOVER": (Severity.CRITICAL, "In holdover, running on the oscillator alone."),
+    "POWER_UP": (Severity.CAUTION, "Warming up after power was applied."),
+    "UNKNOWN": (Severity.NEUTRAL, "The receiver's mode is not known."),
+}
+
+
 def _publish(
     window: object, store: TrendStore | None, watch: LockWatch
 ) -> Callable[[Reading], None]:
@@ -360,6 +400,7 @@ def _publish(
 
     def publish(reading: Reading) -> None:
         watch.observe(reading)
+        _describe_tray(window, reading)
         if store is not None:
             # Suppressed deliberately, and this is the one place it is right to: a failed write
             # costs a pixel of history, and letting it out of a poll-loop callback would cost the

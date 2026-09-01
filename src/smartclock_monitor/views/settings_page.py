@@ -106,10 +106,42 @@ class SettingsPage(Page):
             "would stop it exactly when the window was being got out of the way.",
             holder_layout,
         )
+        # §10.3.1: **the application must be quittable from its own surface**, not only from the
+        # notification area. There the argument is that Windows does not promote a newly
+        # registered icon; here it is stronger, because a desktop may have no icon at all.
         self._quit = QPushButton("Exit")
+        self._quit.setProperty("role", "destructive")
         self._quit.setAccessibleName("Quit the application")
+        self._quit.clicked.connect(lambda: self._exit())
         holder_layout.addWidget(self._quit)
+
+        self._no_tray = label(
+            "This desktop has no notification area, so closing the window exits. Hiding it would "
+            "leave no way to get it back.",
+            "tertiary",
+        )
+        self._no_tray.setWordWrap(True)
+        self._no_tray.setVisible(False)
+        holder_layout.addWidget(self._no_tray)
         return holder
+
+    def set_can_keep_running(self, possible: bool) -> None:
+        """Tell the page whether hiding on close is possible here.
+
+        §9.11's rule about a control that looks like it works, applied to a switch: where there is
+        no notification area the switch cannot do what it says, so it is disabled and the reason is
+        on screen rather than left for the user to discover by closing the window.
+        """
+        self._keep_running.setEnabled(possible)
+        self._no_tray.setVisible(not possible)
+
+    #: Called when the user presses Exit. Set by whoever owns the page — quitting is not something
+    #: a page decides.
+    on_exit: Callable[[], None] | None = None
+
+    def _exit(self) -> None:
+        if self.on_exit is not None:
+            self.on_exit()
 
     def _build_not_here(self) -> QFrame:
         holder, holder_layout = card("Not here, and why")
