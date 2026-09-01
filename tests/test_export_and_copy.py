@@ -228,7 +228,7 @@ def test_exporting_writes_machine_text(tmp_path: Path, monkeypatch: pytest.Monke
     written = target.read_bytes().decode("utf-8")
     assert MINUS not in written
     assert written.endswith("\r\n"), "RFC 4180, which every spreadsheet reads unprompted"
-    assert "Receiver,Detail," in written, "a missing value exports as an empty cell, not a dash"
+    assert "Status,Detail," in written, "a missing value exports as an empty cell, not a dash"
 
 
 def test_cancelling_the_dialog_writes_nothing(
@@ -329,3 +329,67 @@ def test_settings_is_one_keystroke_away() -> None:
 
     page = window.current_page()
     assert page is not None and page.title == "Settings"
+
+
+# ---- P0-1: the identity has to be somewhere a user looks ---------------------------------------
+
+
+def test_the_overview_shows_the_four_identity_fields() -> None:
+    """P0-1, whose acceptance the specification states twice: *"A P0 is not met by a string that
+    reaches only the log."* The original had exactly this defect (#319 item 14) — the connection
+    was made inside the window and no view displayed the identity."""
+    from smartclock_device.models.device_identity import DeviceIdentity
+
+    window = _window()
+    page = window.page_named("Overview")
+    page.set_identity(  # type: ignore[attr-defined]
+        DeviceIdentity.parse("SYMMETRICOM,Z3805A,3625A02931,1.01.03-A"),
+        "SYMMETRICOM,Z3805A,3625A02931,1.01.03-A",
+    )
+
+    shown = {str(row[1]): str(row[2]) for row in page.csv_rows()[1:]}
+    assert shown["Manufacturer"] == "SYMMETRICOM"
+    assert shown["Model"] == "Z3805A"
+    assert shown["Serial number"] == "3625A02931"
+    assert shown["Firmware"] == "1.01.03-A"
+
+
+def test_an_answer_that_is_not_four_fields_shows_the_raw_answer() -> None:
+    """§10.4: *"shows the raw answer instead, rather than four dashes: four dashes say 'nothing is
+    connected', which is a different statement from 'a model this build has not seen'."* §11.1
+    keeps the evidence."""
+    from smartclock_device.models.device_identity import DeviceIdentity
+
+    window = _window()
+    page = window.page_named("Overview")
+    page.set_identity(  # type: ignore[attr-defined]
+        DeviceIdentity.parse("SOMETHING ELSE ENTIRELY"), "SOMETHING ELSE ENTIRELY"
+    )
+
+    assert page._identity_raw.text() == "SOMETHING ELSE ENTIRELY"  # type: ignore[attr-defined]
+    assert page._identity_raw.isHidden() is False  # type: ignore[attr-defined]
+
+
+def test_nothing_answering_is_dashes_rather_than_an_empty_card() -> None:
+    """Not connected is the one case where four dashes *are* the right answer."""
+    window = _window()
+    page = window.page_named("Overview")
+    page.set_identity(None, None)  # type: ignore[attr-defined]
+
+    shown = {str(row[1]): str(row[2]) for row in page.csv_rows()[1:]}
+    assert shown["Model"] == DASH
+    assert page._identity_raw.isHidden() is True  # type: ignore[attr-defined]
+
+
+def test_the_identity_is_device_literal_text() -> None:
+    """§9.5: what the receiver itself emitted is monospace, and the copy layer reproduces it
+    verbatim rather than putting it through the typesetting rules."""
+    from smartclock_device.models.device_identity import DeviceIdentity
+
+    window = _window()
+    page = window.page_named("Overview")
+    page.set_identity(  # type: ignore[attr-defined]
+        DeviceIdentity.parse("SYMMETRICOM,Z3805A,3625A02931,1.01.03-A"), None
+    )
+
+    assert page._identity.is_device_literal("Model") is True  # type: ignore[attr-defined]

@@ -42,6 +42,7 @@ from PySide6.QtWidgets import (
 
 from smartclock_device.commands import catalog
 from smartclock_device.models import antenna_cable, coordinates
+from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus, SignalStrengthKind
 from smartclock_device.parsing.scalars import parse_decimal, parse_integer, parse_keyword
 from smartclock_monitor.services.allan import allan_deviation, summarise
@@ -227,8 +228,9 @@ class OverviewPage(_FieldsExport, Page):
         self._health_pills: list[SeverityPill] = []
         layout.addWidget(health)
 
+        layout.addWidget(self._build_receiver())
         layout.addStretch(1)
-        self._exported = (("Receiver", self._fields),)
+        self._exported = (("Status", self._fields), ("Receiver", self._identity))
 
     def show_reading(self, reading: Reading) -> None:
         status = reading.status
@@ -241,6 +243,48 @@ class OverviewPage(_FieldsExport, Page):
             "Warnings", "; ".join(status.parse_warnings) if status.parse_warnings else "None"
         )
         self._rebuild_health(status)
+
+    def _build_receiver(self) -> QFrame:
+        """§10.4's *Receiver* card: the four ``*IDN?`` fields.
+
+        **P0-1 is not met by a string that reaches only the log** — the specification says so in as
+        many words, having found exactly that defect in the original (#319 item 14). The identity
+        is how a user knows they are talking to the instrument they think they are, and it was
+        reaching the status bar and the log and nowhere they would look twice.
+        """
+        holder, holder_layout = card("Receiver")
+        self._identity = FieldGrid(("Manufacturer", "Model", "Serial number", "Firmware"))
+        holder_layout.addWidget(self._identity)
+
+        # Shown *instead* where the answer is not four comma-separated fields. Four dashes would
+        # say "nothing is connected", which is a different statement from "a model this build has
+        # not seen" — and §11.1's rule is that what could not be parsed keeps its evidence.
+        self._identity_raw = label("", "device")
+        self._identity_raw.setWordWrap(True)
+        self._identity_raw.setAccessibleName("What the receiver answered")
+        self._identity_raw.setVisible(False)
+        holder_layout.addWidget(self._identity_raw)
+        return holder
+
+    def set_identity(self, identity: DeviceIdentity | None, raw: str | None) -> None:
+        """§10.4: re-read on every connection change, because a reconnect can find a different
+        receiver on the port — the same reason §12 re-selects the driver."""
+        parsed = identity is not None and identity.manufacturer is not None
+
+        self._identity.setVisible(parsed or raw is None)
+        self._identity_raw.setVisible(not parsed and raw is not None)
+
+        if not parsed:
+            self._identity_raw.setText(raw or "")
+            for name in self._identity.names:
+                self._identity.set(name, DASH)
+            return
+
+        assert identity is not None
+        self._identity.set("Manufacturer", identity.manufacturer or DASH, device_literal=True)
+        self._identity.set("Model", identity.model or DASH, device_literal=True)
+        self._identity.set("Serial number", identity.serial_number or DASH, device_literal=True)
+        self._identity.set("Firmware", identity.firmware_revision or DASH, device_literal=True)
 
     def _rebuild_health(self, status: ReceiverStatus) -> None:
         """One pill per monitored item.
