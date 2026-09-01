@@ -34,7 +34,6 @@ from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.transport.base import Transport
 from smartclock_device.transport.faults import TransportError
 from smartclock_device.transport.settings import (
-    AUTO_DETECT_SEQUENCE,
     SUPPORTED_BAUD_RATES,
     SUPPORTED_DATA_BITS,
     Parity,
@@ -327,6 +326,10 @@ async def _connect_serial(
             clock,
             build,
             registry=registry,
+            # §10.12: the union of every registered family's rates, not one receiver's. A talker
+            # runs at 4800 and was unreachable by the walk while the sequence belonged to the
+            # SmartClock alone.
+            sequence=registry.auto_detect_sequence,
             on_progress=lambda candidate, index, total: window.set_connection_text(
                 f"Trying {candidate} on {port} — {index} of {total}…"
             ),
@@ -338,7 +341,8 @@ async def _connect_serial(
     if found is None:
         # Distinct from a port that would not open: the port was fine and nothing on it answered.
         window.set_connection_text(
-            f"Nothing answered on {port} at any of {len(AUTO_DETECT_SEQUENCE)} known settings."
+            f"Nothing answered on {port} at any of "
+            f"{len(registry.auto_detect_sequence)} known settings."
         )
         return None
 

@@ -24,6 +24,7 @@ from smartclock_device.parsing.scalars import (
     parse_seconds_as_nanoseconds,
 )
 from smartclock_device.parsing.status_screen import StatusScreenParser
+from smartclock_device.transport.settings import AUTO_DETECT_SEQUENCE, SerialSettings
 from smartclock_device.transport.transaction import Transaction
 
 #: §7.3: 1 s for the scalar sweep, 10 s for the screen.
@@ -71,6 +72,12 @@ class SmartClockDriver(QueryResponseDefaults):
         later-registered family gets its turn.
         """
         return identity is not None and identity.receiver is not ReceiverModel.UNKNOWN
+
+    @property
+    def auto_detect_sequence(self) -> tuple[SerialSettings, ...]:
+        """§7.1's eight combinations. The note on the constant records why odd parity sits
+        second, and what an even-parity spelling with no source behind it cost."""
+        return AUTO_DETECT_SEQUENCE
 
     @property
     def commands(self) -> tuple[ScpiCommand, ...]:

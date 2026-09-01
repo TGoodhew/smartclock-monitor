@@ -18,6 +18,7 @@ from typing import Final, Protocol, runtime_checkable
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus
+from smartclock_device.transport.settings import SerialSettings
 from smartclock_device.transport.transaction import Transaction
 
 
@@ -109,6 +110,21 @@ class ReceiverDriver(Protocol):
         """Whether this command is on **this driver's** allowlist.
 
         The point-of-send check (§8.1). A reads-only family legitimately allows no setter at all.
+        """
+        ...
+
+    @property
+    def auto_detect_sequence(self) -> tuple[SerialSettings, ...]:
+        """The line settings **this family** is worth trying, most-likely-first.
+
+        §10.12's walk is the union of every registered driver's sequence, in registration order and
+        de-duplicated — which is only a union once there is a second family with different rates.
+        NMEA specifies 4800, and a talker at the standard's own rate was unreachable by auto-detect
+        while the sequence was one list belonging to one receiver.
+
+        A family with nothing of its own returns ``()`` and adds nothing to the walk. Every entry
+        costs one probe timeout on a port that is not it, so a driver naming rates it does not use
+        spends other people's seconds.
         """
         ...
 

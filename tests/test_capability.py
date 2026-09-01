@@ -31,6 +31,7 @@ from smartclock_device.drivers.base import (
 )
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus
+from smartclock_device.transport.settings import SerialSettings
 from smartclock_device.transport.transaction import Transaction
 from smartclock_monitor.views.capability import explain, gate
 from smartclock_monitor.views.holdover_page import HoldoverPage
@@ -68,6 +69,14 @@ class TalkerDriver(QueryResponseDefaults):
 
     def is_blocked(self, mnemonic: str | None) -> bool:
         return False
+
+    #: What this family would have auto-detect try. Empty by default — the double stands in for a
+    #: family rather than for a wire format — and set where a test is about the §10.12 union.
+    walk: tuple[SerialSettings, ...] = ()
+
+    @property
+    def auto_detect_sequence(self) -> tuple[SerialSettings, ...]:
+        return self.walk
 
     @property
     def commands(self) -> tuple[ScpiCommand, ...]:

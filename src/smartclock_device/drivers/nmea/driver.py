@@ -38,6 +38,7 @@ from smartclock_device.models.receiver_status import (
     TimeScale,
 )
 from smartclock_device.models.satellite import PredictedSatellite, TrackedSatellite
+from smartclock_device.transport.settings import Parity, SerialSettings, StopBits
 from smartclock_device.transport.transaction import Transaction
 
 #: A talker's cycle. One a second is the near-universal rate, and both tiers are the same read —
@@ -153,6 +154,23 @@ class NmeaDriver:
         """Nothing is excluded, because nothing can be sent. §8.4 has nothing to bite on here."""
         del mnemonic
         return False
+
+    @property
+    def auto_detect_sequence(self) -> tuple[SerialSettings, ...]:
+        """NMEA 0183's own rates, and only the ones it specifies.
+
+        4800-8-N-1 is the standard's, and 38400 its high-speed variant; both are 8-N-1, because the
+        standard says so and no talker in service departs from it. 9600 is deliberately **absent**:
+        the SmartClock names it first, the union de-duplicates, and adding it here would claim
+        credit for a combination that is already tried before this family is reached.
+
+        Every entry costs one probe timeout on a port that is not a talker, so this is three rates
+        rather than the six the connection dialog offers.
+        """
+        return (
+            SerialSettings(4800, 8, Parity.NONE, StopBits.ONE),
+            SerialSettings(38400, 8, Parity.NONE, StopBits.ONE),
+        )
 
     @property
     def commands(self) -> tuple[ScpiCommand, ...]:
