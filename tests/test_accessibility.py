@@ -505,15 +505,12 @@ def test_no_details_page_needs_horizontal_scrolling_at_the_window_minimum() -> N
     wanted 1358 px of a 692 px viewport. Almost all of it was explanatory text that never had
     ``setWordWrap`` called on it, which ``views.pages.label()`` now decides from the role.
 
-    **The margin is the point, not the fit.** The first version asserted only that nothing
-    scrolled, it passed here, and it failed on CI by 24 px: the runner resolves a slightly wider
-    font at the same point size, and the window's minimum had been set from measurements taken on
-    this machine. A page that only just fits is not fitting for a reason — it is fitting by
-    coincidence of font metrics. So each page must fit with :data:`WIDTH_MARGIN` to spare.
-
-    Simulating the wider font directly does not work, and the first attempt at that shipped a loop
-    which enforced nothing: §9's stylesheet sets ``font-size`` on ``QWidget``, so it overrides
-    ``QApplication.setFont`` and the page measured identically at +2 pt and +6 pt.
+    **The window's minimum is computed from the pages, so this asserts the thing itself.** Three
+    hard-coded numbers were tried — 900, 1100, 1160 — and each was a measurement of one machine.
+    CI rejected 1100 on a runner with slightly wider fonts and 1160 on Windows, where four pages
+    overflowed and one scrolled: a named face this port does not bundle falls back to whatever the
+    desktop has, and glyph widths go with it. Asserting a *margin* against a hard-coded number was
+    chasing the wrong quantity.
 
     Vertical scrolling is fine and expected. This is only about the axis that hides content.
     """
@@ -528,8 +525,7 @@ def test_no_details_page_needs_horizontal_scrolling_at_the_window_minimum() -> N
     QApplication.processEvents()
 
     try:
-        budget = window.minimumWidth() * (1.0 - WIDTH_MARGIN)
-        cramped: list[str] = []
+        scrolling: list[str] = []
         for index, page in enumerate(window.pages):
             window._navigation.setCurrentRow(index)
             QApplication.processEvents()
@@ -537,26 +533,45 @@ def test_no_details_page_needs_horizontal_scrolling_at_the_window_minimum() -> N
             area = window._stack.currentWidget()
             if not isinstance(area, QScrollArea):
                 continue
-            content, viewport = area.widget(), area.viewport()
-            if content is None or viewport is None:
-                continue
-
-            # The scrollbar's range says whether it scrolls *today*; the content's minimum says
-            # whether it does so with room to spare. Both, because a hint alone ignores size
-            # policies and a bar alone leaves no margin.
             bar = area.horizontalScrollBar()
             if bar is not None and bar.maximum() > 0:
-                cramped.append(f"{page.title} already scrolls {bar.maximum()} px sideways")
-                continue
+                scrolling.append(f"{page.title} scrolls {bar.maximum()} px sideways")
 
-            needed = content.minimumSizeHint().width() + (window.width() - viewport.width())
-            if needed > budget:
-                cramped.append(
-                    f"{page.title} needs {needed} px of a {window.minimumWidth()} px window, "
-                    f"inside the {WIDTH_MARGIN:.0%} margin"
-                )
+        assert not scrolling, (
+            "these pages scroll sideways at the size the window opens at: " + "; ".join(scrolling)
+        )
+    finally:
+        window.close()
 
-        assert not cramped, "; ".join(cramped)
+
+def test_no_page_is_so_wide_it_hits_the_window_s_ceiling() -> None:
+    """The computed minimum is bounded, and the bound is where a page should be fixed instead.
+
+    Without this, a page whose layout ran away would silently clamp at the cap and start scrolling
+    sideways — the failure would look like the window's fault rather than the page's. The cap is
+    what still fits a 1366-wide laptop.
+    """
+    from smartclock_monitor.themes.spacing import Spacing
+    from smartclock_monitor.views.details_window import (
+        _MINIMUM_WIDTH_CAP,
+        _NAVIGATION_WIDTH,
+        DetailsWindow,
+    )
+
+    window = DetailsWindow(Theme.DARK)
+    window.apply_preferences(Preferences(advanced_console=True, undocumented_queries=True))
+    try:
+        chrome = _NAVIGATION_WIDTH + Spacing.PAGE * 2
+        too_wide = {
+            page.title: page.minimumSizeHint().width() + chrome
+            for page in window.pages
+            if page.minimumSizeHint().width() + chrome > _MINIMUM_WIDTH_CAP
+        }
+
+        assert not too_wide, (
+            f"these pages want more than the {_MINIMUM_WIDTH_CAP} px ceiling, so the window "
+            f"would clamp and they would scroll: {too_wide}"
+        )
     finally:
         window.close()
 

@@ -20,9 +20,10 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
+from typing import Final
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QKeySequence, QShowEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -67,6 +68,14 @@ _NAVIGATION_WIDTH = 260
 _MAX_ACCELERATED = 9
 
 
+#: Bounds on the computed minimum width. See DetailsWindow._adopt_content_minimum.
+#:
+#: The floor is §9.6.2's two-column arrangement — the sky plot beside its table — and the cap is
+#: what still fits a 1366-wide laptop with room for a taskbar.
+_MINIMUM_WIDTH_FLOOR: Final = 900
+_MINIMUM_WIDTH_CAP: Final = 1320
+
+
 def _scrolled(page: Page) -> QScrollArea:
     """Wrap a page so a short window scrolls rather than clipping its cards.
 
@@ -93,21 +102,9 @@ class DetailsWindow(QMainWindow):
         self._last_reading_at: datetime | None = None
 
         self.setWindowTitle("Details")
-        # §9.6.2's minimum for the two-column arrangement: the sky plot caps at 360 and the table
-        # goes beside it.
-        #
-        # **Measured, with margin.** At 900 the Satellites page was 196 px too narrow for itself and
-        # scrolled *sideways*, taking the sky plot off the edge with the table. A window that opens
-        # too small to show its own first page is a worse answer than one that asks for the room it
-        # needs. (Stacking the plot above the table below a breakpoint is a §10.5 layout decision
-        # rather than a defect fix, and is not what this is.)
-        #
-        # Satellites is the widest at 966 — the sky plot's own 240 px minimum beside the table —
-        # and the other nine want between 468 and 808. The margin on top is not decoration:
-        # **1100 was tried first and CI rejected it**, because the runner resolves a slightly wider
-        # font at the same point size and the number had been measured here. 1160 leaves 78 px
-        # rather than 24, which is worth having for something no local run can see.
-        self.setMinimumSize(1160, 620)
+        # The width is **computed from the pages**, at the end of __init__ — see
+        # _adopt_content_minimum. The height is §9.6.2's.
+        self.setMinimumHeight(620)
 
         self._pages: list[Page] = [
             OverviewPage(palette_for(theme)),
@@ -148,6 +145,45 @@ class DetailsWindow(QMainWindow):
         self.setStatusBar(QStatusBar())
         self.setCentralWidget(self._build())
         self.apply_theme(theme)
+        self._adopt_content_minimum()
+
+    def _adopt_content_minimum(self) -> None:
+        """Take the window's minimum width from the widest page, rather than from a number.
+
+        **A measured constant is a measurement of one machine.** This was 900, then 1100, then
+        1160, and each was taken from what the pages needed *here*. CI rejected 1100 on a runner
+        whose fonts are a little wider at the same point size, and 1160 on Windows, where four
+        pages overflowed and one scrolled — because a named face this port does not bundle falls
+        back to whatever the desktop has, and glyph widths go with it.
+
+        A scroll area deliberately does not propagate its content's minimum — that is what
+        scrolling is for — so Qt cannot do this on its own and the window has to ask.
+
+        Bounded at both ends. The floor keeps a window that somehow measures tiny from opening
+        unusably small; the ceiling stops one page's runaway layout from demanding a window that
+        does not fit on a laptop, and it is the point at which a page should be fixed instead —
+        `test_accessibility.py` fails there rather than letting it pass silently.
+        """
+        chrome = _NAVIGATION_WIDTH + Spacing.PAGE * 2
+        widest = max(
+            (page.minimumSizeHint().width() for page in self._pages),
+            default=0,
+        )
+        wanted = max(_MINIMUM_WIDTH_FLOOR, min(widest + chrome, _MINIMUM_WIDTH_CAP))
+        if wanted != self.minimumWidth():
+            self.setMinimumWidth(wanted)
+
+    def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 - Qt's own casing
+        """Recompute the minimum once the window is on screen.
+
+        A size hint read during ``__init__`` is read before the stylesheet has been through a
+        layout pass, and §9's stylesheet is where the typeface comes from — so on a desktop whose
+        fallback face is wider than the development machine's, the number computed at construction
+        can be the one measured *without* it. Recomputing here costs one pass and removes the
+        question; it settles because the second call finds the same answer.
+        """
+        super().showEvent(event)
+        self._adopt_content_minimum()
 
     def _build_commands(self) -> None:
         """§9.7.4's title-bar commands and §9.7.5's accelerators.
