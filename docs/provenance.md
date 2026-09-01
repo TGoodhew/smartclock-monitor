@@ -14,7 +14,7 @@ than written here, and two of those can go wrong silently if the two repositorie
 |---|---|---|
 | `docs/requirements.md` | `docs/requirements.md` | **Byte-exact.** Marked `-text` in `.gitattributes` so no checkout converts its line endings — the file's byte count, hashes and column positions are referenced elsewhere and must stay stable. |
 | `docs/how-to-use.md` and `docs/images/how-to-use/` | same | Verbatim. The guide is correct about *what the application does*; every screenshot in it is a Windows capture and is wrong for this port until retaken. |
-| `docs/adding-a-receiver.md` | same | Verbatim. Describes the C# driver model. Kept because the *architecture* it teaches is what this port reproduces, not because the code samples compile here. |
+| `docs/adding-a-receiver.md` | same | Verbatim. Describes the C# driver model. Kept because the *architecture* it teaches is what this port reproduces, not because the code samples compile here. **`docs/driver-contract.md` is this port's member-by-member mapping** — written here rather than by editing the inherited file, which would fork it. |
 | `tests/fixtures/` | `tests/WinZ3805A.Tests/Fixtures/` | Verbatim, including `capture-log.md`. Marked `-text`: these are device output and their exact bytes, line endings included, are the point. |
 | `build/palette/` | same | Verbatim, and already Python. Runs unchanged. |
 
