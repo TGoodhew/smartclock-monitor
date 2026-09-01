@@ -12,10 +12,11 @@ from PySide6.QtWidgets import QApplication
 
 from conftest import NOW
 from smartclock_device.commands import catalog
+from smartclock_device.models.position import SurveySuspendedReason
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.views.manage_satellites import ManageSatellitesDialog, parse_exclusions
-from smartclock_monitor.views.pages import SatellitesPage
+from smartclock_monitor.views.pages import PositionPage, SatellitesPage
 from test_operational_pages import DEAF, FakeRunner
 
 
@@ -231,3 +232,150 @@ def test_the_controls_are_disabled_while_disconnected() -> None:
 
     assert page._apply_mask.isEnabled() is False
     assert page._manage.isEnabled() is False
+
+
+# ---- §10.6's survey controls ---------------------------------------------------------------------
+
+
+def _position_page(**answers: object) -> PositionPage:
+    page = PositionPage()
+    page.set_command_runner(FakeRunner(dict(answers)))
+    return page
+
+
+def survey_reading(percent: float | None = None, suspended: str = "NONE") -> Reading:
+
+    return Reading(
+        status=ReceiverStatus(
+            captured_at=NOW,
+            mode=SmartClockMode.LOCKED,
+            survey_percent_complete=percent,
+            survey_suspended_reason=SurveySuspendedReason[suspended],
+        ),
+        captured_at=NOW,
+    )
+
+
+def test_no_remaining_time_is_ever_shown() -> None:
+    """§10.6 as amended by #316, and confirmed 30 Aug: the receiver reports a percentage and
+    nothing else — there is no rate on the wire — so a remaining time computed from a single
+    percentage would be a guess presented as a measurement."""
+    page = _position_page()
+    page.show_reading(survey_reading(percent=57.3))
+
+    text = page._survey_note.text().lower()
+    assert "remaining" not in text
+    assert "min" not in text
+    assert "57.3" in text
+
+
+def test_the_suspension_reason_is_the_receiver_s_own() -> None:
+    """What the line carries instead — which the receiver does report (§11.3)."""
+    page = _position_page()
+    page.show_reading(survey_reading(percent=12.0, suspended="TOO_FEW_SATELLITES"))
+
+    assert "Suspended" in page._survey_note.text()
+    assert "satellites" in page._survey_note.text()
+
+
+def test_the_progress_bar_hides_when_nothing_is_surveying() -> None:
+    page = _position_page()
+    page.show_reading(survey_reading(percent=None))
+
+    assert page._progress.isVisible() is False
+
+
+def test_a_minus_300_carries_the_reason_and_the_route() -> None:
+    """#229: a receiver already holding a position refuses Start survey with −300, and no command
+    in §8.2 or in any of the three family manuals releases the hold. The route is
+    survey-on-power-up, which is the checkbox on this card."""
+    from smartclock_monitor.services.session import CommandOutcome
+
+    page = _position_page()
+    page._report(
+        (
+            CommandOutcome(
+                command=catalog.START_SURVEY,
+                transaction=None,
+                error='-300,"Device-specific error"',
+            ),
+        )
+    )
+
+    text = page._survey_note.text()
+    assert "-300" in text
+    assert "already holding a position" in text
+    assert "power-up" in text
+
+
+def test_any_other_error_gets_the_receiver_s_own_words_and_nothing_added() -> None:
+    """§10.6 attaches the advice to −300 **only**: it is device-specific by definition and the
+    receiver has not said why, so offering this explanation for the wrong failure would send
+    someone to power-cycle an instrument over a loose cable."""
+    from smartclock_monitor.services.session import CommandOutcome
+
+    page = _position_page()
+    page._report(
+        (
+            CommandOutcome(
+                command=catalog.START_SURVEY,
+                transaction=None,
+                error='-113,"Undefined header"',
+            ),
+        )
+    )
+
+    text = page._survey_note.text()
+    assert text == '-113,"Undefined header"'
+    assert "power-up" not in text
+
+
+def test_manual_position_entry_is_not_offered_and_says_why() -> None:
+    """Issue #12. §9.11's rule against a control that looks like it works — and the catalog is an
+    allowlist, so the command being absent is what actually stops it being sent."""
+    from PySide6.QtWidgets import QLabel
+
+    page = _position_page()
+    text = " ".join(child.text() for child in page.findChildren(QLabel))
+
+    assert "not offered yet" in text
+    assert "issue #12" in text
+    assert catalog.find(":GPS:POS") is None
+    assert catalog.is_allowed(":GPS:POSition") is False
+
+
+def test_the_survey_commands_all_confirm() -> None:
+    """Each starts, stops or reconfigures a two-hour operation the receiver uses for every timing
+    solution afterwards."""
+    for command in (
+        catalog.START_SURVEY,
+        catalog.ADOPT_SURVEYED_POSITION,
+        catalog.RESTORE_LAST_POSITION,
+        catalog.SET_SURVEY_ON_POWER_UP,
+    ):
+        assert command.needs_confirmation is True, command.mnemonic
+        assert command.confirmation
+
+
+def test_declining_the_power_up_change_puts_the_box_back(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A box that stayed moved would show a setting the receiver does not have."""
+    monkeypatch.setattr("smartclock_monitor.views.pages.ask", lambda *a, **k: False)
+
+    runner = FakeRunner({catalog.SURVEY_ON_POWER_UP.mnemonic: "OFF"})
+    page = PositionPage()
+    page.set_command_runner(runner)
+    assert page._on_power_up.isChecked() is False
+
+    page._on_power_up.setChecked(True)
+    runner.sent.clear()
+    page._send_power_up()
+
+    assert page._on_power_up.isChecked() is False
+    assert runner.sent == []
+
+
+def test_an_unreadable_power_up_answer_leaves_the_box_alone() -> None:
+    """§11.1. Clearing it would show a setting the user never made."""
+    page = _position_page(**{catalog.SURVEY_ON_POWER_UP.mnemonic: DEAF})
+
+    assert page._on_power_up.isChecked() is False  # its initial state, untouched

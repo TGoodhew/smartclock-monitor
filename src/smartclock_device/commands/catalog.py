@@ -531,6 +531,83 @@ INCLUDE_NO_SATELLITES: Final = ScpiCommand(
     requires_acknowledgement=True,
 )
 
+# ---- §10.6's survey ------------------------------------------------------------------------------
+#
+# ``:GPS:POSition <coords>`` is **deliberately absent** (issue #12). Neither the specification nor
+# this repository gives the argument's wire format, and it is a tier C command that changes the
+# position the receiver uses for every timing solution — §8.3's own sentence says an incorrect one
+# degrades timing accuracy. The catalog is an allowlist, so leaving it out is what stops it being
+# sent; a plausible-looking guess would either be rejected or, worse, accepted and wrong.
+
+SURVEY_PROGRESS: Final = ScpiCommand(
+    mnemonic=":GPS:POS:SURV:PROG?",
+    summary="How far through a position survey the receiver is",
+    response=ResponseFormat.INTEGER,
+    unit="%",
+)
+
+SURVEY_STATE: Final = ScpiCommand(
+    mnemonic=":GPS:POS:SURV:STAT?",
+    summary="Whether a position survey is running",
+    response=ResponseFormat.KEYWORD,
+)
+
+SURVEY_ON_POWER_UP: Final = ScpiCommand(
+    mnemonic=":GPS:POS:SURV:STAT:POW?",
+    summary="Whether the receiver surveys on power-up",
+    response=ResponseFormat.KEYWORD,
+)
+
+#: §10.6, amended by #229: on the bench Z3805A this is **refused with −300** when the receiver is
+#: already holding a position, and no command in §8.2 or in any of the three family manuals
+#: releases the hold. The command stays as specified — it is correct for the 58503A models the
+#: catalog also serves — and what changes is that a −300 here is reported with the reason and the
+#: route attached rather than as a bare device error the user can do nothing with.
+START_SURVEY: Final = ScpiCommand(
+    mnemonic=":GPS:POS:SURV:STAT ONCE",
+    summary="Start a position survey",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    confirmation=(
+        "Start a position survey? This takes approximately two hours with four or more "
+        "satellites tracked."
+    ),
+)
+
+ADOPT_SURVEYED_POSITION: Final = ScpiCommand(
+    mnemonic=":GPS:POS SURV",
+    summary="Stop surveying and adopt the computed position",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    confirmation="Stop surveying and adopt the computed average position?",
+)
+
+RESTORE_LAST_POSITION: Final = ScpiCommand(
+    mnemonic=":GPS:POS LAST",
+    summary="Cancel the survey and restore the last held position",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    confirmation="Cancel survey and restore the last held position?",
+)
+
+SET_SURVEY_ON_POWER_UP: Final = ScpiCommand(
+    mnemonic=":GPS:POS:SURV:STAT:POW",
+    summary="Change whether the receiver surveys on power-up",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.KEYWORD,
+    keywords=("ON", "OFF"),
+    confirmation="Change power-up behaviour?",
+)
+
+#: §10.6's client-side validation bounds. Rejected here rather than letting the device error —
+#: which is also why they live beside the commands rather than in a page.
+LATITUDE_DEGREES: Final = (0, 90)
+LONGITUDE_DEGREES: Final = (0, 180)
+ARC_MINUTES: Final = (0, 59)
+ARC_SECONDS: Final = (0.0, 59.999)
+HEIGHT_METRES: Final = (-1000.00, 18000.00)
+
 #: Every catalogued command. **The allowlist.**
 ALL: Final[tuple[ScpiCommand, ...]] = (
     IDENTITY,
@@ -575,6 +652,13 @@ ALL: Final[tuple[ScpiCommand, ...]] = (
     INCLUDE_SATELLITES,
     INCLUDE_ALL_SATELLITES,
     INCLUDE_NO_SATELLITES,
+    SURVEY_PROGRESS,
+    SURVEY_STATE,
+    SURVEY_ON_POWER_UP,
+    START_SURVEY,
+    ADOPT_SURVEYED_POSITION,
+    RESTORE_LAST_POSITION,
+    SET_SURVEY_ON_POWER_UP,
 )
 
 _BY_MNEMONIC: Final[MappingProxyType[str, ScpiCommand]] = MappingProxyType(
