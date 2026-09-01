@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Final
 
 from PySide6.QtCore import Qt
@@ -22,6 +23,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -60,6 +62,7 @@ from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.manage_satellites import ask_to_manage, parse_exclusions
+from smartclock_monitor.widgets import sky_image
 from smartclock_monitor.widgets.copy_menu import attach_table_menu, attach_value_menu
 from smartclock_monitor.widgets.severity_pill import SeverityPill
 from smartclock_monitor.widgets.sky_plot import SkyPlot
@@ -289,6 +292,10 @@ class SatellitesPage(Page):
 
     def __init__(self, palette: Palette = LIGHT, parent: QWidget | None = None) -> None:
         self._runner: CommandRunner | None = None
+        self._captured_at: datetime | None = None
+        self._tracked: tuple[object, ...] = ()
+        self._predicted: tuple[object, ...] = ()
+        self._mask_reported: int | None = None
         self._excluded: frozenset[int] = frozenset()
         self._exclusions_known = False
         self._mask_written: int | None = None
@@ -336,6 +343,12 @@ class SatellitesPage(Page):
         self._apply_mask.clicked.connect(self._send_mask)
         controls.addWidget(self._apply_mask)
         controls.addStretch(1)
+        self._save_image = QPushButton("Save image…")
+        self._save_image.setAccessibleName("Save the sky plot as a picture")
+        self._save_image.setToolTip("Save the plot, with a caption naming the mask and the time")
+        self._save_image.clicked.connect(self.save_image)
+        controls.addWidget(self._save_image)
+
         self._manage = QPushButton("Manage…")
         self._manage.setAccessibleName("Choose which satellites the receiver may track")
         self._manage.clicked.connect(self._manage_satellites)
@@ -345,6 +358,11 @@ class SatellitesPage(Page):
 
     def show_reading(self, reading: Reading) -> None:
         status = reading.status
+        self._captured_at = reading.captured_at or status.captured_at
+        self._tracked = status.tracked
+        self._predicted = status.not_tracked
+        self._mask_reported = status.elevation_mask_degrees
+        self._save_image.setEnabled(self.caption().is_worth_saving)
         self._sync_mask(status.elevation_mask_degrees)
         self._plot.set_satellites(
             status.tracked,
@@ -445,6 +463,45 @@ class SatellitesPage(Page):
             return
 
         runner.run(commands, lambda _o: self.refresh_exclusions())
+
+    def caption(self) -> sky_image.Caption:
+        """What the exported image says that the screen does not (§10.5)."""
+        return sky_image.Caption(
+            captured_at=self._captured_at,
+            tracked=len(self._tracked),
+            predicted=len(self._predicted),
+            elevation_mask_degrees=self._mask_reported,
+        )
+
+    def save_image(self, path: str | None = None) -> str | None:
+        """§10.5's *Save image*. Returns where it was written, or ``None``.
+
+        Offered only while the plot has satellites on it: an empty export is a picture of three
+        rings, which reads as a working antenna seeing nothing rather than as a receiver that is
+        not connected.
+        """
+        caption = self.caption()
+        if not caption.is_worth_saving:
+            return None
+
+        chosen = path
+        if chosen is None:
+            suggested = str(Path.home() / sky_image.suggested_name(self._captured_at))
+            chosen, _filter = QFileDialog.getSaveFileName(
+                self, "Save sky plot", suggested, "PNG images (*.png)"
+            )
+        if not chosen:
+            return None
+
+        # The palette the card is already drawn in — passed rather than chosen, so the caption
+        # cannot end up in a different theme from the plot above it. §10.5: no theme substitution.
+        # An extension is added where the user did not give one: Qt infers the format from it and
+        # fails without one, which would look like the save silently not happening.
+        if not chosen.lower().endswith(".png"):
+            chosen = f"{chosen}.png"
+
+        image = sky_image.render(self._plot, caption, self._palette)
+        return chosen if image.save(chosen) else None
 
     def _sync_mask(self, degrees: int | None) -> None:
         """§10.5: the editor **opens on the receiver's own mask**, which the status screen already
