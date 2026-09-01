@@ -170,7 +170,7 @@ def _verb(command: ScpiCommand) -> str:
 
 
 def ask(
-    command: ScpiCommand,
+    command: ScpiCommand | None,
     argument: object = None,
     palette: Palette = LIGHT,
     parent: QWidget | None = None,
@@ -181,7 +181,13 @@ def ask(
     A tier S command is not asked about — §8.2 is explicit that those execute on click — so this
     answers ``True`` for one without showing anything. That keeps the decision in the catalog
     rather than at each call site, where it would eventually be got wrong.
+
+    ``None`` — the connected family has no command for what the page wanted — answers ``False``
+    without showing anything. It should not happen, because §9.11's gate disables the control
+    first; if it does, refusing is the safe direction and it is not worth a dialog saying so.
     """
+    if command is None:
+        return False
     if not command.needs_confirmation:
         return True
 

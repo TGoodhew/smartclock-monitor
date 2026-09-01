@@ -18,21 +18,23 @@ from __future__ import annotations
 
 from typing import Final
 
-from smartclock_device.commands import catalog
-from smartclock_device.commands.scpi_command import ScpiCommand
+from smartclock_device.drivers.capability import Capability
 
 #: Asked on arrival and on every reconnect. Both always answer.
 #:
 #: The accumulated offset is the figure worth showing unconditionally: it is what anyone comparing
 #: GPS time to UTC needs, it is always available, and it is the one number on the card that earns
 #: the section's title on a day when nothing is announced.
-FIRST: Final[tuple[ScpiCommand, ...]] = (catalog.LEAP_ACCUMULATED, catalog.LEAP_STATE)
+FIRST: Final[tuple[Capability, ...]] = (Capability.LEAP_ACCUMULATED, Capability.LEAP_STATE)
 
 #: Asked only when the state reports an announcement.
-WHEN_ANNOUNCED: Final[tuple[ScpiCommand, ...]] = (catalog.LEAP_DATE, catalog.LEAP_DURATION)
+WHEN_ANNOUNCED: Final[tuple[Capability, ...]] = (
+    Capability.LEAP_DATE,
+    Capability.LEAP_DURATION,
+)
 
 
-def follow_up(announced: bool | None) -> tuple[ScpiCommand, ...]:
+def follow_up(announced: bool | None) -> tuple[Capability, ...]:
     """What to ask after the state, given what the state said.
 
     ``None`` — the state could not be read — asks nothing. An unreadable state is not permission

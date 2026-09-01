@@ -28,8 +28,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from smartclock_device.commands import catalog
 from smartclock_device.commands.scpi_command import ScpiCommand
+from smartclock_device.drivers.capability import Capability
+from smartclock_device.models.satellite import FIRST_PRN, LAST_PRN
 from smartclock_monitor.themes.qss import stylesheet
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
@@ -84,7 +85,7 @@ class ManageSatellitesDialog(QDialog):
         grid.setHorizontalSpacing(Spacing.MEDIUM)
         grid.setVerticalSpacing(Spacing.SMALL)
 
-        for index, prn in enumerate(range(catalog.FIRST_PRN, catalog.LAST_PRN + 1)):
+        for index, prn in enumerate(range(FIRST_PRN, LAST_PRN + 1)):
             box = QCheckBox(str(prn))
             box.setAccessibleName(f"Exclude PRN {prn}")
             box.setChecked(prn in self._was_excluded)
@@ -139,7 +140,7 @@ class ManageSatellitesDialog(QDialog):
     def excluded(self) -> frozenset[int]:
         return frozenset(prn for prn, box in self._boxes.items() if box.isChecked())
 
-    def commands(self) -> list[tuple[ScpiCommand, object]]:
+    def commands(self) -> list[tuple[Capability | ScpiCommand, object]]:
         """The commands that would make the receiver match this dialog.
 
         **Empty where nothing changed**, which is not the same as cancelling.
@@ -156,15 +157,15 @@ class ManageSatellitesDialog(QDialog):
             return []
 
         if not wanted:
-            return [(catalog.CLEAR_EXCLUSIONS, None)]
-        if len(wanted) == catalog.LAST_PRN - catalog.FIRST_PRN + 1:
-            return [(catalog.EXCLUDE_ALL_SATELLITES, None)]
+            return [(Capability.CLEAR_EXCLUSIONS, None)]
+        if len(wanted) == LAST_PRN - FIRST_PRN + 1:
+            return [(Capability.EXCLUDE_ALL_SATELLITES, None)]
 
         # Clear first, then set: the receiver holds a list, and sending only the additions would
         # leave a satellite excluded that the user has just un-ticked.
         return [
-            (catalog.CLEAR_EXCLUSIONS, None),
-            (catalog.EXCLUDE_SATELLITES, sorted(wanted)),
+            (Capability.CLEAR_EXCLUSIONS, None),
+            (Capability.EXCLUDE_SATELLITES, sorted(wanted)),
         ]
 
     def box_for(self, prn: int) -> QCheckBox | None:
@@ -204,7 +205,7 @@ def parse_exclusions(answer: str | None) -> tuple[frozenset[int], bool]:
             # A field this build does not understand. The rest of the answer is still good, and
             # discarding all of it would turn one odd token into "nothing is excluded".
             continue
-        if catalog.FIRST_PRN <= value <= catalog.LAST_PRN:
+        if FIRST_PRN <= value <= LAST_PRN:
             prns.add(value)
 
     return frozenset(prns), True
@@ -216,7 +217,7 @@ def ask_to_manage(
     known: bool = True,
     palette: Palette = LIGHT,
     parent: QWidget | None = None,
-) -> list[tuple[ScpiCommand, object]] | None:
+) -> list[tuple[Capability | ScpiCommand, object]] | None:
     """Show the dialog. Returns the commands to send, or ``None`` if the user cancelled.
 
     An empty list is a real answer — the user opened it, looked, and changed nothing — and is not

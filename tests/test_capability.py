@@ -21,6 +21,8 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication, QPushButton
 
+from conftest import NOW
+from smartclock_device.clock import FixedClock
 from smartclock_device.commands import catalog
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import (
@@ -29,6 +31,7 @@ from smartclock_device.drivers.base import (
     QueryResponseDefaults,
     ReceiverDriver,
 )
+from smartclock_device.drivers.capability import Capability, CommandGroup
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.transport.settings import SerialSettings
@@ -54,7 +57,9 @@ class TalkerDriver(QueryResponseDefaults):
     """
 
     name: str = "NMEA 0183 talker"
-    supported: frozenset[str] = field(default_factory=frozenset)
+    #: Which capabilities this double claims. Empty by default — the point of the double is a
+    #: family that offers nothing — and a partial set is what tests §9.11's "every, not any".
+    supported: frozenset[Capability] = field(default_factory=frozenset)
 
     @property
     def cadence(self) -> Cadence:
@@ -65,7 +70,11 @@ class TalkerDriver(QueryResponseDefaults):
         return PollPlan(fast=(), full=catalog.STATUS_SCREEN)
 
     def is_allowed(self, mnemonic: str | None) -> bool:
-        return mnemonic in self.supported
+        """Whatever the supported capabilities happen to spell as. Kept consistent with
+        :meth:`command` so the double cannot claim one and refuse the other."""
+        return mnemonic is not None and mnemonic in {
+            command.mnemonic for command in self._offered()
+        }
 
     def is_blocked(self, mnemonic: str | None) -> bool:
         return False
@@ -78,13 +87,49 @@ class TalkerDriver(QueryResponseDefaults):
     def auto_detect_sequence(self) -> tuple[SerialSettings, ...]:
         return self.walk
 
+    def command(self, capability: Capability) -> ScpiCommand | None:
+        """Nothing, unless a test says otherwise. A family that offers nothing is the point."""
+        if capability not in self.supported:
+            return None
+        from smartclock_device.drivers.smartclock import SmartClockDriver
+
+        return SmartClockDriver(clock=FixedClock(NOW)).command(capability)
+
+    def commands_for(self, group: CommandGroup) -> tuple[ScpiCommand, ...]:
+        del group
+        return ()
+
+    @property
+    def register_fields(self) -> tuple[tuple[str, str], ...]:
+        return ()
+
+    def register_query(self, node: str, field: str) -> ScpiCommand | None:
+        del node, field
+        return None
+
+    def register_setter(self, node: str, field: str) -> ScpiCommand | None:
+        del node, field
+        return None
+
     @property
     def commands(self) -> tuple[ScpiCommand, ...]:
         """Empty: a family that is never written to has no allowlist to be on."""
         return ()
 
     def supports(self, command: ScpiCommand) -> bool:
-        return command.mnemonic in self.supported
+        return command in self._offered()
+
+    def _offered(self) -> tuple[ScpiCommand, ...]:
+        """The SmartClock's commands for whichever capabilities this double claims.
+
+        Borrowed rather than invented: the gate only ever asks whether a command is *there*, so a
+        second catalog for a test double would be ceremony with somewhere new to be wrong.
+        """
+        from smartclock_device.drivers.smartclock import SmartClockDriver
+
+        real = SmartClockDriver(clock=FixedClock(NOW))
+        found = (real.command(capability) for capability in sorted(self.supported, key=str))
+        return tuple(command for command in found if command is not None)
 
     def recognises(self, identity: DeviceIdentity | None) -> bool:
         """Claims nothing: this stand-in exists to be the family that is *not* selected."""
@@ -118,7 +163,7 @@ def test_an_unsupported_command_disables_and_explains() -> None:
     button = QPushButton("Force holdover")
     driver = TalkerDriver()
 
-    assert gate(button, driver, catalog.HOLDOVER_FORCE) is False
+    assert gate(button, driver, Capability.HOLDOVER_FORCE) is False
     assert button.isEnabled() is False
     assert "NMEA 0183 talker" in button.toolTip()
     assert "no command for this" in button.toolTip()
@@ -131,7 +176,7 @@ def test_it_is_disabled_rather_than_hidden() -> None:
     button = QPushButton("Force holdover")
     button.show()
 
-    gate(button, TalkerDriver(), catalog.HOLDOVER_FORCE)
+    gate(button, TalkerDriver(), Capability.HOLDOVER_FORCE)
 
     assert button.isHidden() is False
 
@@ -144,10 +189,10 @@ def test_a_supported_command_enables_and_clears_the_explanation() -> None:
     from smartclock_device.drivers.smartclock import SmartClockDriver
 
     button = QPushButton("Force holdover")
-    gate(button, TalkerDriver(), catalog.HOLDOVER_FORCE)
+    gate(button, TalkerDriver(), Capability.HOLDOVER_FORCE)
     assert button.toolTip()
 
-    gate(button, SmartClockDriver(clock=FixedClock(NOW)), catalog.HOLDOVER_FORCE)
+    gate(button, SmartClockDriver(clock=FixedClock(NOW)), Capability.HOLDOVER_FORCE)
 
     assert button.isEnabled() is True
     assert button.toolTip() == ""
@@ -163,7 +208,7 @@ def test_a_tooltip_the_page_wrote_is_not_taken_away() -> None:
     button = QPushButton("Force holdover")
     button.setToolTip("What this does, written by the page.")
 
-    gate(button, SmartClockDriver(clock=FixedClock(NOW)), catalog.HOLDOVER_FORCE)
+    gate(button, SmartClockDriver(clock=FixedClock(NOW)), Capability.HOLDOVER_FORCE)
 
     assert button.toolTip() == "What this does, written by the page."
 
@@ -172,21 +217,23 @@ def test_every_command_must_be_supported_not_any() -> None:
     """A control whose action sends three commands and can send two would do half of what it says
     — and half of a destructive operation is what §8.3's confirmations exist to prevent."""
     button = QPushButton("Apply")
-    partial = TalkerDriver(supported=frozenset({catalog.CLEAR_EXCLUSIONS.mnemonic}))
+    partial = TalkerDriver(supported=frozenset({Capability.CLEAR_EXCLUSIONS}))
 
-    assert gate(button, partial, catalog.CLEAR_EXCLUSIONS) is True
-    assert gate(button, partial, catalog.CLEAR_EXCLUSIONS, catalog.EXCLUDE_SATELLITES) is False
+    assert gate(button, partial, Capability.CLEAR_EXCLUSIONS) is True
+    assert (
+        gate(button, partial, Capability.CLEAR_EXCLUSIONS, Capability.EXCLUDE_SATELLITES) is False
+    )
 
 
 def test_not_connected_is_not_the_same_as_cannot() -> None:
     """Different facts, and the tooltip says which."""
     button = QPushButton("Force holdover")
 
-    gate(button, None, catalog.HOLDOVER_FORCE)
+    gate(button, None, Capability.HOLDOVER_FORCE)
 
     assert "Not connected" in button.toolTip()
     assert "no command" not in button.toolTip()
-    assert "no command for this" in explain(TalkerDriver(), catalog.HOLDOVER_FORCE)
+    assert "no command for this" in explain(TalkerDriver())
 
 
 # ---- The pages, against a family that supports nothing -----------------------------------------

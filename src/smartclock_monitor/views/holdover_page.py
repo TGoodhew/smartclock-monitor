@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from smartclock_device.commands import catalog
+from smartclock_device.drivers.capability import Capability
 from smartclock_device.models.receiver_status import SmartClockMode
 from smartclock_device.parsing.scalars import parse_decimal
 from smartclock_monitor.services.commands import CommandRunner
@@ -52,7 +52,7 @@ from smartclock_monitor.services.session import CommandOutcome
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
-from smartclock_monitor.views.capability import gate
+from smartclock_monitor.views.capability import command_for, gate
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.pages import DASH, FieldGrid, Page, card, label
 from smartclock_monitor.widgets.severity_pill import SeverityPill
@@ -160,10 +160,10 @@ class HoldoverPage(Page):
         self._force.setProperty("role", "destructive")
         self._force.clicked.connect(self._force_holdover)
         self._recover = QPushButton("Recover now")
-        self._recover.clicked.connect(lambda: self._send_safe(catalog.HOLDOVER_RECOVER))
+        self._recover.clicked.connect(lambda: self._send_safe(Capability.HOLDOVER_RECOVER))
         self._ignore = QPushButton("Ignore recovery limit")
         self._ignore.clicked.connect(
-            lambda: self._send_safe(catalog.HOLDOVER_IGNORE_RECOVERY_LIMIT)
+            lambda: self._send_safe(Capability.HOLDOVER_IGNORE_RECOVERY_LIMIT)
         )
         for button in (self._force, self._recover, self._ignore):
             row.addWidget(button)
@@ -214,13 +214,13 @@ class HoldoverPage(Page):
 
         # §9.11 through §12's seam: a family without a command gets a greyed control and a
         # sentence naming it, not a missing control and not a crash on navigation.
-        gate(self._force, driver, catalog.HOLDOVER_FORCE)
-        gate(self._recover, driver, catalog.HOLDOVER_RECOVER)
-        gate(self._ignore, driver, catalog.HOLDOVER_IGNORE_RECOVERY_LIMIT)
+        gate(self._force, driver, Capability.HOLDOVER_FORCE)
+        gate(self._recover, driver, Capability.HOLDOVER_RECOVER)
+        gate(self._ignore, driver, Capability.HOLDOVER_IGNORE_RECOVERY_LIMIT)
 
         # Apply stays disabled while the limit is unread — there being nothing to apply — and
         # the capability gate is asked first, so "this family cannot" outranks "nothing read yet".
-        if gate(self._apply, driver, catalog.SET_HOLDOVER_DURATION_THRESHOLD):
+        if gate(self._apply, driver, Capability.SET_HOLDOVER_DURATION_THRESHOLD):
             self._apply.setEnabled(self._limit_known)
 
     # -- Reading ---------------------------------------------------------------------------------
@@ -229,7 +229,7 @@ class HoldoverPage(Page):
         runner = self._runner
         if runner is None or not runner.is_connected:
             return
-        runner.run([(catalog.HOLDOVER_DURATION_THRESHOLD, None)], self._absorb_limit)
+        runner.run([(Capability.HOLDOVER_DURATION_THRESHOLD, None)], self._absorb_limit)
 
     def _absorb_limit(self, outcomes: Sequence[CommandOutcome]) -> None:
         if not outcomes or outcomes[0].transaction is None:
@@ -262,20 +262,25 @@ class HoldoverPage(Page):
             return
 
         value = self._limit.value()
-        if not ask(catalog.SET_HOLDOVER_DURATION_THRESHOLD, value, self._palette, self):
+        if not ask(
+            command_for(self._runner, Capability.SET_HOLDOVER_DURATION_THRESHOLD),
+            value,
+            self._palette,
+            self,
+        ):
             return
 
         # Re-read after applying: the limit has one-second resolution, so what the receiver took
         # need not be what was sent, and this editor is the only place that figure appears.
-        runner.run([(catalog.SET_HOLDOVER_DURATION_THRESHOLD, value)], lambda _o: self.refresh())
+        runner.run([(Capability.SET_HOLDOVER_DURATION_THRESHOLD, value)], lambda _o: self.refresh())
 
     def _force_holdover(self) -> None:
         runner = self._runner
         if runner is None:
             return
-        if not ask(catalog.HOLDOVER_FORCE, None, self._palette, self):
+        if not ask(command_for(self._runner, Capability.HOLDOVER_FORCE), None, self._palette, self):
             return
-        runner.run([(catalog.HOLDOVER_FORCE, None)])
+        runner.run([(Capability.HOLDOVER_FORCE, None)])
 
     def _send_safe(self, command: object) -> None:
         """§8.2 classes both recovery commands Safe, so they go on click with no dialog."""

@@ -30,7 +30,8 @@ from enum import Enum
 
 from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QVBoxLayout, QWidget
 
-from smartclock_device.commands import catalog, leap
+from smartclock_device.commands import leap
+from smartclock_device.drivers.capability import Capability
 from smartclock_device.models import time_code_format
 from smartclock_device.models.receiver_status import LeapSecondPending, ReceiverStatus
 from smartclock_device.parsing.scalars import parse_boolean, parse_first_of_list, parse_integer
@@ -176,17 +177,19 @@ class TimePage(Page):
         if runner is None or not runner.is_connected:
             return
 
-        first: list[tuple[object, object]] = [(command, None) for command in leap.FIRST]
-        first.append((catalog.TIME_CODE_FORMAT, None))
-        runner.run(first, self._absorb_first)  # type: ignore[arg-type]
+        first = [(capability, None) for capability in leap.FIRST]
+        first.append((Capability.TIME_CODE_FORMAT, None))
+        runner.run(first, self._absorb_first)
 
     def _absorb_first(self, outcomes: Sequence[CommandOutcome]) -> None:
-        by_mnemonic = {outcome.command.mnemonic: outcome for outcome in outcomes}
+        # Keyed by **capability**, which is what was asked for. Keying by mnemonic meant the page
+        # knowing the connected family's spelling of its own question.
+        answered = {outcome.capability: outcome for outcome in outcomes if outcome.capability}
 
-        self._accumulated = _integer(by_mnemonic.get(catalog.LEAP_ACCUMULATED.mnemonic))
-        self._announced = _boolean(by_mnemonic.get(catalog.LEAP_STATE.mnemonic))
+        self._accumulated = _integer(answered.get(Capability.LEAP_ACCUMULATED))
+        self._announced = _boolean(answered.get(Capability.LEAP_STATE))
 
-        code = by_mnemonic.get(catalog.TIME_CODE_FORMAT.mnemonic)
+        code = answered.get(Capability.TIME_CODE_FORMAT)
         if code is not None and code.transaction is not None and code.transaction.succeeded:
             self._format = time_code_format.parse(code.transaction.first_line)
 
@@ -197,16 +200,18 @@ class TimePage(Page):
         follow_up = leap.follow_up(self._announced)
         runner = self._runner
         if follow_up and runner is not None:
-            runner.run([(command, None) for command in follow_up], self._absorb_announcement)
+            runner.run([(capability, None) for capability in follow_up], self._absorb_announcement)
 
     def _absorb_announcement(self, outcomes: Sequence[CommandOutcome]) -> None:
-        by_mnemonic = {outcome.command.mnemonic: outcome for outcome in outcomes}
+        # Keyed by **capability**, which is what was asked for. Keying by mnemonic meant the page
+        # knowing the connected family's spelling of its own question.
+        answered = {outcome.capability: outcome for outcome in outcomes if outcome.capability}
 
-        date = by_mnemonic.get(catalog.LEAP_DATE.mnemonic)
+        date = answered.get(Capability.LEAP_DATE)
         if date is not None and date.transaction is not None and date.transaction.succeeded:
             self._leap_date = date.transaction.first_line
 
-        duration = by_mnemonic.get(catalog.LEAP_DURATION.mnemonic)
+        duration = answered.get(Capability.LEAP_DURATION)
         if duration is not None and duration.transaction is not None:
             value = parse_first_of_list(duration.transaction.first_line)
             self._leap_direction = None if value is None else int(value)

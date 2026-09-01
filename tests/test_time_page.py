@@ -13,6 +13,7 @@ from PySide6.QtWidgets import QApplication
 
 from conftest import NOW
 from smartclock_device.commands import catalog, leap
+from smartclock_device.drivers.capability import Capability
 from smartclock_device.models.receiver_status import (
     ReceiverStatus,
     SmartClockMode,
@@ -56,9 +57,9 @@ def test_the_state_is_read_before_the_date_and_direction() -> None:
     """§10.14: with ``STAT? = 0`` there is no announced leap second to have a date, and the
     receiver **rejects** the question rather than returning a null — both answer ``E-230``. A page
     that asked all four on arrival would put two errors in the error queue every time it opened."""
-    assert catalog.LEAP_STATE in leap.FIRST
-    assert catalog.LEAP_DATE not in leap.FIRST
-    assert catalog.LEAP_DURATION not in leap.FIRST
+    assert Capability.LEAP_STATE in leap.FIRST
+    assert Capability.LEAP_DATE not in leap.FIRST
+    assert Capability.LEAP_DURATION not in leap.FIRST
 
 
 def test_nothing_follows_when_no_leap_is_announced() -> None:
@@ -66,7 +67,7 @@ def test_nothing_follows_when_no_leap_is_announced() -> None:
 
 
 def test_the_date_and_direction_follow_an_announcement() -> None:
-    assert leap.follow_up(True) == (catalog.LEAP_DATE, catalog.LEAP_DURATION)
+    assert leap.follow_up(True) == (Capability.LEAP_DATE, Capability.LEAP_DURATION)
 
 
 def test_an_unreadable_state_asks_nothing() -> None:

@@ -33,8 +33,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from smartclock_device.commands import catalog
 from smartclock_device.commands.scpi_command import ScpiCommand
+from smartclock_device.drivers.base import ReceiverDriver
+from smartclock_device.drivers.capability import CommandGroup
 from smartclock_device.models import status_register_map as registers
 from smartclock_device.models.status_register_map import StatusRegisterMap
 from smartclock_device.models.status_register_reading import StatusRegisterReading
@@ -44,7 +45,7 @@ from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.session import CommandOutcome
 from smartclock_monitor.themes.spacing import TABLE_ROW_TARGET, Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
-from smartclock_monitor.views.capability import gate
+from smartclock_monitor.views.capability import explain
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.pages import DASH, Page, card, label
 
@@ -68,6 +69,8 @@ class StatusRegistersPage(Page):
         self._runner: CommandRunner | None = None
         self._register: StatusRegisterMap = registers.ALL[0]
         self._reading = StatusRegisterReading(register=self._register)
+        #: Which field each pending answer belongs to. See refresh().
+        self._asked: list[str] = []
         self._boxes: dict[tuple[int, str], QCheckBox] = {}
 
         layout = QVBoxLayout(self)
@@ -166,11 +169,21 @@ class StatusRegistersPage(Page):
         live = self._runner is not None and self._runner.is_connected
         driver = self._runner.driver if live and self._runner is not None else None
 
-        gate(self._refresh, driver, *[command for command, _ in self._field_queries()])
+        # The register queries are per-register rather than named capabilities, so this asks
+        # whether the family produced any at all.
+        readable = bool(self._field_queries())
+        self._refresh.setEnabled(readable)
+        if not readable:
+            self._refresh.setToolTip(explain(driver))
+
         # Every mask setter, not any: a control whose action sends three commands and can send two
         # would do half of what it says.
-        if gate(self._apply, driver, *catalog.REGISTER_SETTERS):
+        setters = driver.commands_for(CommandGroup.REGISTER_SETTERS) if driver is not None else ()
+        self._apply.setEnabled(bool(setters))
+        if setters:
             self._apply.setEnabled(self._reading.has_any_value)
+        else:
+            self._apply.setToolTip(explain(driver))
         self._discard.setEnabled(self._reading.has_any_value)
 
     # -- Reading ---------------------------------------------------------------------------------
@@ -181,13 +194,30 @@ class StatusRegistersPage(Page):
         self._rebuild()
         self.refresh()
 
-    def _field_queries(self) -> list[tuple[ScpiCommand, object]]:
-        root = f":STAT:{self._register.node}"
-        found: list[tuple[ScpiCommand, object]] = []
-        for field, _ in catalog.REGISTER_FIELDS:
-            command = catalog.register_query(root, field)
+    def _driver(self) -> ReceiverDriver | None:
+        return self._runner.driver if self._runner is not None else None
+
+    def _fields(self) -> tuple[tuple[str, str], ...]:
+        """§10.10's columns, from the connected family. Empty where it has no registers."""
+        driver = self._driver()
+        return () if driver is None else driver.register_fields
+
+    def _field_queries(self) -> list[tuple[str, ScpiCommand]]:
+        """The field name and the command that reads it, for the selected register.
+
+        **The family composes the mnemonic.** Building ``f":STAT:{node}:{field}?"`` here was this
+        receiver's spelling written into a page — the last place one still knew what SCPI looks
+        like, and the coupling §12 exists to remove.
+        """
+        driver = self._driver()
+        if driver is None:
+            return []
+
+        found: list[tuple[str, ScpiCommand]] = []
+        for field, _ in driver.register_fields:
+            command = driver.register_query(self._register.node, field)
             if command is not None:
-                found.append((command, None))
+                found.append((field, command))
         return found
 
     def refresh(self) -> None:
@@ -196,8 +226,16 @@ class StatusRegistersPage(Page):
         if runner is None or not runner.is_connected:
             return
 
+        queries = self._field_queries()
+        if not queries:
+            return
+
         self._summary.setText("Reading…")
-        runner.run(self._field_queries(), self._absorb)
+        # Which field each answer belongs to, in the order asked. The outcomes come back in order,
+        # and matching them by picking a mnemonic apart meant the page parsing this family's
+        # spelling to work out what it had just asked for.
+        self._asked = [field for field, _ in queries]
+        runner.run([(command, None) for _, command in queries], self._absorb)
 
     def _absorb(self, outcomes: Sequence[CommandOutcome]) -> None:
         """Fold the five answers in.
@@ -207,8 +245,7 @@ class StatusRegistersPage(Page):
         rather than about the read.
         """
         values: dict[str, int | None] = {}
-        for outcome in outcomes:
-            field = outcome.command.mnemonic.rsplit(":", 1)[-1].rstrip("?")
+        for field, outcome in zip(self._asked, outcomes, strict=False):
             line = outcome.transaction.first_line if outcome.transaction is not None else None
             values[field] = parse_integer(line) if outcome.transaction is not None else None
 
@@ -225,7 +262,7 @@ class StatusRegistersPage(Page):
 
         answered = sum(1 for value in values.values() if value is not None)
         self._summary.setText(
-            f"{self._register.summary} — {answered} of {len(catalog.REGISTER_FIELDS)} fields read."
+            f"{self._register.summary} — {answered} of {len(self._fields())} fields read."
         )
 
     # -- Drawing ---------------------------------------------------------------------------------
@@ -270,7 +307,7 @@ class StatusRegistersPage(Page):
 
     def _redraw_raw(self) -> None:
         parts = []
-        for field, _ in catalog.REGISTER_FIELDS:
+        for field, _ in self._fields():
             value = self._mask(field)
             parts.append(f"{field} {DASH if value is None else f'+{value}'}")
         self._raw.setText("   ".join(parts))
@@ -306,7 +343,7 @@ class StatusRegistersPage(Page):
         """
         edited = self.edited_masks()
         changes: list[tuple[str, int]] = []
-        for field, _ in catalog.REGISTER_FIELDS:
+        for field, _ in self._fields():
             if field not in dict(_EDITABLE).values():
                 continue
             current = self._mask(field)
@@ -322,11 +359,11 @@ class StatusRegistersPage(Page):
         if runner is None or not changes:
             return
 
-        root = f":STAT:{self._register.node}"
+        driver = self._driver()
         commands = []
         lines = []
         for field, value in changes:
-            command = catalog.register_setter(root, field)
+            command = None if driver is None else driver.register_setter(self._register.node, field)
             rendered = command.rendered(value) if command is not None else None
             if command is None or rendered is None:
                 continue

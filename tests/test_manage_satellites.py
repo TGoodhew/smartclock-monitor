@@ -15,8 +15,10 @@ from conftest import NOW
 from smartclock_device.commands import catalog
 from smartclock_device.commands.position_argument import PositionArgument
 from smartclock_device.commands.scpi_command import SafetyTier
+from smartclock_device.drivers.capability import Capability
 from smartclock_device.models.position import SurveySuspendedReason
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
+from smartclock_device.models.satellite import FIRST_PRN, LAST_PRN
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.views.manage_satellites import ManageSatellitesDialog, parse_exclusions
 from smartclock_monitor.views.pages import PositionPage, SatellitesPage
@@ -92,9 +94,11 @@ def test_excluding_one_more_clears_then_sets() -> None:
 
     commands = dialog.commands()
 
-    assert [command.mnemonic for command, _ in commands] == [
-        ":GPS:SAT:TRAC:IGN:NONE",
-        ":GPS:SAT:TRAC:IGN",
+    # Capabilities, not mnemonics: the dialog says what it wants done and the runner asks the
+    # connected family how to spell it (#13).
+    assert [wanted for wanted, _ in commands] == [
+        Capability.CLEAR_EXCLUSIONS,
+        Capability.EXCLUDE_SATELLITES,
     ]
     assert commands[-1][1] == [4, 17]
 
@@ -112,7 +116,7 @@ def test_clearing_every_box_uses_the_command_with_its_own_sentence() -> None:
     commands = dialog.commands()
 
     assert len(commands) == 1
-    assert commands[0][0] is catalog.CLEAR_EXCLUSIONS
+    assert commands[0][0] is Capability.CLEAR_EXCLUSIONS
     assert "Clear the exclusion list" in (catalog.CLEAR_EXCLUSIONS.confirmation or "")
     assert "Exclude the selected" not in (catalog.CLEAR_EXCLUSIONS.confirmation or "")
 
@@ -124,7 +128,7 @@ def test_excluding_everything_uses_the_strong_variant() -> None:
     commands = dialog.commands()
 
     assert len(commands) == 1
-    assert commands[0][0] is catalog.EXCLUDE_ALL_SATELLITES
+    assert commands[0][0] is Capability.EXCLUDE_ALL_SATELLITES
     assert catalog.EXCLUDE_ALL_SATELLITES.requires_acknowledgement is True
     assert "lose lock" in (catalog.EXCLUDE_ALL_SATELLITES.confirmation or "")
 
@@ -135,7 +139,7 @@ def test_the_bulk_buttons_only_set_the_boxes() -> None:
     dialog = ManageSatellitesDialog(frozenset())
     dialog._choose_bulk(True)
 
-    assert dialog.excluded == frozenset(range(catalog.FIRST_PRN, catalog.LAST_PRN + 1))
+    assert dialog.excluded == frozenset(range(FIRST_PRN, LAST_PRN + 1))
     # Nothing has been sent: `commands()` describes what Apply *would* do.
     assert dialog.result() == 0
 

@@ -16,6 +16,7 @@ from enum import Enum
 from typing import Final, Protocol, runtime_checkable
 
 from smartclock_device.commands.scpi_command import ScpiCommand
+from smartclock_device.drivers.capability import Capability, CommandGroup
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.transport.settings import SerialSettings
@@ -126,6 +127,50 @@ class ReceiverDriver(Protocol):
         costs one probe timeout on a port that is not it, so a driver naming rates it does not use
         spends other people's seconds.
         """
+        ...
+
+    def command(self, capability: Capability) -> ScpiCommand | None:
+        """The command this family uses for one capability, or ``None`` if it has none.
+
+        **This is how a page asks.** It names what it wants done — ``Capability.RUN_SELF_TEST`` —
+        and the family answers with its own command or with nothing, so the page never holds
+        another family's mnemonic. A talker answers ``None`` to every capability, which is the
+        honest answer for a receiver that is never written to.
+
+        ``None`` rather than an error, because §9.11's rule is that an absent command is disabled
+        and explained. The page has a control to grey out, not an exception to handle.
+        """
+        ...
+
+    def commands_for(self, group: CommandGroup) -> tuple[ScpiCommand, ...]:
+        """Every command in a set the page offers together, in the order it should show them.
+
+        Separate from :meth:`command` because the *count* is the family's business: §8.5 has six
+        experimental queries for the SmartClock and might have none elsewhere. A page renders one
+        control per member and must not assume how many there are.
+        """
+        ...
+
+    @property
+    def register_fields(self) -> tuple[tuple[str, str], ...]:
+        """§10.10's register fields — the node suffix and what to call it — or empty.
+
+        The register *model* is family-specific structure rather than a capability: a family may
+        have five fields per register, or none, and §10.10 renders one column per field. A family
+        with no status registers answers ``()`` and the page has nothing to draw.
+        """
+        ...
+
+    def register_query(self, node: str, field: str) -> ScpiCommand | None:
+        """The command that reads one field of one register, or ``None``.
+
+        Composing ``f":STAT:{node}:{field}?"`` at the call site is exactly the coupling §12 is
+        about — it is this family's spelling, in a page. The family composes it.
+        """
+        ...
+
+    def register_setter(self, node: str, field: str) -> ScpiCommand | None:
+        """The command that writes one mask field of one register, or ``None``."""
         ...
 
     @property

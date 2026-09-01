@@ -27,6 +27,7 @@ from typing import Final
 from smartclock_device.clock import Clock
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import WHOLE_CYCLE, Cadence, LinkStyle, PollPlan
+from smartclock_device.drivers.capability import Capability, CommandGroup
 from smartclock_device.drivers.nmea import sentences
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.position import GeoPosition, HeightDatum, PositionMode
@@ -171,6 +172,31 @@ class NmeaDriver:
             SerialSettings(4800, 8, Parity.NONE, StopBits.ONE),
             SerialSettings(38400, 8, Parity.NONE, StopBits.ONE),
         )
+
+    def command(self, capability: Capability) -> ScpiCommand | None:
+        """**Nothing, for every capability.** A talker is never written to and has no command
+        parser, so there is no command it uses for any of them — and §9.11's gate turns that into a
+        disabled control naming this family rather than a button that fails on click."""
+        del capability
+        return None
+
+    def commands_for(self, group: CommandGroup) -> tuple[ScpiCommand, ...]:
+        del group
+        return ()
+
+    @property
+    def register_fields(self) -> tuple[tuple[str, str], ...]:
+        """None. A talker has no status registers, and §10.10 draws nothing rather than five empty
+        columns implying registers that were not read."""
+        return ()
+
+    def register_query(self, node: str, field: str) -> ScpiCommand | None:
+        del node, field
+        return None
+
+    def register_setter(self, node: str, field: str) -> ScpiCommand | None:
+        del node, field
+        return None
 
     @property
     def commands(self) -> tuple[ScpiCommand, ...]:

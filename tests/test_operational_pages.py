@@ -23,13 +23,14 @@ from smartclock_device.clock import FixedClock
 from smartclock_device.commands import catalog
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import ReceiverDriver
+from smartclock_device.drivers.capability import Capability
 from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.models import status_register_map as registers
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
 from smartclock_device.transport.transaction import Transaction, TransactionOutcome
 from smartclock_monitor.services.commands import Then
 from smartclock_monitor.services.polling import Reading
-from smartclock_monitor.services.session import CommandOutcome
+from smartclock_monitor.services.session import CommandOutcome, Refusal
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.views.diagnostics_page import DiagnosticsPage
 from smartclock_monitor.views.holdover_page import HoldoverPage
@@ -77,23 +78,56 @@ class FakeRunner:
             return self.driver_for
         return SmartClockDriver(clock=FixedClock(NOW)) if self.connected else None
 
-    def run(self, commands: Sequence[tuple[ScpiCommand, object]], then: Then | None = None) -> None:
+    def run(
+        self,
+        commands: Sequence[tuple[Capability | ScpiCommand, object]],
+        then: Then | None = None,
+    ) -> None:
+        """Resolve capabilities the way the real runner does, then answer from the dict.
+
+        The resolution has to be here rather than in the tests, because it is what the real one
+        does: a page names a capability and the *runner* asks the connected family for its command.
+        A double that took mnemonics would let a test pass against a page that had bypassed the
+        seam entirely.
+        """
         outcomes = []
-        for command, argument in commands:
+        for wanted, argument in commands:
+            command = self._resolve(wanted)
+            capability = wanted if isinstance(wanted, Capability) else None
+            if command is None:
+                self.sent.append((str(wanted), argument))
+                outcomes.append(
+                    CommandOutcome(
+                        command=None,
+                        capability=capability,
+                        refusal=Refusal(str(wanted), "no command for this"),
+                    )
+                )
+                continue
+
             self.sent.append((command.mnemonic, argument))
             answer = self.answers.get(command.mnemonic, DEAF)
             if answer is DEAF:
-                outcomes.append(CommandOutcome(command=command, transaction=None))
+                outcomes.append(
+                    CommandOutcome(command=command, capability=capability, transaction=None)
+                )
                 continue
             outcomes.append(
                 CommandOutcome(
                     command=command,
+                    capability=capability,
                     sent=command.rendered(argument),
                     transaction=_answered(command.mnemonic, str(answer)),
                 )
             )
         if then is not None:
             then(tuple(outcomes))
+
+    def _resolve(self, wanted: Capability | ScpiCommand) -> ScpiCommand | None:
+        if isinstance(wanted, Capability):
+            driver = self.driver
+            return None if driver is None else driver.command(wanted)
+        return wanted
 
 
 def reading(

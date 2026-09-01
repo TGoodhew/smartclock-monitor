@@ -31,6 +31,7 @@ from smartclock_device.commands.scpi_command import (
     SafetyTier,
     ScpiCommand,
 )
+from smartclock_device.models.satellite import FIRST_PRN, LAST_PRN
 
 #: Identity, per IEEE 488.2. The first thing asked, and what §8.6 keys the model profile on.
 IDENTITY: Final = ScpiCommand(
@@ -464,9 +465,6 @@ ANTENNA_DELAY: Final = ScpiCommand(
 # satellites from tracking?" — for a command that *clears* the exclusion list, so a user confirming
 # it would reasonably believe they were excluding satellites while making every one eligible again.
 
-#: How many PRNs there are. The manage dialog lists 1–32 and the bounds are checked per element.
-FIRST_PRN: Final = 1
-LAST_PRN: Final = 32
 
 EXCLUDED_SATELLITES: Final = ScpiCommand(
     mnemonic=":GPS:SAT:TRAC:IGN?",

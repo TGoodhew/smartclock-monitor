@@ -16,6 +16,7 @@ from smartclock_device.commands import catalog
 from smartclock_device.commands.blocked import is_blocked as _is_blocked
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import Cadence, PollPlan, QueryResponseDefaults
+from smartclock_device.drivers.capability import Capability, CommandGroup
 from smartclock_device.models.device_identity import DeviceIdentity, ReceiverModel
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.parsing.scalars import (
@@ -78,6 +79,23 @@ class SmartClockDriver(QueryResponseDefaults):
         """§7.1's eight combinations. The note on the constant records why odd parity sits
         second, and what an even-parity spelling with no source behind it cost."""
         return AUTO_DETECT_SEQUENCE
+
+    def command(self, capability: Capability) -> ScpiCommand | None:
+        """This family's command for a capability. Every one of them is offered."""
+        return _BY_CAPABILITY.get(capability)
+
+    def commands_for(self, group: CommandGroup) -> tuple[ScpiCommand, ...]:
+        return _BY_GROUP.get(group, ())
+
+    @property
+    def register_fields(self) -> tuple[tuple[str, str], ...]:
+        return catalog.REGISTER_FIELDS
+
+    def register_query(self, node: str, field: str) -> ScpiCommand | None:
+        return catalog.register_query(f":STAT:{node}", field)
+
+    def register_setter(self, node: str, field: str) -> ScpiCommand | None:
+        return catalog.register_setter(f":STAT:{node}", field)
 
     @property
     def commands(self) -> tuple[ScpiCommand, ...]:
@@ -159,3 +177,50 @@ def _scalar[T](
 #: Kept here so the poll loop has one place to look for the parsers.
 EFC_PARSER: Final = parse_decimal
 TRACKED_COUNT_PARSER: Final = parse_integer
+
+
+#: What this family does for each :class:`Capability`.
+#:
+#: **Written out rather than resolved by name.** The capability names match the catalog's constants
+#: — deliberately, since both are named for intent — so ``getattr(catalog, capability.name)`` would
+#: work and would also silently map a renamed capability onto nothing. Spelled in full, a mismatch
+#: is a NameError at import and ``test_capability_map.py`` asserts the table is total.
+_BY_CAPABILITY: Final[dict[Capability, ScpiCommand]] = {
+    Capability.ANTENNA_DELAY: catalog.ANTENNA_DELAY,
+    Capability.ELEVATION_MASK: catalog.ELEVATION_MASK,
+    Capability.EXCLUDED_SATELLITES: catalog.EXCLUDED_SATELLITES,
+    Capability.SURVEY_ON_POWER_UP: catalog.SURVEY_ON_POWER_UP,
+    Capability.HOLDOVER_DURATION_THRESHOLD: catalog.HOLDOVER_DURATION_THRESHOLD,
+    Capability.DIAGNOSTIC_LOG: catalog.DIAGNOSTIC_LOG,
+    Capability.LOG_COUNT: catalog.LOG_COUNT,
+    Capability.LIFETIME_HOURS: catalog.LIFETIME_HOURS,
+    Capability.ERROR_QUEUE: catalog.ERROR_QUEUE,
+    Capability.HARDWARE_CONDITION: catalog.HARDWARE_CONDITION,
+    Capability.TIME_CODE_FORMAT: catalog.TIME_CODE_FORMAT,
+    Capability.LEAP_ACCUMULATED: catalog.LEAP_ACCUMULATED,
+    Capability.LEAP_DATE: catalog.LEAP_DATE,
+    Capability.LEAP_DURATION: catalog.LEAP_DURATION,
+    Capability.LEAP_STATE: catalog.LEAP_STATE,
+    Capability.SET_ANTENNA_DELAY: catalog.SET_ANTENNA_DELAY,
+    Capability.SET_ELEVATION_MASK: catalog.SET_ELEVATION_MASK,
+    Capability.SET_HOLDOVER_DURATION_THRESHOLD: catalog.SET_HOLDOVER_DURATION_THRESHOLD,
+    Capability.SET_SURVEY_ON_POWER_UP: catalog.SET_SURVEY_ON_POWER_UP,
+    Capability.SET_POSITION: catalog.SET_POSITION,
+    Capability.EXCLUDE_SATELLITES: catalog.EXCLUDE_SATELLITES,
+    Capability.EXCLUDE_ALL_SATELLITES: catalog.EXCLUDE_ALL_SATELLITES,
+    Capability.CLEAR_EXCLUSIONS: catalog.CLEAR_EXCLUSIONS,
+    Capability.START_SURVEY: catalog.START_SURVEY,
+    Capability.ADOPT_SURVEYED_POSITION: catalog.ADOPT_SURVEYED_POSITION,
+    Capability.RESTORE_LAST_POSITION: catalog.RESTORE_LAST_POSITION,
+    Capability.HOLDOVER_FORCE: catalog.HOLDOVER_FORCE,
+    Capability.HOLDOVER_RECOVER: catalog.HOLDOVER_RECOVER,
+    Capability.HOLDOVER_IGNORE_RECOVERY_LIMIT: catalog.HOLDOVER_IGNORE_RECOVERY_LIMIT,
+    Capability.RUN_SELF_TEST: catalog.RUN_SELF_TEST,
+    Capability.CLEAR_DIAGNOSTIC_LOG: catalog.CLEAR_DIAGNOSTIC_LOG,
+}
+
+#: The sets §10.9 and §10.10 render one control per member of.
+_BY_GROUP: Final[dict[CommandGroup, tuple[ScpiCommand, ...]]] = {
+    CommandGroup.EXPERIMENTAL: catalog.EXPERIMENTAL,
+    CommandGroup.REGISTER_SETTERS: catalog.REGISTER_SETTERS,
+}
