@@ -548,8 +548,12 @@ def test_no_page_is_so_wide_it_hits_the_window_s_ceiling() -> None:
     """The computed minimum is bounded, and the bound is where a page should be fixed instead.
 
     Without this, a page whose layout ran away would silently clamp at the cap and start scrolling
-    sideways — the failure would look like the window's fault rather than the page's. The cap is
-    what still fits a 1366-wide laptop.
+    sideways — the failure would look like the window's fault rather than the page's.
+
+    The ceiling is a screen width: past it the page does not fit the narrowest laptop in common
+    use, so scrolling is the lesser evil and the page is the thing to change. Worth knowing how
+    close that is — the Diagnostics page measures about 1321 px on Windows, where the fallback face
+    is wider than this machine's.
     """
     from smartclock_monitor.themes.spacing import Spacing
     from smartclock_monitor.views.details_window import (

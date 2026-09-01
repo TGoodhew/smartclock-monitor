@@ -70,10 +70,18 @@ _MAX_ACCELERATED = 9
 
 #: Bounds on the computed minimum width. See DetailsWindow._adopt_content_minimum.
 #:
-#: The floor is §9.6.2's two-column arrangement — the sky plot beside its table — and the cap is
-#: what still fits a 1366-wide laptop with room for a taskbar.
+#: The floor is §9.6.2's two-column arrangement — the sky plot beside its table.
+#:
+#: **The ceiling is 1366 because that is a screen width, not a taste.** Past it a page cannot fit
+#: the narrowest laptop still in common use at all, so sideways scrolling becomes the lesser evil
+#: and the page is what needs fixing — which is what `test_accessibility.py` says when it trips.
+#:
+#: It was 1320 for one commit, chosen as "what fits 1366 with room for a taskbar", and that was a
+#: guess dressed as a measurement. Working the Windows CI failure back through the chrome puts the
+#: Diagnostics page at **1321 px** there — one pixel over — so the guess would have clamped the
+#: window and left that page scrolling by a pixel, for no reason anybody could have found.
 _MINIMUM_WIDTH_FLOOR: Final = 900
-_MINIMUM_WIDTH_CAP: Final = 1320
+_MINIMUM_WIDTH_CAP: Final = 1366
 
 
 def _scrolled(page: Page) -> QScrollArea:
