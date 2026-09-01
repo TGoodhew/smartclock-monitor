@@ -120,7 +120,9 @@ def test_the_exact_command_is_shown() -> None:
 
 
 def test_the_strong_variant_gates_the_button_behind_a_tick() -> None:
-    """§9.7.4: a CheckBox gates the PrimaryButton's IsEnabled for the strong variants. Forcing
+    """P0-8.
+
+    §9.7.4: a CheckBox gates the PrimaryButton's IsEnabled for the strong variants. Forcing
     holdover inside 24 hours of power-up corrupts oscillator learning, and no amount of clicking
     again undoes it."""
     dialog = ConfirmDialog(catalog.HOLDOVER_FORCE)

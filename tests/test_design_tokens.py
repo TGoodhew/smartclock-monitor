@@ -300,7 +300,9 @@ def test_no_series_colour_is_the_page_background(theme: Theme) -> None:
 
 
 def test_every_theme_defines_every_token() -> None:
-    """The port of the theme-dictionary parity gate. A token defined in one theme and missing in
+    """P0-17.
+
+    The port of the theme-dictionary parity gate. A token defined in one theme and missing in
     another is a crash on theme change, and it is the kind that ships."""
     for theme in ALL_THEMES:
         palette = palette_for(theme)
@@ -456,7 +458,7 @@ def test_device_literal_text_is_the_only_monospace_style() -> None:
 
 
 def test_readouts_use_tabular_figures() -> None:
-    """A value that changes once a second must not shift its own decimal point."""
+    """P0-20. A value that changes once a second must not shift its own decimal point."""
     assert Type.READOUT.tabular is True
     assert Type.READOUT_SMALL.tabular is True
 

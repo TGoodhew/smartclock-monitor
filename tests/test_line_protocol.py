@@ -102,7 +102,7 @@ async def test_a_status_screen_survives_every_delivery_size(chunk: int) -> None:
 
 
 async def test_echo_is_detected_and_discarded() -> None:
-    """Under ``FDUPlex ON`` the receiver sends every character back."""
+    """P0-2. Under ``FDUPlex ON`` the receiver sends every character back."""
     transport = FakeTransport({":SYNC:TINT?": " -5.4E-009"}, echo=True)
     protocol = await opened(transport)
 

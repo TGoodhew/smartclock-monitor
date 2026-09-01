@@ -49,6 +49,18 @@ Everything else in §9.12's accessibility criteria is unchanged: severity is alw
 shape **and** text, every text token clears 4.5:1 on every surface it is drawn on, the sky plot is
 reachable entirely from the keyboard, and its tables carry the same data at a 40 px row height.
 
+**What it withdraws from §13**, precisely, so the table can be read against this port:
+
+| Row | Effect |
+|---|---|
+| **A11Y-8** — "high contrast is a first-class theme" | Withdrawn entirely. There is no such theme to be first-class. |
+| **A11Y-4** — contrast floors in Light, Dark *and HighContrast* | The Light and Dark half stands and is gated at 4.5:1, which is the stricter floor. The HighContrast half is withdrawn. |
+| **P0-17** — token set with "Light, Dark, and HighContrast dictionaries" | The parity half stands and is gated — every token defined in every theme. The third dictionary is withdrawn. |
+
+The `Test-HighContrastLegibility.ps1` gate retires with the theme it checked;
+`Test-ThemeDictionaryParity.ps1`'s job survives as `test_every_theme_defines_every_token`, over
+two themes rather than three.
+
 ### Nothing tells you when lock is lost
 
 P1-9 is a desktop notification in WinZ3805A, on by default, and it exists — in §10.13's own words —
@@ -67,6 +79,21 @@ user has", so hiding would not be an inconvenience but a loss of the application
 
 Close means close, and the poll stops. Leave the window open — minimised is fine — to keep the
 trend filling.
+
+**What D5 withdraws from §13**, so the table can be read against this port. All four are rows §13
+lists as *shipped* in WinZ3805A:
+
+| Row | Effect |
+|---|---|
+| **P1-9** — notification on holdover entry / lock loss | Not shipped. There is no notification channel, and a message inside a window nobody is looking at does not serve a requirement that exists for the user who is not looking. |
+| **P1-10** — system tray icon reflecting lock state | Not shipped. |
+| **P1-13** — taskbar overlay badge | Not shipped. Already dropped in the provisional answer for want of a cross-desktop equivalent. |
+| **P1-14** — close-to-tray, start minimised, exit that does not need the tray | The last clause stands — the Settings *Exit* button — and is the only part that survives without a tray. |
+
+**P1-11** — system accent opt-in — is also absent, for a different and unrelated reason: there is
+nothing to read on these desktops, and §9.4.2's guarantee is that the brand accent is chosen for
+hue separation from the severity colours. The Settings page says so on screen rather than offering
+a switch that cannot work.
 
 ---
 

@@ -128,7 +128,9 @@ def test_the_elevation_mask_ring_sits_where_its_elevation_does() -> None:
 
 
 def test_marker_area_scales_with_strength_so_the_diameter_scales_with_its_root() -> None:
-    """Scaling the diameter directly would make a strong satellite look four times the signal of a
+    """P0-9.
+
+    Scaling the diameter directly would make a strong satellite look four times the signal of a
     middling one rather than twice — the classic way a bubble chart lies."""
     kind = SignalStrengthKind.CARRIER_TO_NOISE
     weakest = marker_size(26, kind)
@@ -280,6 +282,8 @@ def test_the_table_and_the_plot_agree(application: QApplication) -> None:
 
 
 def test_every_page_is_reachable_from_the_navigation(application: QApplication) -> None:
+    """P0-5: gated here."""
+
     del application
     window = DetailsWindow(Theme.DARK)
 

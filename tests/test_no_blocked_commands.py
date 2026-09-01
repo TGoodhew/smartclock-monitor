@@ -1,4 +1,6 @@
-"""CI gate for §8.4: no excluded command is named anywhere but the one file that holds the patterns.
+"""P0-7. CI gate for §8.4.
+
+No excluded command is named anywhere but the one file that holds the patterns.
 
 The port of ``build/Test-NoBlockedCommands.ps1``, and — per CLAUDE.md — landed in the same change
 as ``blocked.py`` rather than after it. Until this existed, ``docs/provenance.md`` was the only
