@@ -69,6 +69,11 @@ class TalkerDriver(QueryResponseDefaults):
     def is_blocked(self, mnemonic: str | None) -> bool:
         return False
 
+    @property
+    def commands(self) -> tuple[ScpiCommand, ...]:
+        """Empty: a family that is never written to has no allowlist to be on."""
+        return ()
+
     def supports(self, command: ScpiCommand) -> bool:
         return command.mnemonic in self.supported
 

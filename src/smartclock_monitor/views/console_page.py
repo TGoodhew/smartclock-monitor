@@ -9,6 +9,13 @@ Tier C commands selected here raise their confirmation like anywhere else. A con
 the dialog because the user had opted into an advanced surface would be treating "I want to see the
 commands" as "I have read the consequence of this one".
 
+**The picker is the connected driver's allowlist, and it is rebound when the driver changes.**
+Not the SmartClock catalog: §12's #304 item 2 records that a stale picker offers a family commands
+it has never heard of, which with a talker connected would mean ninety-eight SCPI mnemonics on a
+device that would read every one of them as noise in the middle of its own stream. Unbound, or
+bound to a family with no command parser, the picker is **empty** — which is the honest thing for it
+to be, rather than another family's list.
+
 **There is no free-text entry, and there must never be one.** If a future version adds it, §10.11
 specifies the shape it has to take: every submission through a validator that requires a catalog
 match on the normalised mnemonic *and* rejects anything the driver's ``is_blocked`` answers true
@@ -31,8 +38,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from smartclock_device.commands import catalog
 from smartclock_device.commands.scpi_command import ArgumentKind, ScpiCommand
+from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.session import CommandOutcome
@@ -51,9 +58,16 @@ class ConsolePage(Page):
 
     title = "Advanced Console"
 
-    def __init__(self, palette: Palette = LIGHT, parent: QWidget | None = None) -> None:
+    def __init__(
+        self,
+        palette: Palette = LIGHT,
+        parent: QWidget | None = None,
+        *,
+        driver: ReceiverDriver | None = None,
+    ) -> None:
         super().__init__(palette, parent)
         self._runner: CommandRunner | None = None
+        self._driver = driver
         self._lines: list[str] = []
 
         layout = QVBoxLayout(self)
@@ -61,6 +75,7 @@ class ConsolePage(Page):
         layout.addWidget(self._build_picker())
         layout.addWidget(self._build_transcript(), 1)
 
+        self._repopulate()
         self._choose(0)
 
     # -- The picker ------------------------------------------------------------------------------
@@ -139,9 +154,33 @@ class ConsolePage(Page):
         needle = self._filter.text().strip().lower()
         return [
             command
-            for command in catalog.ALL
+            for command in self._offered()
             if not needle or needle in command.mnemonic.lower() or needle in command.summary.lower()
         ]
+
+    def _offered(self) -> tuple[ScpiCommand, ...]:
+        """The connected family's allowlist, or nothing.
+
+        Nothing rather than a default catalog: a console with no receiver has no allowlist to show,
+        and showing one family's while another is connected is precisely the staleness §12's #304
+        item 2 names.
+        """
+        return () if self._driver is None else self._driver.commands
+
+    def _rebind(self) -> None:
+        """Follow the session's driver, so a reconnect onto a different family repopulates.
+
+        Taken from the runner on every reading, the same way the Details pages take it for their
+        capability gates: which family is connected is the session's fact, and a copy kept here
+        would be a second one to go stale.
+        """
+        live = (
+            self._runner.driver if self._runner is not None and self._runner.is_connected else None
+        )
+        if live is None or live is self._driver:
+            return
+        self._driver = live
+        self._repopulate()
 
     def _repopulate(self) -> None:
         selected = self.selected()
@@ -159,7 +198,8 @@ class ConsolePage(Page):
         self._choose(self._commands.currentIndex())
 
     def selected(self) -> ScpiCommand | None:
-        return catalog.find(self._commands.currentData())
+        wanted = self._commands.currentData()
+        return next((command for command in self._offered() if command.mnemonic == wanted), None)
 
     def _choose(self, index: int) -> None:
         del index
@@ -222,10 +262,12 @@ class ConsolePage(Page):
 
     def set_command_runner(self, runner: CommandRunner | None) -> None:
         self._runner = runner
+        self._rebind()
         self._redraw_preview()
 
     def show_reading(self, reading: Reading) -> None:
         del reading
+        self._rebind()
         self._redraw_preview()
 
     def _send_selected(self) -> None:

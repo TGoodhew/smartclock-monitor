@@ -17,9 +17,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
+from conftest import NOW
+from smartclock_device.clock import FixedClock
 from smartclock_device.commands import catalog
 from smartclock_device.commands.blocked import is_blocked
 from smartclock_device.commands.scpi_command import ArgumentKind, SafetyTier
+from smartclock_device.drivers.nmea import NmeaDriver
+from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_monitor.services.preferences import DEFAULTS, Preferences, load, save
 from smartclock_monitor.themes.tokens import Theme
 from smartclock_monitor.views.console_page import ConsolePage
@@ -113,13 +117,23 @@ def test_no_preference_can_change_what_is_permitted() -> None:
         assert "confirm" not in entry.name
 
 
+def a_console() -> ConsolePage:
+    """A console bound to the SmartClock family.
+
+    Bound explicitly, because the picker is **the connected driver's allowlist** rather than the
+    catalog: an unbound console shows nothing, which is the honest thing for it to show and is what
+    keeps a talker from being offered ninety-eight SCPI mnemonics.
+    """
+    return ConsolePage(driver=SmartClockDriver(clock=FixedClock(NOW)))
+
+
 # ---- The console's allowlist -------------------------------------------------------------------
 
 
 def test_the_picker_offers_the_catalog_and_nothing_else() -> None:
     """§10.11: *"The dropdown is populated from the catalog. Blocked commands are not in the
     catalog and therefore cannot be selected."*"""
-    page = ConsolePage()
+    page = a_console()
 
     offered = {page.command_box.itemData(index) for index in range(page.command_box.count())}
     assert offered == {command.mnemonic for command in catalog.ALL}
@@ -128,7 +142,7 @@ def test_the_picker_offers_the_catalog_and_nothing_else() -> None:
 def test_nothing_the_picker_offers_is_excluded() -> None:
     """The join between §8.1 and §8.4, asserted at the surface a user actually drives. The catalog
     test asserts it of the data; this asserts it of the control."""
-    page = ConsolePage()
+    page = a_console()
 
     for index in range(page.command_box.count()):
         mnemonic = page.command_box.itemData(index)
@@ -138,7 +152,7 @@ def test_nothing_the_picker_offers_is_excluded() -> None:
 def test_enabling_the_console_adds_no_command() -> None:
     """§10.13: *"Opting in changes what is reachable, never what is permitted."* The console's
     universe is the catalog, which is the same set every other page sends from."""
-    page = ConsolePage()
+    page = a_console()
     offered = {page.command_box.itemData(index) for index in range(page.command_box.count())}
 
     assert all(catalog.is_allowed(mnemonic) for mnemonic in offered)
@@ -148,7 +162,7 @@ def test_a_tier_c_command_selected_here_still_confirms() -> None:
     """§10.11. A console that skipped the dialog because the user had opted into an advanced
     surface would be treating "I want to see the commands" as "I have read the consequence of
     this one"."""
-    page = ConsolePage()
+    page = a_console()
     assert page.select(catalog.CLEAR_DIAGNOSTIC_LOG.mnemonic) is True
 
     command = page.selected()
@@ -162,7 +176,7 @@ def test_a_tier_c_command_selected_here_still_confirms() -> None:
 
 def test_the_preview_shows_exactly_what_will_be_sent() -> None:
     """§10.11's "Will send:" line, so a user can check it against the manual before committing."""
-    page = ConsolePage()
+    page = a_console()
     page.select(catalog.SET_HOLDOVER_DURATION_THRESHOLD.mnemonic)
     page._integer.setValue(600)
 
@@ -170,7 +184,7 @@ def test_the_preview_shows_exactly_what_will_be_sent() -> None:
 
 
 def test_a_parameterless_command_previews_bare() -> None:
-    page = ConsolePage()
+    page = a_console()
     page.select(catalog.STATUS_SCREEN.mnemonic)
 
     assert page.preview_text == ":SYST:STAT?"
@@ -179,7 +193,7 @@ def test_a_parameterless_command_previews_bare() -> None:
 def test_the_editor_is_range_bounded_by_the_catalog_entry() -> None:
     """§10.11: parameter entry is typed and range-validated per the command's own spec, so the
     console cannot accept what another page would reject."""
-    page = ConsolePage()
+    page = a_console()
     page.select(catalog.SET_ELEVATION_MASK.mnemonic)
 
     assert page._integer.minimum() == 0
@@ -187,7 +201,7 @@ def test_the_editor_is_range_bounded_by_the_catalog_entry() -> None:
 
 
 def test_a_keyword_command_offers_its_keywords_and_nothing_else() -> None:
-    page = ConsolePage()
+    page = a_console()
     page.select(catalog.RUN_SELF_TEST.mnemonic)
 
     offered = [page._keyword.itemText(index) for index in range(page._keyword.count())]
@@ -197,7 +211,7 @@ def test_a_keyword_command_offers_its_keywords_and_nothing_else() -> None:
 
 
 def test_the_filter_narrows_the_picker() -> None:
-    page = ConsolePage()
+    page = a_console()
     page.filter_box.setText("holdover")
 
     assert page.command_box.count() < len(catalog.ALL)
@@ -205,7 +219,7 @@ def test_the_filter_narrows_the_picker() -> None:
 
 
 def test_send_is_disabled_while_disconnected() -> None:
-    page = ConsolePage()
+    page = a_console()
     page.select(catalog.STATUS_SCREEN.mnemonic)
     page.set_command_runner(FakeRunner({}, connected=False))
 
@@ -213,7 +227,7 @@ def test_send_is_disabled_while_disconnected() -> None:
 
 
 def test_the_transcript_records_both_directions() -> None:
-    page = ConsolePage()
+    page = a_console()
     page.set_command_runner(FakeRunner({catalog.STATUS_SCREEN.mnemonic: "LOCK"}))
     page.select(catalog.STATUS_SCREEN.mnemonic)
     page._send_selected()
@@ -223,7 +237,7 @@ def test_the_transcript_records_both_directions() -> None:
 
 
 def test_the_transcript_can_be_cleared() -> None:
-    page = ConsolePage()
+    page = a_console()
     page.set_command_runner(FakeRunner({catalog.STATUS_SCREEN.mnemonic: "LOCK"}))
     page.select(catalog.STATUS_SCREEN.mnemonic)
     page._send_selected()
@@ -334,3 +348,49 @@ def test_the_page_says_what_is_not_there() -> None:
     assert "Poll cadences" in text
     assert "§7.3" in text and "§12" in text
     assert "notification area" in text
+
+
+# ---- The picker follows the connected family ---------------------------------------------------
+
+
+def test_an_unbound_console_offers_nothing() -> None:
+    """§12's #304 item 2. A console with no receiver has no allowlist to show, and defaulting to
+    one family's would be the staleness this closes, arranged in advance."""
+    page = ConsolePage()
+
+    assert page.command_box.count() == 0
+    assert page.selected() is None
+
+
+def test_the_picker_is_rebound_when_a_talker_connects() -> None:
+    """The bug, made reachable the day a second family was registered: the picker *is* the
+    allowlist made visible, so a stale one offers a family ninety-eight commands it has never
+    heard of — on a device that would read every one of them as noise in its own stream."""
+    page = a_console()
+    assert page.command_box.count() == len(catalog.ALL)
+
+    page.set_command_runner(FakeRunner(driver_for=NmeaDriver(clock=FixedClock(NOW))))
+
+    assert page.command_box.count() == 0, "a talker has no allowlist to be on"
+    assert page.selected() is None
+
+
+def test_the_picker_comes_back_when_the_smartclock_returns() -> None:
+    """The other direction, which is the half a one-way rebind would leave broken."""
+    page = ConsolePage(driver=NmeaDriver(clock=FixedClock(NOW)))
+    assert page.command_box.count() == 0
+
+    page.set_command_runner(FakeRunner())
+
+    assert page.command_box.count() == len(catalog.ALL)
+    assert page.select(catalog.STATUS_SCREEN.mnemonic) is True
+
+
+def test_a_disconnected_runner_leaves_the_picker_alone() -> None:
+    """Disconnection is not a family change. Emptying the picker every time the link dropped would
+    make §7.2's ordinary reconnect look like a receiver swap."""
+    page = a_console()
+
+    page.set_command_runner(FakeRunner(connected=False))
+
+    assert page.command_box.count() == len(catalog.ALL)

@@ -112,6 +112,20 @@ class ReceiverDriver(Protocol):
         """
         ...
 
+    @property
+    def commands(self) -> tuple[ScpiCommand, ...]:
+        """**This family's allowlist, made visible.** §10.11's console picker is exactly this.
+
+        Enumerable on purpose, and the asymmetry with :meth:`is_blocked` is §8.1's whole design:
+        an allowlist is a list of what may be sent and showing it is the point, while the §8.4
+        exclusions are never a list at all — they are not entries carrying a flag, they do not
+        exist as data, and the only thing exposed about them is a verdict on one candidate.
+
+        A family with no command parser returns ``()``, and the console then shows an empty picker
+        with an explanation rather than offering another family's ninety-eight.
+        """
+        ...
+
     def supports(self, command: ScpiCommand) -> bool:
         """Whether **this family** can send this command at all.
 

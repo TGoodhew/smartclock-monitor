@@ -154,6 +154,14 @@ class NmeaDriver:
         del mnemonic
         return False
 
+    @property
+    def commands(self) -> tuple[ScpiCommand, ...]:
+        """**Empty**, and §10.11's picker shows it empty. A talker has no command parser, so there
+        is no allowlist to be on — and a console that fell back to another family's catalog would
+        be offering ninety-eight commands to a device that would read every one of them as noise
+        in the middle of its own stream."""
+        return ()
+
     def supports(self, command: ScpiCommand) -> bool:
         del command
         return False
