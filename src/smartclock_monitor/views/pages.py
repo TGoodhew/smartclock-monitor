@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QButtonGroup,
     QCheckBox,
     QComboBox,
+    QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QGridLayout,
@@ -41,8 +42,15 @@ from PySide6.QtWidgets import (
 )
 
 from smartclock_device.commands import catalog
+from smartclock_device.commands.position_argument import (
+    HEIGHT_METRES,
+    MINUTES,
+    SECONDS,
+    PositionArgument,
+)
 from smartclock_device.models import antenna_cable, coordinates
 from smartclock_device.models.device_identity import DeviceIdentity
+from smartclock_device.models.position import GeoPosition
 from smartclock_device.models.receiver_status import (
     OutputValidity,
     ReceiverStatus,
@@ -695,6 +703,88 @@ class SatellitesPage(Page):
 # ---- §10.6 Position -----------------------------------------------------------------------------
 
 
+class _DegreesMinutesSeconds:
+    """One coordinate as hemisphere, degrees, minutes and seconds — the receiver's own four parts.
+
+    Degrees–minutes–seconds rather than a decimal box, because that is what the receiver prints on
+    its status screen and what §10.6's table bounds. Asking for decimal degrees would mean the user
+    converting what the screen shows in order to correct it, and the conversion is the part people
+    get wrong.
+    """
+
+    def __init__(self, name: str, hemispheres: tuple[str, str], degree_maximum: int) -> None:
+        self.row = QHBoxLayout()
+        self.row.addWidget(label(name, "caption"))
+
+        self._hemisphere = QComboBox()
+        self._hemisphere.addItems(list(hemispheres))
+        self._hemisphere.setAccessibleName(f"{name} hemisphere")
+        self.row.addWidget(self._hemisphere)
+
+        self._degrees = _whole_field(f"{name} degrees", degree_maximum, "°")
+        self._minutes = _whole_field(f"{name} minutes", MINUTES[1], "′")
+        self._seconds = QDoubleSpinBox()
+        self._seconds.setRange(*SECONDS)
+        self._seconds.setDecimals(3)
+        self._seconds.setSuffix("″")
+        self._seconds.setAccessibleName(f"{name} seconds")
+        self._seconds.setKeyboardTracking(False)
+
+        for widget in (self._degrees, self._minutes, self._seconds):
+            self.row.addWidget(widget)
+        self.row.addStretch(1)
+
+    def hemisphere(self) -> str:
+        return str(self._hemisphere.currentText())
+
+    def degrees(self) -> int:
+        return int(self._degrees.value())
+
+    def minutes(self) -> int:
+        return int(self._minutes.value())
+
+    def seconds(self) -> float:
+        return float(self._seconds.value())
+
+    def set_decimal(self, degrees: float | None) -> None:
+        """Fill the four parts from signed decimal degrees, the form the status screen is parsed to.
+
+        **What keeps the result sendable is the seconds box's own range**, which is §10.6's
+        0 – 59.999 and clamps anything above it. Not the rounding here, and not a carry.
+
+        Both were written first, and neither was doing the job. A carry for the 60-second case is
+        unreachable: rounding the whole angle before the split makes the seconds a multiple of a
+        thousandth, and over 290 271 latitudes the largest the split produces is 59.999. Removing
+        the pre-rounding as well changed nothing either, because the box still clamps. Dead code
+        that appears to handle a case implies the case can occur, so it is gone; the rounding stays
+        only because it puts a clean value in the box rather than leaving the clamp to tidy up.
+
+        The test asserts the invariant — a position the receiver reported comes back sendable —
+        rather than any of the three mechanisms, since it is the invariant that matters and two of
+        the three turned out not to be why it holds.
+        """
+        if degrees is None:
+            return
+
+        self._hemisphere.setCurrentIndex(0 if degrees >= 0 else 1)
+        total_seconds = round(abs(degrees) * 3600.0, 3)
+        whole_degrees, remainder = divmod(total_seconds, 3600.0)
+        whole_minutes, seconds = divmod(remainder, 60.0)
+
+        self._degrees.setValue(int(whole_degrees))
+        self._minutes.setValue(int(whole_minutes))
+        self._seconds.setValue(seconds)
+
+
+def _whole_field(name: str, maximum: int, suffix: str) -> QSpinBox:
+    box = QSpinBox()
+    box.setRange(0, maximum)
+    box.setSuffix(suffix)
+    box.setAccessibleName(name)
+    box.setKeyboardTracking(False)
+    return box
+
+
 class PositionPage(_FieldsExport, Page):
     """§10.6: where the receiver thinks it is, and how it decided."""
 
@@ -702,6 +792,8 @@ class PositionPage(_FieldsExport, Page):
 
     def __init__(self, palette: Palette = LIGHT, parent: QWidget | None = None) -> None:
         self._runner: CommandRunner | None = None
+        #: The last position the receiver reported, for "Fill from the receiver".
+        self._last_position: GeoPosition | None = None
         super().__init__(palette, parent)
         layout = QVBoxLayout(self)
         layout.setSpacing(Spacing.MEDIUM)
@@ -713,6 +805,7 @@ class PositionPage(_FieldsExport, Page):
         frame_layout.addWidget(self._fields)
         layout.addWidget(frame)
         layout.addWidget(self._build_survey())
+        layout.addWidget(self._build_manual_position())
         layout.addStretch(1)
         self._exported = (("Position", self._fields),)
 
@@ -773,15 +866,117 @@ class PositionPage(_FieldsExport, Page):
         self._on_power_up.clicked.connect(self._send_power_up)
         holder_layout.addWidget(self._on_power_up)
 
+        return holder
+
+    def _build_manual_position(self) -> QFrame:
+        """§10.6's manual entry. Nine fields, in the order the receiver wants them.
+
+        Held out of the build until issue #12 could settle the argument's wire format — a tier C
+        command that changes what every timing solution is computed from is the wrong place for a
+        plausible guess. It is built the way the sibling implementation built and tested it; see
+        ``commands/position_argument.py`` for the format and for why it is a looked-up fact.
+        """
+        holder, holder_layout = card("Set position by hand")
+
         holder_layout.addWidget(
             label(
-                "Setting a position by hand is not offered yet: the command's argument format is "
-                "not stated in the guide this was written from, and guessing at one that changes "
-                "every timing solution is not worth the risk (issue #12).",
+                "The receiver times from this position. Enter it on the datum the receiver itself "
+                "reports, shown above — the manual contradicts itself about whether the height is "
+                "above mean sea level or the ellipsoid, and the two differ by tens of metres, so "
+                "nothing here converts between them.",
                 "tertiary",
             )
         )
+
+        self._latitude = _DegreesMinutesSeconds("Latitude", ("N", "S"), 90)
+        self._longitude = _DegreesMinutesSeconds("Longitude", ("E", "W"), 180)
+        holder_layout.addLayout(self._latitude.row)
+        holder_layout.addLayout(self._longitude.row)
+
+        height_row = QHBoxLayout()
+        height_row.addWidget(label("Height", "caption"))
+        self._height = QDoubleSpinBox()
+        self._height.setRange(*HEIGHT_METRES)
+        self._height.setDecimals(2)
+        self._height.setSuffix(" m")
+        self._height.setAccessibleName("Height, on the datum the receiver reports")
+        self._height.setKeyboardTracking(False)
+        height_row.addWidget(self._height)
+        height_row.addStretch(1)
+        holder_layout.addLayout(height_row)
+
+        actions = QHBoxLayout()
+        self._fill_from_receiver = QPushButton("Fill from the receiver")
+        self._fill_from_receiver.setAccessibleName("Copy the position the receiver is using")
+        self._fill_from_receiver.clicked.connect(self._fill_position)
+        actions.addWidget(self._fill_from_receiver)
+        actions.addStretch(1)
+        self._apply_position = QPushButton("Apply position")
+        self._apply_position.setProperty("role", "destructive")
+        self._apply_position.clicked.connect(self._send_position)
+        actions.addWidget(self._apply_position)
+        holder_layout.addLayout(actions)
+
+        self._position_note = label("", "caption")
+        holder_layout.addWidget(self._position_note)
         return holder
+
+    def _position_argument(self) -> PositionArgument:
+        return PositionArgument(
+            latitude_hemisphere=self._latitude.hemisphere(),
+            latitude_degrees=self._latitude.degrees(),
+            latitude_minutes=self._latitude.minutes(),
+            latitude_seconds=self._latitude.seconds(),
+            longitude_hemisphere=self._longitude.hemisphere(),
+            longitude_degrees=self._longitude.degrees(),
+            longitude_minutes=self._longitude.minutes(),
+            longitude_seconds=self._longitude.seconds(),
+            height_metres=self._height.value(),
+        )
+
+    def _fill_position(self) -> None:
+        """Seed the fields from what the receiver is using, so a small correction is a small edit.
+
+        Not a shortcut for the confirmation: the value still has to be applied deliberately, and
+        §8.3's dialog still appears. What it saves is retyping nine fields to change one.
+        """
+        position = self._last_position
+        if position is None:
+            self._position_note.setText("No position has been read from the receiver yet.")
+            return
+
+        self._latitude.set_decimal(position.latitude_degrees)
+        self._longitude.set_decimal(position.longitude_degrees)
+        if position.height_metres is not None:
+            self._height.setValue(position.height_metres)
+        self._position_note.setText("Filled from the receiver. Nothing has been sent.")
+
+    def _send_position(self) -> None:
+        runner = self._runner
+        if runner is None:
+            return
+
+        argument = self._position_argument()
+        if not argument.is_valid():
+            # Cannot normally happen — the spin boxes carry the same ranges — but the argument owns
+            # them and the page asks rather than assumes.
+            self._position_note.setText("That is not a position the receiver would accept.")
+            return
+
+        if not ask(catalog.SET_POSITION, argument, self._palette, self):
+            return
+
+        self._position_note.setText(f"Sending {argument.spoken()}…")
+        runner.run([(catalog.SET_POSITION, argument)], self._absorb_position)
+
+    def _absorb_position(self, outcomes: Sequence[CommandOutcome]) -> None:
+        for outcome in outcomes:
+            if outcome.refusal is not None:
+                self._position_note.setText(outcome.refusal.reason)
+            elif outcome.succeeded:
+                self._position_note.setText("The receiver accepted the position.")
+            else:
+                self._position_note.setText(outcome.error or "The receiver did not answer.")
 
     # -- Survey -----------------------------------------------------------------------------------
 
@@ -794,6 +989,7 @@ class PositionPage(_FieldsExport, Page):
         gate(self._adopt, driver, catalog.ADOPT_SURVEYED_POSITION)
         gate(self._cancel_survey, driver, catalog.RESTORE_LAST_POSITION)
         gate(self._on_power_up, driver, catalog.SET_SURVEY_ON_POWER_UP)
+        gate(self._apply_position, driver, catalog.SET_POSITION)
         if live:
             self.refresh_survey()
 
@@ -887,6 +1083,7 @@ class PositionPage(_FieldsExport, Page):
                 DASH if position.height_metres is None else f"{position.height_metres:.2f} m",
             )
 
+        self._last_position = status.position
         self._fields.set("Datum", humanise(status.height_datum))
         self._fields.set("Mode", humanise(status.position_mode))
         self._fields.set("Qualifier", humanise(status.position_qualifier))

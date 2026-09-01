@@ -533,11 +533,24 @@ INCLUDE_NO_SATELLITES: Final = ScpiCommand(
 
 # ---- §10.6's survey ------------------------------------------------------------------------------
 #
-# ``:GPS:POSition <coords>`` is **deliberately absent** (issue #12). Neither the specification nor
-# this repository gives the argument's wire format, and it is a tier C command that changes the
-# position the receiver uses for every timing solution — §8.3's own sentence says an incorrect one
-# degrades timing accuracy. The catalog is an allowlist, so leaving it out is what stops it being
-# sent; a plausible-looking guess would either be rejected or, worse, accepted and wrong.
+# ``:GPS:POSition <coords>`` was **deliberately absent** while its wire format was unknown (issue
+# #12): a tier C command that changes the position every timing solution is computed from, where a
+# plausible guess would be either rejected or, worse, accepted and wrong. It is here now because
+# the format was **looked up rather than decided** — see ``position_argument.py``.
+
+SET_POSITION: Final = ScpiCommand(
+    mnemonic=":GPS:POSition",
+    summary="Set the fixed antenna position the receiver times from",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.POSITION,
+    confirmation=(
+        "Set fixed antenna position? This cancels any survey in progress and the receiver will "
+        "use these coordinates for all timing solutions. An incorrect position degrades timing "
+        "accuracy."
+    ),
+    requires_acknowledgement=True,
+)
 
 SURVEY_PROGRESS: Final = ScpiCommand(
     mnemonic=":GPS:POS:SURV:PROG?",
@@ -711,6 +724,7 @@ ALL: Final[tuple[ScpiCommand, ...]] = (
     START_SURVEY,
     ADOPT_SURVEYED_POSITION,
     RESTORE_LAST_POSITION,
+    SET_POSITION,
     SET_SURVEY_ON_POWER_UP,
     *EXPERIMENTAL,
 )

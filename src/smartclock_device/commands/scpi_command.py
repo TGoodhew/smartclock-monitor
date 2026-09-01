@@ -12,6 +12,8 @@ from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import Enum
 
+from smartclock_device.commands.position_argument import PositionArgument
+
 
 class SafetyTier(Enum):
     """How much ceremony a command needs before it is sent (§8.2, §8.3)."""
@@ -82,6 +84,13 @@ class ArgumentKind(Enum):
     #: ``:GPS:INIT:DATE 1994,7,4``. Every element goes through the same bounds a single value
     #: would, so the console cannot accept what a page would reject.
     INTEGER_LIST = 4
+
+    #: §10.6's nine-part position: hemisphere, degrees, minutes, seconds for each of latitude and
+    #: longitude, then a height. Supplied as a
+    #: :class:`~smartclock_device.commands.position_argument.PositionArgument`, which owns both the
+    #: ranges and the exact text — see that module for why the format is a looked-up fact rather
+    #: than a choice.
+    POSITION = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +188,12 @@ class ScpiCommand:
 
         if self.argument is ArgumentKind.INTEGER_LIST:
             return self._rendered_list(argument)
+
+        if self.argument is ArgumentKind.POSITION:
+            if not isinstance(argument, PositionArgument):
+                return None
+            text = argument.rendered()
+            return None if text is None else f"{self.mnemonic} {text}"
 
         if self.argument is ArgumentKind.KEYWORD:
             text = str(argument).strip().upper()
