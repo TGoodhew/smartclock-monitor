@@ -14,10 +14,17 @@ import pytest
 
 from conftest import NOW
 from smartclock_device.clock import FixedClock
+from smartclock_device.drivers.nmea import NmeaDriver
 from smartclock_device.drivers.registry import Registry
 from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.transport.fake import FakeTransport
+from smartclock_device.transport.settings import (
+    AUTO_DETECT_SEQUENCE,
+    Parity,
+    SerialSettings,
+    StopBits,
+)
 from smartclock_monitor.services.session import DeviceSession
 from test_capability import TalkerDriver
 
@@ -180,3 +187,58 @@ def test_a_session_without_a_registry_keeps_the_driver_it_was_given() -> None:
         return session.driver is driver
 
     assert asyncio.run(run()) is True
+
+
+# ---- §10.12's union ----------------------------------------------------------------------------
+
+
+def a_registry() -> Registry:
+    tick = FixedClock(NOW)
+    return Registry([SmartClockDriver(clock=tick), NmeaDriver(clock=tick)])
+
+
+def test_the_walk_is_the_union_of_every_family_s_rates() -> None:
+    """§10.12. This is what makes a second family *reachable*: a talker runs at 4800, and the walk
+    knew only one receiver's rates — so the driver was registered and could not be found."""
+    walk = a_registry().auto_detect_sequence
+
+    assert SerialSettings(4800, 8, Parity.NONE, StopBits.ONE) in walk
+    assert SerialSettings(38400, 8, Parity.NONE, StopBits.ONE) in walk
+
+
+def test_the_smartclock_still_answers_on_the_first_attempt() -> None:
+    """Registration order is priority order, and adding a family must not cost the first one a
+    single probe. Fourteen seconds was what getting this ordering wrong cost last time."""
+    walk = a_registry().auto_detect_sequence
+
+    assert walk[: len(AUTO_DETECT_SEQUENCE)] == AUTO_DETECT_SEQUENCE
+
+
+def test_a_shared_combination_is_tried_once_at_the_earlier_position() -> None:
+    """Two entries for one combination would mean two probe timeouts on every port that is neither.
+
+    Written against the real pair first, where it asserted nothing: the NMEA driver deliberately
+    omits 9600 *because* the union de-duplicates, so there was no duplicate to remove and the test
+    passed against a registry with the de-duplication deleted. It takes a family that genuinely
+    overlaps to test the thing.
+    """
+    shared = SerialSettings(9600, 8, Parity.NONE, StopBits.ONE)
+    mine = SerialSettings(57600, 8, Parity.NONE, StopBits.ONE)
+    tick = FixedClock(NOW)
+    registry = Registry([SmartClockDriver(clock=tick), TalkerDriver(walk=(shared, mine))])
+
+    walk = registry.auto_detect_sequence
+
+    assert len(walk) == len(set(walk)), "the union is de-duplicated"
+    assert walk.count(shared) == 1
+    assert walk.index(shared) == 0, "tried at the earlier family's position, not appended"
+    assert walk[-1] == mine, "and what is new is still added"
+
+
+def test_a_family_with_no_rates_of_its_own_lengthens_nothing() -> None:
+    """Every entry costs one probe timeout on a port that is not it, so a driver naming rates it
+    does not use spends other people's seconds."""
+    tick = FixedClock(NOW)
+    with_talker = Registry([SmartClockDriver(clock=tick), TalkerDriver()])
+
+    assert with_talker.auto_detect_sequence == AUTO_DETECT_SEQUENCE

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_device.models.device_identity import DeviceIdentity
+from smartclock_device.transport.settings import SerialSettings
 
 
 @dataclass(frozen=True, slots=True)
@@ -77,6 +78,24 @@ class Registry:
             if driver.overhear(lines):
                 return Selection(driver=driver, recognised=True)
         return None
+
+    @property
+    def auto_detect_sequence(self) -> tuple[SerialSettings, ...]:
+        """§10.12: the union of every registered driver's sequence, in registration order.
+
+        **De-duplicated, and first occurrence wins.** Registration order is priority order, so a
+        combination two families both name is tried at the earlier one's position — which keeps the
+        Z3805A answering on the first attempt after a talker's rates were added to the walk.
+
+        The union is what makes a second family *reachable*: a talker runs at 4800 and the walk had
+        only ever known one receiver's rates, so the driver was registered and could not be found.
+        """
+        found: list[SerialSettings] = []
+        for driver in self._drivers:
+            for candidate in driver.auto_detect_sequence:
+                if candidate not in found:
+                    found.append(candidate)
+        return tuple(found)
 
     @property
     def is_ambiguous(self) -> bool:

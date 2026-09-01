@@ -34,7 +34,6 @@ from PySide6.QtWidgets import (
 )
 
 from smartclock_device.transport.settings import (
-    AUTO_DETECT_SEQUENCE,
     DEFAULT,
     SUPPORTED_BAUD_RATES,
     SUPPORTED_DATA_BITS,
@@ -186,7 +185,10 @@ class ConnectionDialog(QDialog):
         column.setContentsMargins(0, 0, 0, 0)
         self._progress = QProgressBar()
         self._progress.setAccessibleName("How far through the settings it has got")
-        self._progress.setRange(0, len(AUTO_DETECT_SEQUENCE))
+        # The walk supplies the real total on its first callback, and the bar is hidden until then.
+        # It used to be seeded from the SmartClock's own sequence, which stopped being the length of
+        # the walk the moment §10.12's union had a second family in it.
+        self._progress.setRange(0, 1)
         self._progress.setValue(0)
         self._status = QLabel("")
         self._status.setWordWrap(True)
