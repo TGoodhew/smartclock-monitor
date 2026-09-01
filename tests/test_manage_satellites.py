@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -234,7 +235,7 @@ def test_the_controls_are_disabled_while_disconnected() -> None:
     assert page._manage.isEnabled() is False
 
 
-# ---- §10.6's survey controls ---------------------------------------------------------------------
+# ---- §10.6's survey controls -------------------------------------------------------------------
 
 
 def _position_page(**answers: object) -> PositionPage:
@@ -379,3 +380,94 @@ def test_an_unreadable_power_up_answer_leaves_the_box_alone() -> None:
     page = _position_page(**{catalog.SURVEY_ON_POWER_UP.mnemonic: DEAF})
 
     assert page._on_power_up.isChecked() is False  # its initial state, untouched
+
+
+# ---- §10.5's Save image ------------------------------------------------------------------------
+
+
+def sky_reading(tracked: int = 2, predicted: int = 3, mask: int | None = 10) -> Reading:
+    from smartclock_device.models.satellite import PredictedSatellite, TrackedSatellite
+
+    return Reading(
+        status=ReceiverStatus(
+            captured_at=NOW,
+            mode=SmartClockMode.LOCKED,
+            elevation_mask_degrees=mask,
+            tracked=tuple(
+                TrackedSatellite(
+                    prn=prn, elevation_degrees=40, azimuth_degrees=90, signal_strength=40
+                )
+                for prn in range(1, tracked + 1)
+            ),
+            not_tracked=tuple(
+                PredictedSatellite(
+                    prn=prn, elevation_degrees=20, azimuth_degrees=180, attempting_to_track=False
+                )
+                for prn in range(20, 20 + predicted)
+            ),
+        ),
+        captured_at=NOW,
+    )
+
+
+def test_the_caption_carries_what_the_screen_does_not() -> None:
+    """§10.5's second normative property: product name, capture time **in UTC**, the two counts,
+    and the elevation mask in force. The mask is not decoration — the same sky under a 10° mask
+    and a 25° mask produces two legitimate plots with different satellites missing, so a record
+    omitting it cannot be compared with anything."""
+    page = SatellitesPage()
+    page.show_reading(sky_reading(tracked=2, predicted=3, mask=25))
+
+    title, detail = page.caption().lines()
+
+    assert "SmartClock Monitor" in title
+    assert "UTC" in detail
+    assert "2 tracked" in detail and "3 predicted" in detail
+    assert "25" in detail
+
+
+def test_an_empty_sky_is_not_offered() -> None:
+    """§10.5: an empty export is a picture of three rings, which reads as a working antenna seeing
+    nothing rather than as a receiver that is not connected."""
+    page = SatellitesPage()
+    page.show_reading(sky_reading(tracked=0, predicted=0))
+
+    assert page.caption().is_worth_saving is False
+    assert page._save_image.isEnabled() is False
+    assert page.save_image("/tmp/never-written.png") is None
+
+
+def test_a_populated_sky_is() -> None:
+    page = SatellitesPage()
+    page.show_reading(sky_reading())
+
+    assert page.caption().is_worth_saving is True
+    assert page._save_image.isEnabled() is True
+
+
+def test_an_unreported_mask_says_so_rather_than_guessing() -> None:
+    """A record that silently omitted the mask would be one nobody could compare, and one that
+    invented a value would be worse."""
+    page = SatellitesPage()
+    page.show_reading(sky_reading(mask=None))
+
+    _title, detail = page.caption().lines()
+    assert "not reported" in detail
+
+
+def test_the_image_is_written_and_is_taller_than_the_plot(tmp_path: Path) -> None:
+    """The caption band is added beneath the grabbed card — the capture is the live element, not a
+    second renderer, because a separate drawing path is free to disagree with the one the user
+    reviewed."""
+    from PySide6.QtGui import QImage
+
+    page = SatellitesPage()
+    page.resize(400, 300)
+    page.show_reading(sky_reading())
+
+    target = tmp_path / "sky.png"
+    assert page.save_image(str(target)) == str(target)
+
+    written = QImage(str(target))
+    assert not written.isNull()
+    assert written.height() > page._plot.height()
