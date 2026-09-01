@@ -315,6 +315,13 @@ def _register_setters() -> tuple[ScpiCommand, ...]:
 
 
 REGISTER_QUERIES: Final[tuple[ScpiCommand, ...]] = _register_queries()
+
+#: §10.7.1 surfaces hardware bits 6 and 7 on the drift card — "EFC voltage near full scale" and
+#: "at full scale". Named here so the Timing page asks for a command rather than assembling a
+#: mnemonic from a string it would have to keep in step with the roots above.
+HARDWARE_CONDITION: Final = next(
+    command for command in REGISTER_QUERIES if command.mnemonic == ":STAT:OPER:HARD:COND?"
+)
 REGISTER_SETTERS: Final[tuple[ScpiCommand, ...]] = _register_setters()
 
 

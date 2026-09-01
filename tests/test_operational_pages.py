@@ -511,3 +511,75 @@ def test_a_recovery_command_goes_straight_out() -> None:
     page._send_safe(catalog.HOLDOVER_RECOVER)
 
     assert runner.sent == [(":SYNC:HOLD:REC:INIT", None)]
+
+
+# ---- §10.7.1's hardware bits, now that the registers can be read ---------------------------------
+
+
+def _timing_with(condition: object) -> object:
+    """A Timing page with enough stored history to have a drift card at all."""
+    from smartclock_device.clock import FixedClock
+    from smartclock_monitor.services.trend_store import TrendStore
+    from smartclock_monitor.views.pages import TimingPage
+
+    clock = FixedClock(NOW)
+    store = TrendStore.in_memory(clock)
+    for index in range(600):
+        store.append(
+            Reading(
+                status=ReceiverStatus(
+                    captured_at=NOW - timedelta(seconds=index),
+                    mode=SmartClockMode.LOCKED,
+                    one_pps_ti_nanoseconds=-2.0,
+                ),
+                captured_at=NOW - timedelta(seconds=index),
+                efc_percent=-16.83,
+            )
+        )
+
+    page = TimingPage()
+    page.show_reading(reading())
+    page.set_trend_store(store)
+    page.set_command_runner(FakeRunner({catalog.HARDWARE_CONDITION.mnemonic: condition}))
+    return page
+
+
+def test_the_drift_card_reports_the_hardware_bits_once_they_are_read() -> None:
+    """§10.7.1: bits 6 and 7 are *read from the receiver rather than recomputed* — they are the
+    alarm and the slope is the gauge. Until the Timing page had a runner the card could only say
+    they had not been read, which was honest and useless."""
+    page = _timing_with("+0")
+
+    assert "both clear" in page._drift_evidence.text()  # type: ignore[attr-defined]
+
+
+def test_a_set_bit_7_reaches_the_card_as_critical() -> None:
+    """Bit 7 is "EFC voltage at full scale". It outranks the fit however flat the trend looks: the
+    hardware is reporting a state and the fit is inferring one."""
+    page = _timing_with(f"+{1 << 7}")
+
+    assert page._drift_pill.severity is Severity.CRITICAL  # type: ignore[attr-defined]
+    assert "bit 7 is set" in page._drift_evidence.text()  # type: ignore[attr-defined]
+
+
+def test_a_set_bit_6_reaches_the_card_as_caution() -> None:
+    page = _timing_with(f"+{1 << 6}")
+
+    assert page._drift_pill.severity is Severity.CAUTION  # type: ignore[attr-defined]
+    assert "near full scale" in page._drift_evidence.text()  # type: ignore[attr-defined]
+
+
+def test_a_register_read_that_fails_is_not_reported_as_clear() -> None:
+    """An unread bit and a clear bit are different facts, and reporting the first as the second is
+    how an alarm gets missed."""
+    page = _timing_with(DEAF)
+
+    assert "have not been read" in page._drift_evidence.text()  # type: ignore[attr-defined]
+    assert "both clear" not in page._drift_evidence.text()  # type: ignore[attr-defined]
+
+
+def test_the_hardware_condition_query_is_the_catalogued_one() -> None:
+    """Named in the catalog rather than assembled from a string the page would have to keep in
+    step with the register roots."""
+    assert catalog.HARDWARE_CONDITION.mnemonic == ":STAT:OPER:HARD:COND?"
+    assert catalog.is_allowed(catalog.HARDWARE_CONDITION.mnemonic) is True
