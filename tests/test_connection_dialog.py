@@ -1,0 +1,126 @@
+"""§10.12's connection dialog."""
+
+from __future__ import annotations
+
+import os
+
+import pytest
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
+from PySide6.QtWidgets import QApplication
+
+from smartclock_device.transport.settings import (
+    AUTO_DETECT_SEQUENCE,
+    SUPPORTED_BAUD_RATES,
+    Parity,
+    SerialSettings,
+    StopBits,
+)
+from smartclock_monitor.views.connection_dialog import ConnectionDialog
+
+PORTS = [("/dev/ttyUSB0", "/dev/ttyUSB0 — USB-Serial Controller D")]
+
+
+@pytest.fixture(scope="module", autouse=True)
+def application() -> QApplication:
+    existing = QApplication.instance()
+    return existing if isinstance(existing, QApplication) else QApplication([])
+
+
+def dialog(ports: list[tuple[str, str]] | None = None) -> ConnectionDialog:
+    return ConnectionDialog(list_ports=lambda: PORTS if ports is None else ports)
+
+
+def test_it_opens_on_auto_detect() -> None:
+    """§10.12: the fresh-install default. §7.1's whole point is that a second-hand receiver's
+    settings are not knowable in advance, so the dialog opens on the option that finds out rather
+    than the one that asks the user to already know."""
+    box = dialog()
+
+    assert box.automatic.isChecked() is True
+    assert box.manual.isChecked() is False
+    assert box.choice() is not None
+    assert box.choice().is_automatic is True  # type: ignore[union-attr]
+
+
+def test_the_manual_pickers_are_disabled_until_manual_is_chosen() -> None:
+    """§9.11: a control that looks like it works and does nothing is worse than one greyed out."""
+    box = dialog()
+    assert box.baud_box.isEnabled() is False
+
+    box.manual.setChecked(True)
+    assert box.baud_box.isEnabled() is True
+
+
+def test_manual_asks_for_exactly_what_was_picked() -> None:
+    """It does not fall back to the walk: someone who has picked a setting is asserting something
+    about their hardware, and quietly trying seven others would make the picker a suggestion."""
+    box = dialog()
+    box.manual.setChecked(True)
+    box.baud_box.setCurrentText("19200")
+
+    choice = box.choice()
+    assert choice is not None
+    assert choice.is_automatic is False
+    assert choice.settings == SerialSettings(19200, 8, Parity.NONE, StopBits.ONE)
+
+
+def test_the_baud_picker_offers_section_7_1_s_six_rates() -> None:
+    box = dialog()
+    offered = [box.baud_box.itemText(index) for index in range(box.baud_box.count())]
+
+    assert offered == [str(rate) for rate in SUPPORTED_BAUD_RATES]
+    assert len(offered) == 6
+
+
+def test_no_ports_disables_connect_and_says_why() -> None:
+    """§9.11 again: an empty picker beside a live button is a dialog that will fail on click and
+    not say what for."""
+    box = dialog([])
+
+    assert box.connect_button.isEnabled() is False
+    assert "No serial ports" in box.status_text
+    assert box.choice() is None
+
+
+def test_refreshing_keeps_the_selection_where_it_survives() -> None:
+    """Re-listing must not silently move a user onto a different port between them choosing one
+    and pressing Connect."""
+    two = [("/dev/ttyUSB0", "first"), ("/dev/ttyUSB1", "second")]
+    box = ConnectionDialog(list_ports=lambda: two)
+    box.port_box.setCurrentIndex(1)
+
+    box.refresh_ports()
+
+    choice = box.choice()
+    assert choice is not None
+    assert choice.port == "/dev/ttyUSB1"
+
+
+def test_progress_names_the_combination_and_the_position() -> None:
+    """Eight combinations at a two-second probe is about sixteen seconds against a port with
+    nothing on it, which is long enough that a dialog with no progress reads as hung."""
+    box = dialog()
+    box.show_progress(AUTO_DETECT_SEQUENCE[1], 2, 8)
+
+    assert "19200-7-O-1" in box.status_text
+    assert "2 of 8" in box.status_text
+
+
+def test_cancel_is_the_default_button() -> None:
+    """The same rule as the confirmation dialog. This one is not destructive, but a dialog that
+    behaves differently from its sibling teaches the wrong reflex."""
+    box = dialog()
+
+    assert box.cancel_button.isDefault() is True
+    assert box.connect_button.isDefault() is False
+
+
+def test_both_launch_options_default_on() -> None:
+    box = dialog()
+    choice = box.choice()
+
+    assert choice is not None
+    assert choice.reconnect_automatically is True
+    assert choice.connect_on_launch is True
