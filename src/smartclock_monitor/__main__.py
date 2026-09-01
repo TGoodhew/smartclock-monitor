@@ -41,6 +41,7 @@ from smartclock_device.transport.settings import (
 )
 from smartclock_monitor.platform import notifications
 from smartclock_monitor.platform.paths import trend_database
+from smartclock_monitor.services import logging as app_log
 from smartclock_monitor.services.commands import SessionCommands
 from smartclock_monitor.services.lock_watch import LockWatch
 from smartclock_monitor.services.polling import Reading
@@ -175,6 +176,10 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
     clock = SystemClock()
     driver = SmartClockDriver(clock=clock)
 
+    # #127: the writer starts before anything is opened, so the port opening is the first line.
+    app_log.configure()
+    changes = app_log.ChangeLog()
+
     store = _open_store(arguments, clock, window)
 
     # P1-9. The notifier is a *second* channel — the window says the same thing either way — so a
@@ -233,6 +238,7 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
             driver,
             clock,
             window,
+            changes,
         )
 
     def announce(session: DeviceSession | None) -> None:
@@ -243,10 +249,12 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         """
         if session is None:
             window.set_command_runner(None)
+            changes.disconnected("the link went")
             return
         identity = session.identity
         named = identity.model if identity is not None else "receiver"
         window.set_connection_text(f"Connected to {named} — {session.description}")
+        changes.connected(session.description, identity.model if identity is not None else None)
         window.set_command_runner(SessionCommands(session))
 
     supervisor = Supervisor(
@@ -254,7 +262,7 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         driver=driver,
         clock=clock,
         on_session=announce,
-        on_reading=_publish(window, store, watch),
+        on_reading=_publish(window, store, watch, changes),
         on_status=window.set_connection_text,
     )
     window.set_supervisor(supervisor)
@@ -276,6 +284,7 @@ async def _connect_serial(
     driver: object,
     clock: SystemClock,
     window: object,
+    changes: app_log.ChangeLog,
 ) -> DeviceSession | None:
     """Open the named port, walking §7.1's sequence if asked to.
 
@@ -296,6 +305,7 @@ async def _connect_serial(
     try:
         if settings is not None:
             window.set_connection_text(f"Connecting to {port} @ {settings}…")
+            changes.opened(port, settings)
             return await open_with(port, settings, driver, clock, build)
 
         found = await detect(
@@ -319,6 +329,7 @@ async def _connect_serial(
         return None
 
     window.set_connection_text(f"Found a receiver at {found.settings} on attempt {found.attempts}.")
+    changes.detected(found.settings, found.attempts)
     return found.session
 
 
@@ -386,7 +397,7 @@ _TRAY_STATES: Final[dict[str, tuple[Severity, str]]] = {
 
 
 def _publish(
-    window: object, store: TrendStore | None, watch: LockWatch
+    window: object, store: TrendStore | None, watch: LockWatch, changes: app_log.ChangeLog
 ) -> Callable[[Reading], None]:
     """One callback that files the reading and then draws it.
 
@@ -400,6 +411,7 @@ def _publish(
 
     def publish(reading: Reading) -> None:
         watch.observe(reading)
+        changes.observed(reading)
         _describe_tray(window, reading)
         if store is not None:
             # Suppressed deliberately, and this is the one place it is right to: a failed write
