@@ -29,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.preferences import Preferences
 from smartclock_monitor.themes.tokens import Theme
 from smartclock_monitor.views.details_window import DetailsWindow
@@ -36,6 +37,15 @@ from smartclock_monitor.views.main_window import MainWindow
 
 #: §9.12's A11Y-5: pointer targets are at least this, at all times.
 POINTER_FLOOR = 32
+
+#: §9.10.2: a table row that is the sky plot's compliant alternate is at least this.
+#:
+#: A11Y-5's *touch* floor, taken deliberately — §9.10.2 argues that an exception resting on an
+#: alternate should rest on the stronger figure rather than the weaker one it happens to need.
+#: **Written out here rather than imported**, for the same reason POINTER_FLOOR is: a gate that
+#: compares the code against its own constant passes whatever the constant says. The first version
+#: of this did exactly that and accepted 30.
+ALTERNATE_ROW_FLOOR = 40
 
 #: The only files that may turn a severity into a colour. §9.13 item 10 and A11Y-12: a page that
 #: resolved one itself would be a bare coloured shape away from meaning-by-colour-alone.
@@ -70,12 +80,37 @@ def application() -> QApplication:
     return existing if isinstance(existing, QApplication) else QApplication([])
 
 
-def windows() -> list[QWidget]:
-    """Both real windows, with every destination present."""
+def windows(*, populated: bool = False) -> list[QWidget]:
+    """Both real windows, with every destination present.
+
+    :param populated: also feed them a captured reading, so the tables have rows. Off by default —
+        most gates here are about controls that exist before any receiver answers.
+    """
     main = MainWindow(Theme.DARK)
     details = DetailsWindow(Theme.DARK)
     details.apply_preferences(Preferences(advanced_console=True, undocumented_queries=True))
+    if populated:
+        reading = _a_captured_reading()
+        main.show_reading(reading)
+        details.show_reading(reading)
     return [main, details]
+
+
+def _a_captured_reading() -> Reading:
+    """One real status screen, parsed the way the application parses it."""
+    from pathlib import Path
+
+    from smartclock_device.clock import SystemClock
+    from smartclock_device.drivers.smartclock import SmartClockDriver
+    from smartclock_device.transport.transaction import Transaction, TransactionOutcome
+
+    fixture = Path(__file__).resolve().parent / "fixtures" / "locked-stabilizing.txt"
+    lines = tuple(fixture.read_text(encoding="latin-1").splitlines())
+    status = SmartClockDriver(clock=SystemClock()).parse_full(
+        Transaction(command=":SYST:STAT?", outcome=TransactionOutcome.COMPLETED, lines=lines),
+        None,
+    )
+    return Reading(status=status, captured_at=status.captured_at)
 
 
 def interactive(root: QWidget) -> list[QWidget]:
@@ -524,3 +559,47 @@ def test_no_details_page_needs_horizontal_scrolling_at_the_window_minimum() -> N
         assert not cramped, "; ".join(cramped)
     finally:
         window.close()
+
+
+# ---- §9.10.2: the tables are the sky plot's compliant alternate, and must actually be ------------
+
+
+def test_every_selectable_table_row_meets_the_alternate_floor() -> None:
+    """§9.10.2, and the reason the sky plot may have 24 px markers at all.
+
+    The exception for those markers is granted **on the strength of the tables**: they carry the
+    same data, selection is shared both ways, and their rows are "full-width and at least 40 px".
+    An exception resting on an alternate that is no more compliant than the thing it excuses is not
+    an exception, it is two failures.
+
+    §9.10.2 carries a warning about this because it already went wrong once in WinZ3805A — a dense
+    list style set the row minimum to 0 to escape Qt's stock 40, rows measured 26–28 px, and the
+    sentence claiming otherwise stayed in the specification for weeks. **This port reproduced it at
+    30 px**, and it was found by drafting `divergences.md` and checking a sentence before writing
+    it, not by any test here. Hence this one.
+
+    Measured on the real windows, because the value that matters is the rendered row height and not
+    the constant it was set from.
+    """
+    from PySide6.QtWidgets import QTableWidget
+
+    from smartclock_monitor.themes.spacing import TABLE_ROW_TARGET
+
+    assert TABLE_ROW_TARGET == ALTERNATE_ROW_FLOOR, (
+        f"the constant says {TABLE_ROW_TARGET} and §9.10.2 says {ALTERNATE_ROW_FLOOR}"
+    )
+
+    measured: dict[str, int] = {}
+    for window in windows(populated=True):
+        for table in window.findChildren(QTableWidget):
+            if table.rowCount() == 0:
+                continue
+            name = table.accessibleName() or "an unnamed table"
+            measured[name] = min(table.rowHeight(row) for row in range(table.rowCount()))
+
+    assert measured, "no populated table was found; the walk is broken, not the layout"
+    for name, height in sorted(measured.items()):
+        assert height >= ALTERNATE_ROW_FLOOR, (
+            f"{name} has {height} px rows, under §9.10.2's {ALTERNATE_ROW_FLOOR} px floor — "
+            f"which is what the sky plot's 24 px marker exception rests on"
+        )

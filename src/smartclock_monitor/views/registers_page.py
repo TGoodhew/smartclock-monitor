@@ -42,7 +42,7 @@ from smartclock_device.parsing.scalars import parse_integer
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.session import CommandOutcome
-from smartclock_monitor.themes.spacing import Spacing
+from smartclock_monitor.themes.spacing import TABLE_ROW_TARGET, Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
 from smartclock_monitor.views.capability import gate
 from smartclock_monitor.views.confirm_dialog import ask
@@ -107,6 +107,11 @@ class StatusRegistersPage(Page):
         # The table is the page. Given no stretch it took its default height and showed five of
         # sixteen bits with three hundred pixels of empty page under it — on §10.10, whose entire
         # content is this table.
+        # Its rows carry checkboxes and are interaction targets, so they take the same floor.
+        header = self._table.verticalHeader()
+        if header is not None:
+            header.setMinimumSectionSize(TABLE_ROW_TARGET)
+            header.setDefaultSectionSize(TABLE_ROW_TARGET)
         holder_layout.addWidget(self._table, 1)
 
         self._raw = label("", "device")

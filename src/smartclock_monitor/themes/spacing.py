@@ -84,6 +84,23 @@ MINIMUM_POINTER_TARGET: Final = 32
 #: carry the same data at ≥ 40 px with selection shared both ways.
 SKY_PLOT_POINTER_TARGET: Final = 24
 
+#: The floor for a table row that is itself a selection or interaction target.
+#:
+#: **40, and §9.10.2 argues for the stronger number deliberately.** A11Y-5's pointer floor is 32 and
+#: its touch floor is 40; the specification takes 40 here because the tracked/not-tracked tables are
+#: *the compliant alternate* to a control that can meet neither — the sky plot, whose markers cannot
+#: be moved to make room. An argument that rests on an alternate should rest on the stronger figure
+#: rather than on the weaker one it happens to need.
+#:
+#: §9.10.2 carries a warning about exactly this, because it already went wrong once: WinZ3805A's
+#: dense list style set the row minimum to 0 to escape Qt's stock 40, the rows measured 26–28 px,
+#: and the sky plot's exception was resting on an alternate no more compliant than the thing it was
+#: excusing. **This port reproduced it at 30 px** — found while writing `divergences.md`, whose
+#: draft claimed the 40 the specification requires.
+#:
+#: A floor, not a fixed height: rows still grow with scaled text (A11Y-6).
+TABLE_ROW_TARGET: Final = 40
+
 #: §9.12's touch floor, for the modes this application does not have (#186). Named because §10.5's
 #: tables meet it deliberately: they are the compliant alternate to a control that can meet neither
 #: floor, so that argument should rest on the stronger number rather than the one it needs.
