@@ -76,9 +76,10 @@ MINIMUM_POINTER_TARGET: Final = 32
 #: targets that overlap mean one marker silently takes the other's clicks, which is worse than a
 #: small target because a missed click is obvious and a wrong selection is not.
 #:
-#: The number is not a preference. On this plot at its own 240 px minimum, PRN 5 and PRN 20 in
-#: ``locked-stabilizing.txt`` sit **27.0 px** apart — so 32 px targets overlap on real captured sky
-#: and 24 px ones do not. §9.10.2 predicted exactly that and named the compliant path with it: the
+#: The number is not a preference. Of the 424 satellite pairs the ten captures place on a plot at
+#: its own 240 px minimum, **thirteen are closer than 32 px and none is closer than 24** — the
+#: tightest being PRN 17 and PRN 22 at 26.8 px. So 32 px targets overlap on real captured sky and
+#: 24 px ones do not. §9.10.2 predicted exactly that and named the compliant path with it: the
 #: keyboard model reaches every satellite regardless of size, and the tracked/not-tracked tables
 #: carry the same data at ≥ 40 px with selection shared both ways.
 SKY_PLOT_POINTER_TARGET: Final = 24
