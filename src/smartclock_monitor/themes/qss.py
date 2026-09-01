@@ -139,6 +139,25 @@ QPushButton:disabled {{
     border-color: {palette.stroke_subtle};
 }}
 
+/* §9.7.4's WzDestructiveButtonStyle: critical foreground, default stroke, transparent fill.
+   **Never the accent style** — accent means "the safe thing to do next", which a tier C command is
+   not. §8.3's own amendment note records that the specification said the opposite for a while and
+   anyone implementing from it in order would have built it. */
+QPushButton[role="destructive"] {{
+    background-color: transparent;
+    color: {palette.critical};
+    border: 1px solid {palette.stroke_default};
+}}
+
+QPushButton[role="destructive"]:hover {{
+    border-color: {palette.critical};
+}}
+
+QPushButton[role="destructive"]:disabled {{
+    color: {palette.text_disabled};
+    border-color: {palette.stroke_subtle};
+}}
+
 QComboBox {{
     background-color: {palette.card_fill_secondary};
     color: {palette.text_primary};

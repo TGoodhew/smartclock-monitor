@@ -19,6 +19,8 @@ from datetime import timedelta
 from enum import Enum
 
 from smartclock_device.clock import Clock
+from smartclock_device.commands import catalog
+from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.model_profile import ModelProfile, for_identity
@@ -53,6 +55,52 @@ class Refusal:
 
     mnemonic: str
     reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class CommandOutcome:
+    """What came back from one catalogued send.
+
+    Carries the error queue's answer separately from the transaction, because §7.2's rule is that a
+    receiver which rejected a setter still answers the setter itself with a prompt. "It went" and
+    "it worked" are different facts and a caller must be able to tell them apart.
+    """
+
+    command: ScpiCommand
+
+    #: Exactly what was put on the wire, for the Advanced Console's echo.
+    sent: str | None = None
+
+    transaction: Transaction | None = None
+
+    #: The error queue's answer, where §7.2 required it to be read. ``None`` means not read;
+    #: an empty string means read and clear.
+    error: str | None = None
+
+    #: Set instead of the rest where nothing was sent at all.
+    refusal: Refusal | None = None
+
+    @property
+    def succeeded(self) -> bool:
+        """Sent, completed, and the receiver reported no error."""
+        if self.refusal is not None or self.transaction is None:
+            return False
+        return self.transaction.succeeded and not self.error
+
+
+def _error_text(queue: Transaction) -> str | None:
+    """The error queue's answer, or ``None`` where it reported none.
+
+    ``+0,"No error"`` is the receiver saying it is happy, and reporting that as a fault would make
+    every successful setter look like a failure.
+    """
+    if not queue.succeeded:
+        return None
+
+    text = (queue.first_line or "").strip()
+    if not text or text.startswith("+0,") or text.startswith("0,"):
+        return None
+    return text
 
 
 class DeviceSession:
@@ -172,6 +220,52 @@ class DeviceSession:
 
         self._note(result)
         return result
+
+    async def execute_command(
+        self, command: ScpiCommand, argument: object = None
+    ) -> CommandOutcome:
+        """Send one catalogued command, with its argument validated and its aftermath read.
+
+        **The allowlist check is still an exact match on the header.** The argument is composed and
+        bounded by the command's own declaration, so nothing here concatenates user text onto a
+        mnemonic and then asks whether the result is allowed — that would make the point-of-send
+        check a prefix match.
+
+        **§7.2 requires the error queue after every tier C command**, and it is read here rather
+        than by each caller: a receiver that rejected a setter answers the setter with a prompt and
+        says why only when asked, so a page that forgot to ask would report success for a command
+        the receiver refused.
+        """
+        if not self._driver.is_allowed(command.mnemonic):
+            return CommandOutcome(
+                command=command,
+                refusal=Refusal(
+                    command.mnemonic, "That command is not in the catalog, so it was not sent."
+                ),
+            )
+
+        rendered = command.rendered(argument)
+        if rendered is None:
+            return CommandOutcome(
+                command=command,
+                refusal=Refusal(
+                    command.mnemonic,
+                    f"{argument!r} is not a value this command accepts, so it was not sent.",
+                ),
+            )
+
+        async with self._lock:
+            result = await self._protocol.execute(rendered, None)
+        self._note(result)
+
+        error: str | None = None
+        if command.needs_confirmation and result.succeeded:
+            async with self._lock:
+                queue = await self._protocol.execute(catalog.ERROR_QUEUE.mnemonic, None)
+            self._note(queue)
+            error = _error_text(queue)
+
+        return CommandOutcome(command=command, sent=rendered, transaction=result, error=error)
 
     def _note(self, result: Transaction) -> None:
         """Track §7.2's three-consecutive-failures rule."""
