@@ -30,7 +30,7 @@ from smartclock_monitor.services.session import CommandOutcome
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.views.diagnostics_page import DiagnosticsPage
 from smartclock_monitor.views.holdover_page import HoldoverPage
-from smartclock_monitor.views.pages import DASH
+from smartclock_monitor.views.pages import DASH, TimingPage
 from smartclock_monitor.views.registers_page import StatusRegistersPage
 
 DEAF = object()
@@ -516,11 +516,10 @@ def test_a_recovery_command_goes_straight_out() -> None:
 # ---- §10.7.1's hardware bits, now that the registers can be read ---------------------------------
 
 
-def _timing_with(condition: object) -> object:
+def _timing_with(condition: object) -> TimingPage:
     """A Timing page with enough stored history to have a drift card at all."""
     from smartclock_device.clock import FixedClock
     from smartclock_monitor.services.trend_store import TrendStore
-    from smartclock_monitor.views.pages import TimingPage
 
     clock = FixedClock(NOW)
     store = TrendStore.in_memory(clock)
@@ -550,7 +549,7 @@ def test_the_drift_card_reports_the_hardware_bits_once_they_are_read() -> None:
     they had not been read, which was honest and useless."""
     page = _timing_with("+0")
 
-    assert "both clear" in page._drift_evidence.text()  # type: ignore[attr-defined]
+    assert "both clear" in page._drift_evidence.text()
 
 
 def test_a_set_bit_7_reaches_the_card_as_critical() -> None:
@@ -558,15 +557,15 @@ def test_a_set_bit_7_reaches_the_card_as_critical() -> None:
     hardware is reporting a state and the fit is inferring one."""
     page = _timing_with(f"+{1 << 7}")
 
-    assert page._drift_pill.severity is Severity.CRITICAL  # type: ignore[attr-defined]
-    assert "bit 7 is set" in page._drift_evidence.text()  # type: ignore[attr-defined]
+    assert page._drift_pill.severity is Severity.CRITICAL
+    assert "bit 7 is set" in page._drift_evidence.text()
 
 
 def test_a_set_bit_6_reaches_the_card_as_caution() -> None:
     page = _timing_with(f"+{1 << 6}")
 
-    assert page._drift_pill.severity is Severity.CAUTION  # type: ignore[attr-defined]
-    assert "near full scale" in page._drift_evidence.text()  # type: ignore[attr-defined]
+    assert page._drift_pill.severity is Severity.CAUTION
+    assert "near full scale" in page._drift_evidence.text()
 
 
 def test_a_register_read_that_fails_is_not_reported_as_clear() -> None:
@@ -574,8 +573,8 @@ def test_a_register_read_that_fails_is_not_reported_as_clear() -> None:
     how an alarm gets missed."""
     page = _timing_with(DEAF)
 
-    assert "have not been read" in page._drift_evidence.text()  # type: ignore[attr-defined]
-    assert "both clear" not in page._drift_evidence.text()  # type: ignore[attr-defined]
+    assert "have not been read" in page._drift_evidence.text()
+    assert "both clear" not in page._drift_evidence.text()
 
 
 def test_the_hardware_condition_query_is_the_catalogued_one() -> None:
@@ -583,3 +582,112 @@ def test_the_hardware_condition_query_is_the_catalogued_one() -> None:
     step with the register roots."""
     assert catalog.HARDWARE_CONDITION.mnemonic == ":STAT:OPER:HARD:COND?"
     assert catalog.is_allowed(catalog.HARDWARE_CONDITION.mnemonic) is True
+
+
+# ---- §10.7's antenna cable delay card ----------------------------------------------------------
+
+
+def _timing_page(**answers: object) -> TimingPage:
+    page = TimingPage()
+    page.show_reading(reading())
+    page.set_command_runner(FakeRunner(dict(answers)))
+    return page
+
+
+def test_the_current_delay_and_mask_are_read_back() -> None:
+    """§10.7's card leads with what the receiver is compensating for, and the elevation mask beside
+    it — both read rather than assumed. The bench receiver answers 6.00000E-008 and +10."""
+    page = _timing_page(
+        **{
+            catalog.ANTENNA_DELAY.mnemonic: "+6.00000E-008",
+            catalog.ELEVATION_MASK.mnemonic: "+10",
+        }
+    )
+
+    assert page._antenna_current.value_of("Current") == "60.0 ns"
+    assert page._antenna_current.value_of("Elevation mask") == "10°"
+
+
+def test_an_unread_delay_is_a_dash_not_a_zero() -> None:
+    """§11.1 again, and it matters here more than most: a delay of 0 ns is a *setting* someone
+    might act on, where a dash says the read did not happen."""
+    page = _timing_page()
+
+    assert page._antenna_current.value_of("Current") == DASH
+
+
+def test_the_two_entry_modes_produce_one_number() -> None:
+    """Two ways to the same value, not two settings. The computed figure is shown before it is
+    applied so the arithmetic is visible rather than implied."""
+    page = _timing_page()
+
+    page._direct_mode.setChecked(True)
+    page._delay_ns.setValue(77)
+    assert page.intended_delay_ns() == 77.0
+
+    page._cable_mode.setChecked(True)
+    page._cable.setCurrentIndex(1)  # LMR-400, 3.93 ns/m
+    page._length.setValue(20)
+
+    assert page.intended_delay_ns() == pytest.approx(78.6, abs=0.05)
+    assert "Computed delay" in page._computed.text()
+
+
+def test_the_cable_presets_are_the_three_the_spec_lists() -> None:
+    """§10.7's table: RG-213 at 5.05 ns/m from the 58503A guide, Belden 9913 at 3.94, and LMR-400
+    at 3.93 — that last one this section's own substitution for a modern installation."""
+    from smartclock_device.models import antenna_cable
+
+    page = _timing_page()
+    offered = [page._cable.itemText(index) for index in range(page._cable.count())]
+
+    assert offered == [preset.name for preset in antenna_cable.PRESETS]
+    assert len(offered) == 3
+
+
+def test_the_delay_is_sent_in_seconds(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The receiver takes seconds and the card is in nanoseconds. Getting that wrong by 1e9 is the
+    kind of defect that reaches hardware and is not visible anywhere on screen."""
+    # The confirmation is tested in test_confirm_and_commands; here it would only block.
+    monkeypatch.setattr("smartclock_monitor.views.pages.ask", lambda *a, **k: True)
+
+    runner = FakeRunner({catalog.SET_ANTENNA_DELAY.mnemonic: ""})
+    page = TimingPage()
+    page.show_reading(reading())
+    page.set_command_runner(runner)
+    page._direct_mode.setChecked(True)
+    page._delay_ns.setValue(60)
+
+    runner.sent.clear()
+    page._send_delay()
+
+    sent = [pair for pair in runner.sent if "ADEL" in pair[0]]
+    assert sent, "the page sent nothing"
+    assert sent[0][1] == pytest.approx(60e-9), "60 ns is 6e-08 s, not 60"
+    assert catalog.SET_ANTENNA_DELAY.rendered(sent[0][1]) == ":GPS:REF:ADEL 0.00000006"
+
+
+def test_the_confirmation_is_not_skipped_for_the_delay(monkeypatch: pytest.MonkeyPatch) -> None:
+    """§8.3 classes it tier C: changing the delay while locked can push the receiver into
+    holdover. Declining must send nothing."""
+    monkeypatch.setattr("smartclock_monitor.views.pages.ask", lambda *a, **k: False)
+
+    runner = FakeRunner({catalog.SET_ANTENNA_DELAY.mnemonic: ""})
+    page = TimingPage()
+    page.show_reading(reading())
+    page.set_command_runner(runner)
+    page._delay_ns.setValue(60)
+
+    runner.sent.clear()
+    page._send_delay()
+
+    assert [pair for pair in runner.sent if "ADEL" in pair[0]] == []
+
+
+def test_a_delay_the_model_will_not_accept_is_not_sent() -> None:
+    """The model already knows what the receiver takes. Refusing here costs a message; sending it
+    costs a round trip and an error the user has to interpret."""
+    from smartclock_device.models import antenna_cable
+
+    assert antenna_cable.is_acceptable_delay(1e9) is False
+    assert catalog.SET_ANTENNA_DELAY.rendered(1.0) is None, "and the bound refuses it too"
