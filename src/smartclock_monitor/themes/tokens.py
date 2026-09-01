@@ -159,15 +159,12 @@ _SERIES_DARK: Final[tuple[str, ...]] = (
 #: correct rather than a defect — neighbouring steps of a ramp are meant to be similar, and the
 #: simulated ramp stays monotonic.
 #:
-#: **§9.4.4 gives one ramp and no second column, and that is a defect in Dark** (issue filed).
+#: **§9.4.4 gives one ramp and no second column, and that is a defect in Dark** — issue #9 here and
+#: TGoodhew/WinZ3805A#1, since the same values are resolved from one dictionary there.
 #: A sequential ramp is read by lightness, so which end recedes depends on the surface it is drawn
 #: on. Used verbatim in Dark, the *strongest* signal draws #08474D on the #2B2B2B card — 1.13:1,
 #: below anything §9.4.5 permits and invisible in practice — while the *weakest* draws the
 #: brightest mark on the plot. The encoding is exactly inverted, on the theme that ships by default.
-#:
-#: This port therefore orders the same seven values per surface rather than deriving a second ramp:
-#: no new colour is introduced, the hue and the step spacing are the specification's, and the
-#: property §9.4.4 actually asks for — prominence rising with the value — holds in both themes.
 _SEQUENTIAL: Final[tuple[str, ...]] = (
     "#DFF1F3",
     "#A8DDE3",
@@ -178,8 +175,45 @@ _SEQUENTIAL: Final[tuple[str, ...]] = (
     "#08474D",
 )
 
-#: The same seven values for a dark surface. See the note above: reversed, not re-derived.
-_SEQUENTIAL_DARK: Final[tuple[str, ...]] = tuple(reversed(_SEQUENTIAL))
+#: A ramp **derived for the dark surface**, by `build/palette/sequential.py`. Figures published in
+#: `docs/palette-figures.md`; `build/palette/validate.py` re-checks them.
+#:
+#: Reversing the seven Light values was the first fix and is not enough. It cures the inversion, but
+#: the spec ramp is not perceptually uniform — adjacent steps run 5.1 to 17.1 ΔE₀₀, a 3.33-fold
+#: spread — and reversing cannot change that ratio, since max/min does not care about order. What
+#: it changes is **where the coarse steps land**: the dark, strong-signal end on Light, and the
+#: weak end once reversed onto Dark. The ramp then spends its resolution where the data matters
+#: least and leaves the strong end its finest steps. Telling 45 dB-Hz from 50 is the job, and that
+#: is the comparison the reversal makes hardest.
+#:
+#: It also carries a collision the specification did not intend for this surface: spec step 4 is
+#: `#3FB8C4`, which **is** Dark's info colour, 0.0 ΔE₀₀ apart. A mid-strength satellite drew
+#: exactly the info indicator.
+#:
+#: Derived: hue held at the specification's 208.5°, chroma following the spec's own curve (it peaks
+#: mid-ramp and desaturates toward white — a first run maximised chroma instead, met every number
+#: and produced a neon cyan that was the wrong colour beside §9.4.4's teal), L* evenly spaced.
+#:
+#: | | reversed | derived |
+#: |---|---|---|
+#: | step evenness, ΔE₀₀ max/min | 3.33x | **1.20x** |
+#: | coarsest step lands at | the weak end | evenly spread |
+#: | nearest §9.4.3 colour | 0.00 ΔE₀₀ | **3.2 ΔE₀₀** |
+#: | weakest step on the card | 1.36:1 | **2.36:1** |
+#: | strongest step on the card | 12.15:1 | 10.68:1 |
+#:
+#: Monotone under simulated deuteranopia and protanopia both. §9.4.4 is explicit that a sequential
+#: ramp's neighbours measuring low under dichromacy is correct rather than a defect — they encode a
+#: magnitude and are read by lightness — so that is checked, not maximised.
+_SEQUENTIAL_DARK: Final[tuple[str, ...]] = (
+    "#216D74",
+    "#2A828A",
+    "#3398A1",
+    "#48ADB7",
+    "#70C1C9",
+    "#9BD3D9",
+    "#C5E6E9",
+)
 
 #: §9.4.4's diverging ramp, verbatim, ordered negative-strong → zero → positive-strong. One ramp
 #: for Light and Dark, for the same reason as the sequential one.

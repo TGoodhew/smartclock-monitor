@@ -24,6 +24,7 @@ its reasoning in [`platform-decisions.md`](platform-decisions.md) and its argume
 | **Platforms** | Windows | Linux, Windows, macOS | *Addition* |
 | **Receiver families** | SmartClock | SmartClock **and NMEA 0183** | *Addition* |
 | **System accent colour (P1-11)** | Opt-in | Not offered | Neutral — nothing to read |
+| **Sequential ramp on Dark** | One ramp, both themes | Derived per surface | *Fix* — see below |
 | **Multiple receivers (P2-1)** | Not built | Not built | Same |
 
 ---
@@ -65,6 +66,22 @@ user has", so hiding would not be an inconvenience but a loss of the application
 
 Close means close, and the poll stops. Leave the window open — minimised is fine — to keep the
 trend filling.
+
+---
+
+## A defect fixed here, and expected upstream
+
+§9.4.4 gives the sequential ramp — signal strength on the sky plot — as **one** column of seven
+values with no per-theme variant. A sequential ramp is read by lightness, so used verbatim on the
+Dark card the encoding is exactly inverted: the strongest satellite draws the least visible mark
+at 1.13:1 and the weakest draws the brightest.
+
+This port derives a ramp for the dark surface instead. Figures in
+[`palette-figures.md`](palette-figures.md).
+
+**If WinZ3805A resolves `WzSequential1..7` from one dictionary in both themes, it has the same
+defect** — filed as [TGoodhew/WinZ3805A#1](https://github.com/TGoodhew/WinZ3805A/issues/1). This is
+the one place a colour differs between the two repositories, and it is meant to stop differing.
 
 ---
 
