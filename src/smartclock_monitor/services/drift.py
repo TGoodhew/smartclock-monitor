@@ -65,6 +65,27 @@ SLOPE_CONFIDENCE: Final = 2.0
 #: years is a flat oscillator described at great length.
 PROJECTION_HORIZON_DAYS: Final = 36_525.0
 
+#: The shortest span a projection may be made from.
+#:
+#: **Found against the receiver.** Fifteen minutes of readings produced *"Drift +1680.6 ppm/day —
+#: consistent with reaching +100 % in about 693 days"*: a two-year forecast from a quarter of an
+#: hour. The statistical gate passed honestly — the scatter really was 0.6 ppm and the slope really
+#: did clear two standard errors — because over fifteen minutes a quantised EFC reading is locally
+#: almost a straight line. What that gate cannot see is that the quantity being projected is a rate
+#: *per day*, and a window shorter than a day has not observed one.
+#:
+#: The same threshold as :data:`SEPARABLE`, for a related reason: below a day the fit cannot tell a
+#: daily cycle from a trend, so any slope it reports may be a few hours of one.
+PROJECTION_MINIMUM_SPAN: Final = timedelta(days=1)
+
+#: How far past the observed span a projection may reach, as a multiple of it.
+#:
+#: The second half of the same defect: a day of readings is enough to observe a rate per day and
+#: still not enough to carry it out two years. A hundredfold is generous by the standards of any
+#: other extrapolation, and still refuses the 693-days-from-15-minutes case by three orders of
+#: magnitude.
+PROJECTION_REACH: Final = 100.0
+
 #: The two hardware register bits §10.7.1 surfaces here. They are the alarm; the slope is the
 #: gauge. Read from the receiver rather than recomputed — a bit the hardware sets is a different
 #: claim from an inference drawn from the same data.
@@ -283,10 +304,14 @@ def fit_drift(
 def project(fit: DriftFit, from_moment: datetime) -> Projection | None:
     """When the trend reaches a rail, or ``None`` where the window cannot support saying.
 
-    Withheld in three cases, and each is a different sentence to the user: the slope is not
-    distinguishable from zero, the oscillator is already past a rail, or the rate is so slow that
-    the date is arithmetic rather than a forecast.
+    Withheld in five cases: the window is shorter than the rate it would be projecting, the slope
+    is not distinguishable from zero, the oscillator is already past a rail, the projection reaches
+    too far beyond what was observed, or the rate is so slow that the date is arithmetic rather
+    than a forecast.
     """
+    if fit.span < PROJECTION_MINIMUM_SPAN:
+        return None
+
     slope = fit.slope_ppm_per_day
     if abs(slope) <= SLOPE_CONFIDENCE * fit.slope_error_ppm_per_day:
         return None
@@ -298,6 +323,8 @@ def project(fit: DriftFit, from_moment: datetime) -> Projection | None:
 
     days = remaining_percent / (slope / PPM_PER_PERCENT)
     if not math.isfinite(days) or days <= 0.0 or days > PROJECTION_HORIZON_DAYS:
+        return None
+    if days > PROJECTION_REACH * (fit.span / timedelta(days=1)):
         return None
 
     return Projection(days=days, when=from_moment + timedelta(days=days), rail_percent=rail)
@@ -373,10 +400,23 @@ def advise(
 
 
 def _projection_line(fit: DriftFit, projection: Projection | None) -> str:
+    """Why there is no projection, when there is none.
+
+    Each refusal is a different fact about the window, and someone deciding whether to leave the
+    receiver running for another day needs to know which one they are looking at.
+    """
     if projection is None:
+        if fit.span < PROJECTION_MINIMUM_SPAN:
+            return (
+                "no projection: a rate per day cannot be carried forward from less than a day "
+                "of readings."
+            )
         if abs(fit.slope_ppm_per_day) <= SLOPE_CONFIDENCE * fit.slope_error_ppm_per_day:
             return "no projection: the trend is not separable from the scatter in this window."
-        return "no projection: the trend is flat or heading away from both rails."
+        return (
+            "no projection: the trend is flat, heading away from both rails, or would reach one "
+            "too far beyond what has been observed."
+        )
 
     rail = "+100 %" if projection.rail_percent > 0 else "\N{MINUS SIGN}100 %"
     return (

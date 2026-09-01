@@ -223,6 +223,58 @@ def test_a_slope_lost_in_its_own_scatter_gets_no_projection() -> None:
     assert project(fit, NOW) is None
 
 
+def test_a_short_window_gets_no_projection_however_clean_the_slope() -> None:
+    """Found against the receiver, and the reason this guard exists.
+
+    Fifteen minutes of readings produced *"Drift +1680.6 ppm/day — consistent with reaching +100 %
+    in about 693 days"*: a two-year forecast from a quarter of an hour. The statistical gate passed
+    honestly — the scatter was 0.6 ppm and the slope really did clear two standard errors — because
+    over fifteen minutes a quantised EFC reading is locally almost a straight line.
+
+    What that gate cannot see is that the quantity being projected is a rate *per day*, and a
+    window shorter than a day has not observed one.
+    """
+    fit = fit_drift(series(hours=0.25, count=46, start_percent=-16.6, ppm_per_day=1680.0))
+    assert fit is not None
+
+    # The slope is real and clean by every statistical measure available inside the window.
+    assert abs(fit.slope_ppm_per_day) > 2.0 * fit.slope_error_ppm_per_day
+    assert project(fit, NOW) is None
+
+
+def test_the_short_window_refusal_says_which_refusal_it_is() -> None:
+    """Someone deciding whether to leave the receiver running another day needs to know they are
+    looking at "not enough window" rather than "no trend"."""
+    advisory = advise(
+        series(hours=0.25, count=46, start_percent=-16.6, ppm_per_day=1680.0), now=NOW
+    )
+
+    assert "less than a day of readings" in advisory.lines[0]
+
+
+def test_a_projection_may_not_reach_far_past_what_was_observed() -> None:
+    """The other half of the same defect: a day of readings is enough to observe a rate per day and
+    still not enough to carry it out two years."""
+    two_days = series(hours=48, count=3000, start_percent=-16.83, ppm_per_day=-4.0)
+    fit = fit_drift(two_days)
+    assert fit is not None
+
+    # A rail more than a hundred spans away.
+    assert project(fit, NOW) is None
+
+
+def test_a_projection_within_reach_is_still_offered() -> None:
+    """The guard must not refuse everything. A two-day capture of an oscillator genuinely walking
+    towards a rail inside a hundred spans still gets its date."""
+    fit = fit_drift(series(hours=48, count=3000, start_percent=-90.0, ppm_per_day=-2000.0))
+    assert fit is not None
+
+    projection = project(fit, NOW)
+
+    assert projection is not None
+    assert projection.days < 100.0 * (fit.span / timedelta(days=1))
+
+
 def test_a_rate_that_would_take_centuries_gets_no_projection() -> None:
     """A date four hundred years out is a flat oscillator described at great length."""
     fit = fit_drift(series(hours=48, count=4000, start_percent=-16.83, ppm_per_day=-0.05))
