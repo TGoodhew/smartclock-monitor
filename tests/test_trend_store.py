@@ -19,8 +19,10 @@ from smartclock_device.clock import FixedClock
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.trend_store import (
+    FULL_RESOLUTION,
     RETENTION,
     SCHEMA_VERSION,
+    THINNED_TO,
     Series,
     TrendStore,
     TrendStoreError,
@@ -57,7 +59,7 @@ def clock() -> FixedClock:
     return FixedClock(NOW)
 
 
-# ---- Round-tripping -----------------------------------------------------------------------------
+# ---- Round-tripping ----------------------------------------------------------------------------
 
 
 def test_a_reading_comes_back_as_it_went_in(clock: FixedClock) -> None:
@@ -124,7 +126,7 @@ def test_a_mode_this_build_does_not_know_becomes_unknown(clock: FixedClock) -> N
     assert len(series) == 1
 
 
-# ---- Windows ------------------------------------------------------------------------------------
+# ---- Windows -----------------------------------------------------------------------------------
 
 
 def test_a_window_holds_only_what_falls_inside_it(clock: FixedClock) -> None:
@@ -198,7 +200,7 @@ def test_a_window_can_end_somewhere_other_than_now(clock: FixedClock) -> None:
     assert earlier.end <= NOW - timedelta(minutes=5)
 
 
-# ---- Retention ----------------------------------------------------------------------------------
+# ---- Retention ---------------------------------------------------------------------------------
 
 
 def test_pruning_drops_what_is_older_than_the_retention_window(clock: FixedClock) -> None:
@@ -245,7 +247,7 @@ def test_seven_days_of_history_survives_and_comes_back(clock: FixedClock) -> Non
     assert list(series.at) == sorted(series.at)
 
 
-# ---- Power-up, for §10.7.1's settling exclusion --------------------------------------------------
+# ---- Power-up, for §10.7.1's settling exclusion ------------------------------------------------
 
 
 def test_the_last_power_up_is_found_before_the_window_begins(clock: FixedClock) -> None:
@@ -285,7 +287,7 @@ def test_no_power_up_in_the_record_is_none_not_an_error(clock: FixedClock) -> No
     assert store.last_power_up(NOW) is None
 
 
-# ---- Files, schemas and failures -----------------------------------------------------------------
+# ---- Files, schemas and failures ---------------------------------------------------------------
 
 
 def test_a_store_on_disk_survives_being_closed_and_reopened(
@@ -422,3 +424,98 @@ def test_stored_times_survive_the_round_trip_to_the_microsecond(clock: FixedCloc
     recovered = store.window(timedelta(hours=1)).moment_at(0)
 
     assert abs((recovered - precise).total_seconds()) < 1e-6
+
+
+# ---- §12's compaction: 24 h full, thinned beyond, eight weeks kept -----------------------------
+
+
+def test_the_retention_is_the_eight_weeks_section_12_gives() -> None:
+    """Not the eight days this first kept. §10.7.1's drift card is the consumer: it refuses a
+    projection reaching more than a hundred spans past what was observed, so a store offering at
+    most eight days capped every projection it could ever make at 800 days."""
+    assert timedelta(days=56) == RETENTION
+    assert timedelta(hours=24) == FULL_RESOLUTION
+    assert timedelta(seconds=10) == THINNED_TO
+
+
+def test_recent_readings_keep_their_resolution(clock: FixedClock) -> None:
+    """The last 24 h is where detail still matters — a one-second excursion an hour ago is the
+    thing somebody opened the chart to find."""
+    store = TrendStore.in_memory(clock)
+    for second in range(600):
+        store.append(reading(NOW - timedelta(seconds=second)))
+
+    store.compact()
+
+    assert store.count() == 600
+
+
+def test_older_readings_are_thinned_to_one_per_ten_seconds(clock: FixedClock) -> None:
+    store = TrendStore.in_memory(clock)
+    # **Two days** old, not two hours: anything inside FULL_RESOLUTION keeps its resolution, which
+    # is the point of the window, and a test written an hour back would have thinned nothing and
+    # said so as a pass.
+    base = NOW - timedelta(days=2)
+    for second in range(600):
+        store.append(reading(base + timedelta(seconds=second)))
+
+    store.compact()
+
+    assert store.count() == 60
+
+
+def test_compaction_is_idempotent(clock: FixedClock) -> None:
+    """Run twice, the second finds nothing — the survivors are already one per bucket. A rule that
+    kept thinning on every pass would eventually leave one reading."""
+    store = TrendStore.in_memory(clock)
+    base = NOW - timedelta(days=2)
+    for second in range(300):
+        store.append(reading(base + timedelta(seconds=second)))
+
+    first = store.compact()
+    remaining = store.count()
+    second = store.compact()
+
+    assert first > 0
+    assert second == 0
+    assert store.count() == remaining
+
+
+def test_two_readings_at_one_instant_leave_exactly_one(clock: FixedClock) -> None:
+    """The tiebreak matters: without it a bucket whose minimum time is shared by two rows keeps
+    neither, because neither is uniquely the minimum."""
+    store = TrendStore.in_memory(clock)
+    moment = NOW - timedelta(days=2)
+    for _ in range(5):
+        store.append(reading(moment))
+
+    store.compact()
+
+    assert store.count() == 1
+
+
+def test_compaction_leaves_a_usable_series(clock: FixedClock) -> None:
+    """The point of keeping eight weeks is that something can be computed over it."""
+    store = TrendStore.in_memory(clock)
+    base = NOW - timedelta(days=30)
+    for minute in range(2000):
+        store.append(reading(base + timedelta(minutes=minute), ti=float(minute % 17)))
+
+    store.compact()
+    window = store.window(timedelta(days=56))
+
+    assert len(window) == 2000, "a minute apart is already coarser than 10 s; nothing to thin"
+    assert window.span >= timedelta(days=1)
+
+
+def test_eight_weeks_of_history_survives_pruning(clock: FixedClock) -> None:
+    store = TrendStore.in_memory(clock)
+    for day in range(60):
+        store.append(reading(NOW - timedelta(days=day)))
+
+    dropped = store.prune()
+
+    # Day 56 sits exactly on the cutoff and survives — the comparison is strict, and a reading
+    # taken at the boundary is inside the window it defines.
+    assert dropped == 3, "days 57, 58 and 59 are past the window"
+    assert store.count() == 57
