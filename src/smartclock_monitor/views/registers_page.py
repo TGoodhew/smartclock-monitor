@@ -328,6 +328,29 @@ class StatusRegistersPage(Page):
 
         runner.run(commands, lambda _outcomes: self.refresh())
 
+    def csv_rows(self) -> Sequence[Sequence[str]]:
+        """The selected register's table.
+
+        The register is named in every row rather than only in a title, because a file of fifteen
+        numbered bits with no register name is a file nobody can identify a week later.
+        """
+        if not self._reading.has_any_value:
+            return ()
+
+        editable = dict(_EDITABLE)
+        rows: list[Sequence[str]] = [["Register", *_COLUMNS]]
+        for bit in range(self._table.rowCount()):
+            cells = [self._register.name]
+            for column in range(len(_COLUMNS)):
+                if column in editable:
+                    box = self._boxes.get((bit, editable[column]))
+                    cells.append("1" if box is not None and box.isChecked() else "0")
+                    continue
+                item = self._table.item(bit, column)
+                cells.append(item.text() if item is not None else "")
+            rows.append(cells)
+        return rows
+
     # -- What a test may read --------------------------------------------------------------------
 
     @property

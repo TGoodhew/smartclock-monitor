@@ -53,6 +53,7 @@ from smartclock_monitor.services.trend_store import (
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
+from smartclock_monitor.widgets.copy_menu import attach_table_menu, attach_value_menu
 from smartclock_monitor.widgets.severity_pill import SeverityPill
 from smartclock_monitor.widgets.sky_plot import SkyPlot
 from smartclock_monitor.widgets.trend_chart import AxisMode, TrendChart
@@ -102,6 +103,15 @@ class Page(QWidget):
     def set_palette_tokens(self, palette: Palette) -> None:
         self._palette = palette
 
+    def csv_rows(self) -> Sequence[Sequence[str]]:
+        """What ``Ctrl+E`` writes for this page. Empty means there is nothing to export.
+
+        Empty rather than raising, and empty rather than a header with no rows: §9.11's rule about
+        controls that look like they work applies to Export too, and the title bar disables it when
+        the current page answers with nothing.
+        """
+        return ()
+
     def show_reading(self, reading: Reading) -> None:
         """Render one sweep."""
         raise NotImplementedError
@@ -122,7 +132,10 @@ class FieldGrid(QWidget):
         for row, name in enumerate(fields):
             caption = label(name, "caption")
             value = label(DASH, "body")
-            value.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            # §9.7.4's *Copy value*. Text selection is left off on these: a label that carries its
+            # own selection flyout shadows the context menu, and the original measured the same
+            # collision. The menu is the affordance here; selection is the one on the transcript.
+            attach_value_menu(value)
             grid.addWidget(caption, row, 0, Qt.AlignmentFlag.AlignTop)
             grid.addWidget(value, row, 1, Qt.AlignmentFlag.AlignTop)
             grid.setColumnStretch(1, 1)
@@ -143,11 +156,45 @@ class FieldGrid(QWidget):
     def value_of(self, name: str) -> str:
         return self._values[name].text()
 
+    @property
+    def names(self) -> tuple[str, ...]:
+        return tuple(self._values)
+
+    def rows(self) -> list[list[str]]:
+        """Every field as a Field/Value pair, for §9.7.4's Export and copy layer."""
+        return [[name, widget.text()] for name, widget in self._values.items()]
+
+    def is_device_literal(self, name: str) -> bool:
+        """Whether this field is reproducing what the receiver emitted.
+
+        §9.5.3 rule 4 exempts raw device text from the typesetting rules, and the copy layer has to
+        honour that exemption: "correcting" the sign in a value the receiver printed would make the
+        copy disagree with the transcript it came from.
+        """
+        return bool(self._values[name].property("role") == "device")
+
+
+class _FieldsExport:
+    """Mixin: export whichever FieldGrids a page declares in ``_exported``.
+
+    A page lists its grids rather than this walking the widget tree, because the order of the
+    document is a decision — the rows come out in the order someone reads them — and a tree walk
+    would make it an accident of layout.
+    """
+
+    _exported: tuple[tuple[str, FieldGrid], ...] = ()
+
+    def csv_rows(self) -> Sequence[Sequence[str]]:
+        rows: list[Sequence[str]] = [["Card", "Field", "Value"]]
+        for card_name, grid in self._exported:
+            rows.extend([card_name, name, value] for name, value in grid.rows())
+        return rows if len(rows) > 1 else ()
+
 
 # ---- §10.4 Overview -----------------------------------------------------------------------------
 
 
-class OverviewPage(Page):
+class OverviewPage(_FieldsExport, Page):
     """§10.4: the health monitor, and what the receiver is doing."""
 
     title = "Overview"
@@ -170,6 +217,7 @@ class OverviewPage(Page):
         layout.addWidget(health)
 
         layout.addStretch(1)
+        self._exported = (("Receiver", self._fields),)
 
     def show_reading(self, reading: Reading) -> None:
         status = reading.status
@@ -262,6 +310,7 @@ class SatellitesPage(Page):
                 header.setSectionResizeMode(column, QHeaderView.ResizeMode.ResizeToContents)
             header.setSectionResizeMode(len(self._COLUMNS) - 1, QHeaderView.ResizeMode.Stretch)
         table_layout.addWidget(self._table)
+        self._attach_table_menu()
         layout.addWidget(table_card, 1)
 
     def show_reading(self, reading: Reading) -> None:
@@ -312,6 +361,34 @@ class SatellitesPage(Page):
     def plot(self) -> SkyPlot:
         return self._plot
 
+    def _attach_table_menu(self) -> None:
+        attach_table_menu(self._table, self.csv_rows)
+
+    def csv_rows(self) -> Sequence[Sequence[str]]:
+        """The satellite table as it stands, header included.
+
+        §9.7.4 puts *Copy table as CSV* on the card and Export on the title bar, and both hand over
+        the same document — which is what makes the copy layer safe to have: it offers nothing the
+        keyboard path does not.
+        """
+        table = self._table
+        if table.rowCount() == 0:
+            return ()
+
+        header: list[str] = []
+        for column in range(table.columnCount()):
+            item = table.horizontalHeaderItem(column)
+            header.append(item.text() if item is not None else "")
+
+        rows: list[Sequence[str]] = [header]
+        for row in range(table.rowCount()):
+            cells = []
+            for column in range(table.columnCount()):
+                item = table.item(row, column)
+                cells.append(item.text() if item is not None else "")
+            rows.append(cells)
+        return rows
+
     @property
     def table(self) -> QTableWidget:
         return self._table
@@ -320,7 +397,7 @@ class SatellitesPage(Page):
 # ---- §10.6 Position -----------------------------------------------------------------------------
 
 
-class PositionPage(Page):
+class PositionPage(_FieldsExport, Page):
     """§10.6: where the receiver thinks it is, and how it decided."""
 
     title = "Position"
@@ -337,6 +414,7 @@ class PositionPage(Page):
         frame_layout.addWidget(self._fields)
         layout.addWidget(frame)
         layout.addStretch(1)
+        self._exported = (("Position", self._fields),)
 
     def show_reading(self, reading: Reading) -> None:
         status = reading.status
@@ -706,6 +784,32 @@ class TimingPage(Page):
             f"Over {minutes:.0f} min of stored readings ({spread.count:,} samples). "
             f"σ is always the last hour, whichever range is drawn."
         )
+
+    def csv_rows(self) -> Sequence[Sequence[str]]:
+        """§10.7: *"TimingPage implements it for the trend series."*
+
+        The **drawn window**, not the whole store, and the **raw** samples rather than the chart's
+        decimated columns — §9.10.2's min/max reduction is right for drawing a shape and wrong for
+        a document, where it would silently halve the row count and put two readings a pixel apart
+        in one row.
+        """
+        series = self._ti_chart.series
+        if not series:
+            return ()
+
+        rows: list[Sequence[str]] = [["Time (UTC)", "1 PPS TI (ns)", "EFC (%)", "Mode"]]
+        for index in range(len(series)):
+            ti = series.ti_at(index)
+            efc = series.efc_at(index)
+            rows.append(
+                [
+                    series.moment_at(index).strftime("%Y-%m-%d %H:%M:%S.%f"),
+                    "" if ti is None else f"{ti:.3f}",
+                    "" if efc is None else f"{efc:.6f}",
+                    series.mode[index].name,
+                ]
+            )
+        return rows
 
     def set_palette_tokens(self, palette: Palette) -> None:
         super().set_palette_tokens(palette)
