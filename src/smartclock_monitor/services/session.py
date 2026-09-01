@@ -129,6 +129,7 @@ class DeviceSession:
 
         self._state = ConnectionState.DISCONNECTED
         self._identity: DeviceIdentity | None = None
+        self._identity_text: str | None = None
         self._profile: ModelProfile = for_identity(None)
         self._banner: str = ""
         self._consecutive_failures = 0
@@ -144,6 +145,11 @@ class DeviceSession:
     @property
     def state(self) -> ConnectionState:
         return self._state
+
+    @property
+    def identity_text(self) -> str | None:
+        """Exactly what ``*IDN?`` answered, or ``None`` if it did not."""
+        return self._identity_text
 
     @property
     def identity(self) -> DeviceIdentity | None:
@@ -198,6 +204,10 @@ class DeviceSession:
 
         identity = await self._probe_identity()
         if identity is not None and identity.succeeded:
+            # Kept whole: §10.4 shows the raw answer where it is not four comma-separated fields,
+            # because four dashes would say "nothing is connected" — a different statement from
+            # "a model this build has not seen". §11.1 keeps the evidence.
+            self._identity_text = (identity.first_line or "").strip() or None
             self._adopt_identity(DeviceIdentity.parse(identity.first_line))
 
         # §12: **the probe phase belongs to no driver.** The banner is absorbed and ``*IDN?`` is
