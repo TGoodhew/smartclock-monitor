@@ -9,14 +9,37 @@ different one.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import timedelta
-from typing import Protocol, runtime_checkable
+from enum import Enum
+from typing import Final, Protocol, runtime_checkable
 
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.transport.transaction import Transaction
+
+
+class LinkStyle(Enum):
+    """Whether a family answers what it is asked, or talks.
+
+    The distinction is not cosmetic: it decides whether the session may *send* at all. A talker is
+    the opposite shape to the SmartClock — it speaks unprompted and is never written to after
+    recognition — so §7.2's error queue and §8.3's confirmations bind query/response families only.
+    There is nothing to confirm about a receiver you cannot address.
+    """
+
+    #: Asks and is answered. The default, and the SmartClock's.
+    QUERY_RESPONSE = "query-response"
+
+    #: Speaks unprompted. Read by listening, never by asking.
+    BROADCAST = "broadcast"
+
+
+#: §12's whole-cycle key: the full-status "command" for a broadcast family, whose full read is the
+#: whole of its last complete cycle rather than any one sentence.
+WHOLE_CYCLE: Final = "*"
 
 
 @dataclass(frozen=True, slots=True)
@@ -113,6 +136,31 @@ class ReceiverDriver(Protocol):
         """
         ...
 
+    @property
+    def link(self) -> LinkStyle:
+        """How this family is read. Defaults to query/response for anything that does not say."""
+        ...
+
+    def overhear(self, lines: Sequence[str]) -> bool:
+        """Whether the lines heard **before anything was asked** are this family's.
+
+        The session hands every driver what the synchronise step absorbed, and the first to claim
+        them is selected — so a talker is recognised here and ``*IDN?`` is never sent to it. That
+        matters beyond tidiness: a talker has no command parser, and a question put to one is
+        noise in the middle of its stream.
+
+        A query/response family answers ``False`` and is recognised by its identity instead.
+        """
+        ...
+
+    def classify(self, line: str) -> str | None:
+        """Which plan key a heard line belongs to, or ``None`` if it is not this family's.
+
+        Only a broadcast family needs this. The key is what a listener files the line under, and
+        the plan's first fast-tier entry is the one that delimits a cycle.
+        """
+        ...
+
     def recognises(self, identity: DeviceIdentity | None) -> bool:
         """Whether this family claims the receiver that answered ``*IDN?``.
 
@@ -139,3 +187,31 @@ class ReceiverDriver(Protocol):
     def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
         """Fold the fast-tier answers into the status the full tier last produced."""
         ...
+
+
+class QueryResponseDefaults:
+    """The three broadcast members, answered the way a family that asks questions answers them.
+
+    §12 records that the C# contract *"gained three defaulted members"* when the second family
+    arrived. A Python ``Protocol`` cannot default anything for its implementers, so this carries
+    them: a query/response driver inherits it and says nothing about listening, and a broadcast one
+    overrides all three.
+
+    Deliberately **not** part of the Protocol's own definition. A driver is anything that satisfies
+    the contract, and requiring a base class would make the twenty-line test double in
+    ``test_capability.py`` inherit from the library it is standing in for.
+    """
+
+    @property
+    def link(self) -> LinkStyle:
+        return LinkStyle.QUERY_RESPONSE
+
+    def overhear(self, lines: Sequence[str]) -> bool:
+        """A family that is asked is recognised by its identity, not by what it said first."""
+        del lines
+        return False
+
+    def classify(self, line: str) -> str | None:
+        """Nothing is filed by line: every answer belongs to the question that provoked it."""
+        del line
+        return None

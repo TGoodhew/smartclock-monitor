@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Final
 
 from smartclock_device.clock import SystemClock
+from smartclock_device.drivers.nmea import NmeaDriver
 from smartclock_device.drivers.registry import Registry
 from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.transport.base import Transport
@@ -176,9 +177,15 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
 
     clock = SystemClock()
 
-    # §12's composition root: registration order is priority order. One family today, and the
-    # registry is what makes a second an entry here rather than an edit everywhere.
-    registry = Registry([SmartClockDriver(clock=clock)])
+    # §12's composition root: registration order is priority order, and the fallback is the first
+    # registered — so the SmartClock leads, because a receiver that says nothing on a query/response
+    # port is far more likely to be a sibling model than a talker that has stopped talking.
+    #
+    # The NMEA driver is here to be *used*, not to prove a point: a talker on the port is claimed
+    # by what it said before anything was asked, is never written to, and fills only the fields
+    # NMEA carries. Adding it is one line here rather than an edit everywhere, which was the whole
+    # claim the seam made.
+    registry = Registry([SmartClockDriver(clock=clock), NmeaDriver(clock=clock)])
     driver = registry.drivers[0]
 
     # #127: the writer starts before anything is opened, so the port opening is the first line.
