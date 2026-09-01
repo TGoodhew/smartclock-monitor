@@ -31,6 +31,7 @@ from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.transport.base import Transport
 from smartclock_device.transport.faults import TransportError
 from smartclock_device.transport.settings import (
+    AUTO_DETECT_SEQUENCE,
     SUPPORTED_BAUD_RATES,
     SUPPORTED_DATA_BITS,
     Parity,
@@ -59,6 +60,14 @@ def build_parser() -> argparse.ArgumentParser:
     )
     source.add_argument("--port", help="serial port, e.g. /dev/ttyUSB0 or COM3")
 
+    parser.add_argument(
+        "--auto-detect",
+        action="store_true",
+        help=(
+            "walk §7.1's eight serial settings until the receiver answers, instead of using "
+            "--baud and friends. A second-hand receiver's settings are not knowable in advance."
+        ),
+    )
     parser.add_argument(
         "--baud", type=int, default=9600, choices=SUPPORTED_BAUD_RATES, help="§7.1's rates"
     )
@@ -157,25 +166,21 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
     clock = SystemClock()
     driver = SmartClockDriver(clock=clock)
 
-    transport: Transport
-    if arguments.demo or not arguments.port:
-        transport = ReplayTransport(clock)
-        window.set_connection_text("Demo — replaying captured status screens")
-    else:
-        from smartclock_device.transport.serial_port import SerialTransport
-
-        transport = SerialTransport(arguments.port, settings_from(arguments))
-        window.set_connection_text(f"Connecting to {transport.description}…")
-
-    session = DeviceSession(transport, driver, clock)
     store = _open_store(arguments, clock, window)
+    session: DeviceSession | None
 
-    try:
-        await session.open()
-    except TransportError as error:
-        # §9.11's copy rule: the failure reaches the user in words they can act on.
-        window.set_connection_text(str(error))
-        return
+    if arguments.demo or not arguments.port:
+        window.set_connection_text("Demo — replaying captured status screens")
+        session = DeviceSession(ReplayTransport(clock), driver, clock)
+        try:
+            await session.open()
+        except TransportError as error:
+            window.set_connection_text(str(error))
+            return
+    else:
+        session = await _connect_serial(arguments, driver, clock, window)
+        if session is None:
+            return
 
     identity = session.identity
     named = identity.model if identity is not None else "receiver"
@@ -194,6 +199,56 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         await session.close()
         if store is not None:
             store.close()
+
+
+async def _connect_serial(
+    arguments: argparse.Namespace, driver: object, clock: SystemClock, window: object
+) -> DeviceSession | None:
+    """Open the named port, walking §7.1's sequence if asked to.
+
+    Returns ``None`` when there is nothing to poll, having already said why in the status bar —
+    §9.11's rule that the failure reaches the user in words they can act on.
+    """
+    from smartclock_device.drivers.base import ReceiverDriver
+    from smartclock_device.transport.serial_port import SerialTransport
+    from smartclock_monitor.services.autodetect import detect, open_with
+    from smartclock_monitor.views.main_window import MainWindow
+
+    assert isinstance(window, MainWindow)
+    assert isinstance(driver, ReceiverDriver)
+
+    def build(port: str, settings: SerialSettings) -> Transport:
+        return SerialTransport(port, settings)
+
+    try:
+        if not arguments.auto_detect:
+            settings = settings_from(arguments)
+            window.set_connection_text(f"Connecting to {arguments.port} @ {settings}…")
+            return await open_with(arguments.port, settings, driver, clock, build)
+
+        found = await detect(
+            arguments.port,
+            driver,
+            clock,
+            build,
+            on_progress=lambda settings, index, total: window.set_connection_text(
+                f"Trying {settings} on {arguments.port} — {index} of {total}…"
+            ),
+        )
+    except TransportError as error:
+        window.set_connection_text(str(error))
+        return None
+
+    if found is None:
+        # Distinct from a port that would not open: the port was fine and nothing on it answered.
+        window.set_connection_text(
+            f"Nothing answered on {arguments.port} at any of "
+            f"{len(AUTO_DETECT_SEQUENCE)} known settings."
+        )
+        return None
+
+    window.set_connection_text(f"Found a receiver at {found.settings} on attempt {found.attempts}.")
+    return found.session
 
 
 def _open_store(
