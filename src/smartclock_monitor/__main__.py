@@ -72,8 +72,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--auto-detect",
         action="store_true",
         help=(
-            "walk §7.1's eight serial settings until the receiver answers, instead of using "
-            "--baud and friends. A second-hand receiver's settings are not knowable in advance."
+            "walk every registered family's serial settings until the receiver answers, instead "
+            "of using --baud and friends. A second-hand receiver's settings are not knowable in "
+            "advance, and §10.12 makes the walk the union across families rather than one "
+            "receiver's eight."
         ),
     )
     parser.add_argument(

@@ -276,3 +276,92 @@ def test_no_two_markers_overlap_at_the_plot_s_minimum_size() -> None:
         "the fixtures no longer reproduce the overlap this exception exists for, so the exception "
         "is now resting on the argument rather than on the measurement"
     )
+
+
+# ---- Every interactive class the windows contain is coloured by the token layer ------------------
+
+
+def test_no_widget_that_paints_its_own_ground_is_left_at_the_desktop_s_palette() -> None:
+    """§9.4: colour comes from the token table, and a control with no rule takes the *desktop's*.
+
+    **Background, not foreground.** `QWidget` declares ``color`` for everything, so foreground is
+    never the thing that goes missing — which is precisely what made this defect so hard to see. A
+    control that paints its own ground and has no ``background-color`` rule keeps Qt's default
+    white *and* inherits this theme's light text, so on Dark it renders as a white rectangle with
+    an unreadable value in it. That is what a spin box looked like, next to a correctly dark combo
+    box that had carried the full set since the first commit.
+
+    Asked of the classes the **real windows actually contain**, so a control nobody wrote a rule
+    for fails here rather than in a screenshot months later.
+    """
+    import re
+
+    from PySide6.QtWidgets import (
+        QAbstractItemView,
+        QAbstractSpinBox,
+        QPlainTextEdit,
+        QProgressBar,
+        QPushButton,
+        QTextEdit,
+        QToolBar,
+    )
+
+    from smartclock_monitor.themes.qss import stylesheet
+    from smartclock_monitor.themes.tokens import palette_for
+
+    #: Controls that fill their own rectangle. Checkboxes, radio buttons and labels are absent
+    #: deliberately — they draw over the card behind them and §9's own QLabel rule makes that
+    #: explicit, so requiring a ground of them would be requiring the bug.
+    paints_a_ground = (
+        QAbstractItemView,
+        QAbstractSpinBox,
+        QComboBox,
+        QLineEdit,
+        QPlainTextEdit,
+        QProgressBar,
+        QPushButton,
+        QTextEdit,
+        QToolBar,
+    )
+
+    present: set[str] = set()
+    for window in windows():
+        for kind in paints_a_ground:
+            for child in window.findChildren(kind):
+                present.add(type(child).__name__)
+    assert present, "no widgets were found; the walk is broken, not the theme"
+
+    for theme in Theme:
+        sheet = stylesheet(palette_for(theme))
+        for name in sorted(present):
+            # The class must be the **subject** of the selector — its last element — not merely
+            # mentioned in one: `QComboBox QAbstractItemView { … }` styles the popup and says
+            # nothing about the combo.
+            covered = any(
+                re.search(
+                    rf"(^|[\s,]){base}(::[\w-]+)?(:[\w-]+)?\s*(,[^{{}}]*)?{{"
+                    # The declaration must *begin* at the brace or after a semicolon. An
+                    # unanchored `\bbackground` matched inside `selection-background-color`,
+                    # which sets the highlight and leaves the ground exactly as unset as it was —
+                    # so a run that stripped the text inputs' real background still passed.
+                    rf"(?:[^}}]*;)?\s*background(-color)?\s*:",
+                    sheet,
+                    re.MULTILINE,
+                )
+                for base in _qt_bases(name)
+            )
+            assert covered, (
+                f"{name} appears in a real window and no rule in the {theme.value} stylesheet "
+                f"gives it a background, so it paints Qt's default white and takes this theme's "
+                f"text colour over it"
+            )
+
+
+def _qt_bases(name: str) -> list[str]:
+    """A class name and the Qt base classes a stylesheet rule for it may be written against."""
+    from PySide6 import QtWidgets
+
+    kind = getattr(QtWidgets, name, None)
+    if kind is None:
+        return [name]
+    return [base.__name__ for base in kind.__mro__ if base.__name__.startswith("Q")]
