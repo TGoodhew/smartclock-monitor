@@ -13,6 +13,8 @@ from PySide6.QtWidgets import QApplication
 
 from conftest import NOW
 from smartclock_device.commands import catalog
+from smartclock_device.commands.position_argument import PositionArgument
+from smartclock_device.commands.scpi_command import SafetyTier
 from smartclock_device.models.position import SurveySuspendedReason
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
 from smartclock_monitor.services.polling import Reading
@@ -331,18 +333,81 @@ def test_any_other_error_gets_the_receiver_s_own_words_and_nothing_added() -> No
     assert "power-up" not in text
 
 
-def test_manual_position_entry_is_not_offered_and_says_why() -> None:
-    """Issue #12. §9.11's rule against a control that looks like it works — and the catalog is an
-    allowlist, so the command being absent is what actually stops it being sent."""
-    from PySide6.QtWidgets import QLabel
+def test_manual_position_entry_sends_the_format_the_receiver_wants() -> None:
+    """§10.6, issue #12. Held out of the catalog until the wire format was **looked up** rather
+    than guessed — a tier C command that changes what every timing solution is computed from.
 
-    page = _position_page()
-    text = " ".join(child.text() for child in page.findChildren(QLabel))
+    The format is the sibling implementation's, which built and tested it: nine parts joined with
+    commas. Pinned as an exact string, because that is the whole of what was uncertain.
+    """
+    argument = PositionArgument("N", 47, 31, 18.822, "W", 122, 12, 22.152, 38.0)
 
-    assert "not offered yet" in text
-    assert "issue #12" in text
-    assert catalog.find(":GPS:POS") is None
-    assert catalog.is_allowed(":GPS:POSition") is False
+    assert catalog.is_allowed(":GPS:POSition") is True
+    assert catalog.SET_POSITION.rendered(argument) == (
+        ":GPS:POSition N,47,31,18.822,W,122,12,22.152,38.00"
+    )
+
+
+def test_the_numbers_are_written_in_the_c_locale() -> None:
+    """A comma decimal separator would split a field in a comma-separated argument, turning one
+    position into ten of nonsense. Python's format mini-language is locale-independent, which is
+    what makes this safe — the C# original has to say InvariantCulture at every call site."""
+    rendered = PositionArgument("S", 33, 51, 35.9, "E", 151, 12, 40.0, 19.5).rendered()
+
+    assert rendered == "S,33,51,35.9,E,151,12,40,19.50"
+    assert rendered.count(",") == 8, "a decimal comma would add a field"
+
+
+def test_height_always_carries_two_decimals_and_seconds_at_most_three() -> None:
+    """The sibling's "0.00" and "0.###". Three on seconds because §10.6's range stops at 59.999
+    and a fourth would be precision the field cannot express."""
+    argument = PositionArgument("N", 0, 0, 1.23456, "E", 0, 0, 0.0, 7.0)
+
+    assert argument.rendered() == "N,0,0,1.235,E,0,0,0,7.00"
+
+
+@pytest.mark.parametrize(
+    "argument",
+    [
+        PositionArgument("X", 0, 0, 0.0, "E", 0, 0, 0.0, 0.0),
+        PositionArgument("N", 0, 0, 0.0, "N", 0, 0, 0.0, 0.0),
+        PositionArgument("N", 91, 0, 0.0, "E", 0, 0, 0.0, 0.0),
+        PositionArgument("N", 0, 60, 0.0, "E", 0, 0, 0.0, 0.0),
+        PositionArgument("N", 0, 0, 60.0, "E", 0, 0, 0.0, 0.0),
+        PositionArgument("N", 0, 0, 0.0, "E", 181, 0, 0.0, 0.0),
+        PositionArgument("N", 0, 0, 0.0, "E", 0, 0, 0.0, 18001.0),
+        PositionArgument("N", 0, 0, 0.0, "E", 0, 0, 0.0, -1001.0),
+    ],
+)
+def test_a_part_outside_the_receivers_own_table_is_refused(argument: PositionArgument) -> None:
+    """§10.6's ranges are the 58503A manual's own. Refused rather than raised, for the reason
+    §11.1 gives on the way in: a value out of range is somebody typing one."""
+    assert argument.rendered() is None
+    assert argument.is_valid() is False
+    assert catalog.SET_POSITION.rendered(argument) is None
+
+
+def test_the_command_refuses_anything_that_is_not_a_position() -> None:
+    """The argument is a type, not a string. A caller handing over a number would otherwise have
+    it formatted as a decimal and sent."""
+    for wrong in (None, 47.5, "N,47,31,18.822,W,122,12,22.152,38.00", (47, 31)):
+        assert catalog.SET_POSITION.rendered(wrong) is None
+
+
+def test_it_confirms_and_is_acknowledged() -> None:
+    """§8.3. It cancels a survey and changes every timing solution afterwards, and the sibling's
+    own confirmation says an incorrect position degrades timing accuracy."""
+    assert catalog.SET_POSITION.tier is SafetyTier.CONFIRM
+    assert catalog.SET_POSITION.requires_acknowledgement is True
+    assert "degrades timing accuracy" in (catalog.SET_POSITION.confirmation or "")
+
+
+def test_the_spoken_form_is_words_rather_than_the_wire_format() -> None:
+    """§8.3 wants the consequence in words, and a comma-separated string is not words."""
+    spoken = PositionArgument("N", 47, 31, 18.822, "W", 122, 12, 22.152, 38.0).spoken()
+
+    assert spoken == "N 47° 31′ 18.822″, W 122° 12′ 22.152″, 38.00 m"
+    assert "," in spoken and ",122," not in spoken
 
 
 def test_the_survey_commands_all_confirm() -> None:
@@ -471,3 +536,125 @@ def test_the_image_is_written_and_is_taller_than_the_plot(tmp_path: Path) -> Non
     written = QImage(str(target))
     assert not written.isNull()
     assert written.height() > page._plot.height()
+
+
+# ---- §10.6's manual entry, on the page ----------------------------------------------------------
+
+
+def test_filling_from_the_receiver_round_trips_a_position() -> None:
+    """A small correction should be a small edit, not nine fields retyped.
+
+    Round-tripped rather than spot-checked: the page holds degrees, minutes and seconds and the
+    status screen is parsed to signed decimal degrees, so this is the conversion in both
+    directions and it is the part people get wrong.
+    """
+    from smartclock_device.models.position import GeoPosition
+
+    page = _position_page()
+    page.show_reading(
+        Reading(
+            status=ReceiverStatus(
+                captured_at=NOW,
+                position=GeoPosition(
+                    latitude_degrees=47.521839, longitude_degrees=-122.206153, height_metres=38.0
+                ),
+            ),
+            captured_at=NOW,
+        )
+    )
+
+    page._fill_from_receiver.click()
+    argument = page._position_argument()
+
+    assert argument.latitude_hemisphere == "N"
+    assert (argument.latitude_degrees, argument.latitude_minutes) == (47, 31)
+    assert argument.latitude_seconds == pytest.approx(18.62, abs=0.01)
+    assert argument.longitude_hemisphere == "W", "a negative longitude is West"
+    assert (argument.longitude_degrees, argument.longitude_minutes) == (122, 12)
+    assert argument.longitude_seconds == pytest.approx(22.15, abs=0.01)
+    assert argument.height_metres == pytest.approx(38.0)
+    assert argument.is_valid()
+
+
+@pytest.mark.parametrize(
+    ("latitude", "longitude"),
+    [
+        (47.521839, -122.206153),
+        (-33.859972, 151.211111),
+        (0.0, 0.0),
+        (89.999444, -179.999444),
+        (12.3456789, 98.7654321),
+        (-0.000278, 0.000278),
+    ],
+)
+def test_filling_from_the_receiver_preserves_the_position(
+    latitude: float, longitude: float
+) -> None:
+    """The round trip has to come back where it started.
+
+    Decimal degrees in — the form the status screen is parsed to — and degrees, minutes, seconds
+    and a hemisphere out, which is what the receiver prints and what §10.6's table bounds. This
+    converts back and compares, because the conversion is the part people get wrong and every way
+    of getting it wrong still produces a plausible-looking position: a dropped sign puts you in
+    the wrong hemisphere, swapped degrees and minutes puts you sixty times off, and neither is
+    visible in the field values themselves.
+
+    Tolerance is a thousandth of a second of arc, the finest the field can express — about 30 mm.
+    """
+    from smartclock_device.models.position import GeoPosition
+
+    page = _position_page()
+    page.show_reading(
+        Reading(
+            status=ReceiverStatus(
+                captured_at=NOW,
+                position=GeoPosition(
+                    latitude_degrees=latitude, longitude_degrees=longitude, height_metres=38.0
+                ),
+            ),
+            captured_at=NOW,
+        )
+    )
+    page._fill_from_receiver.click()
+
+    argument = page._position_argument()
+    assert argument.is_valid(), f"came back as {argument.spoken()}, which is unsendable"
+
+    def decimal(hemisphere: str, degrees: int, minutes: int, seconds: float) -> float:
+        size = degrees + minutes / 60.0 + seconds / 3600.0
+        return -size if hemisphere in ("S", "W") else size
+
+    back_latitude = decimal(
+        argument.latitude_hemisphere,
+        argument.latitude_degrees,
+        argument.latitude_minutes,
+        argument.latitude_seconds,
+    )
+    back_longitude = decimal(
+        argument.longitude_hemisphere,
+        argument.longitude_degrees,
+        argument.longitude_minutes,
+        argument.longitude_seconds,
+    )
+
+    arcsecond = 1.0 / 3600.0
+    assert back_latitude == pytest.approx(latitude, abs=arcsecond / 1000.0)
+    assert back_longitude == pytest.approx(longitude, abs=arcsecond / 1000.0)
+
+
+def test_filling_says_so_when_nothing_has_been_read() -> None:
+    """§9.11: a control that does nothing has to say why. Before the first reading there is no
+    position to copy, and silently doing nothing reads as a broken button."""
+    page = _position_page()
+
+    page._fill_from_receiver.click()
+
+    assert "No position" in page._position_note.text()
+
+
+def test_nothing_is_sent_without_a_receiver() -> None:
+    page = PositionPage()
+
+    page._send_position()
+
+    assert page._position_note.text() == ""
