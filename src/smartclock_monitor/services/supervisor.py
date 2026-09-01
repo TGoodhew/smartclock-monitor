@@ -24,7 +24,7 @@ import asyncio
 from collections.abc import Awaitable, Callable
 from contextlib import suppress
 from dataclasses import dataclass, field
-from typing import Final
+from typing import Any, Final
 
 from smartclock_device.clock import Clock
 from smartclock_device.drivers.base import ReceiverDriver
@@ -192,18 +192,13 @@ class Supervisor:
                     return_when=asyncio.FIRST_COMPLETED,
                 )
         finally:
-            woken.cancel()
-            with suppress(asyncio.CancelledError):
-                await woken
-            polling.cancel()
             # Awaited rather than abandoned: a cancelled task that is never awaited leaves its
             # exception unretrieved, which asyncio reports at garbage-collection time and which
             # reads as an unrelated crash minutes later.
-            # CancelledError is expected here. Anything else is the failure that ended the poll,
-            # and it has already been reported through the session's own state — so both are
-            # suppressed, and this is one of the few places that is right.
-            with suppress(asyncio.CancelledError, Exception):
-                await polling
+            woken.cancel()
+            polling.cancel()
+            for child in (woken, polling):
+                await _absorb(child)
 
     async def _wait_to_retry(self, attempt: int) -> bool:
         """Count down to the next attempt. Returns whether to make one."""
@@ -233,6 +228,31 @@ class Supervisor:
 
 def _s(count: int) -> str:
     return "" if count == 1 else "s"
+
+
+async def _absorb(child: asyncio.Task[Any]) -> None:
+    """Wait for a cancelled child, keeping its failure and **not** eating our own cancellation.
+
+    ``with suppress(asyncio.CancelledError): await child`` reads correctly and is a trap:
+    ``suppress`` cannot tell *whose* ``CancelledError`` it caught. If this task is itself being
+    cancelled, the next ``await`` re-delivers **our** cancellation here — and swallowing it leaves
+    the supervisor running its ``while True`` for ever, because a task is only cancelled once.
+
+    That is not a test artefact. It is a shutdown that never completes, and it reproduced as an
+    intermittent hang of the whole suite on Python 3.12 — two CI jobs sitting at sixteen minutes
+    against their own two-minute twins.
+
+    So the child's cancellation is absorbed and ours is re-raised. Anything else the child raised
+    is the failure that ended the poll, already reported through the session's own state.
+    """
+    try:
+        await child
+    except asyncio.CancelledError:
+        current = asyncio.current_task()
+        if current is not None and current.cancelling() > 0:
+            raise
+    except Exception:
+        return
 
 
 async def _quietly_close(session: DeviceSession) -> None:
