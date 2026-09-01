@@ -123,7 +123,11 @@ class ResponseBuffer:
     carries the prompt's error token.
     """
 
-    def __init__(self) -> None:
+    def __init__(self, *, detect_prompt: bool = True) -> None:
+        # **Off for a broadcast link.** A talker sends no prompt, and a sentence fragment that
+        # happened to match one would mark the buffer complete and freeze the stream for good —
+        # a failure that needs the exact bytes to reproduce. Nothing to look for, so nothing looks.
+        self._detect_prompt = detect_prompt
         self._buffer = bytearray()
         self._lines: list[str] = []
         self._prompt: PromptMatch | None = None
@@ -167,7 +171,7 @@ class ResponseBuffer:
         # Whatever is left has no CR or LF in it — the loop above consumed every one — and the
         # prompt never contains a line ending. So the prompt, if it has arrived, is exactly this.
         tail = self._buffer
-        if not tail or len(tail) > MAX_PROMPT_LENGTH:
+        if not self._detect_prompt or not tail or len(tail) > MAX_PROMPT_LENGTH:
             return False
 
         match = match_prompt(_decode(tail))
@@ -177,6 +181,16 @@ class ResponseBuffer:
         self._prompt = match
         del self._buffer[: match.length]
         return True
+
+    def drain_lines(self) -> tuple[str, ...]:
+        """Take the complete lines out and forget them.
+
+        For a stream rather than a transaction: a talker sends the same sentences for weeks, and a
+        buffer that accumulated every one would be a memory leak with a calendar on it.
+        """
+        taken = tuple(self._lines)
+        self._lines.clear()
+        return taken
 
     def _extract_lines(self) -> None:
         """Move every complete line out of the buffer, treating CRLF as one ending."""

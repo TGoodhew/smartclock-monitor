@@ -19,6 +19,7 @@ single-consumer queue.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 from datetime import datetime, timedelta
 
 from smartclock_device.clock import Clock
@@ -157,6 +158,11 @@ class LineProtocol:
         model and firmware revision before a single command has been sent, and §8.6 needs the model
         to decide which commands exist. A receiver that says nothing costs one timeout here and
         nothing afterwards, so keep the timeout short.
+
+        **This sends nothing.** It used to also spend the startup glitch — see
+        :meth:`spend_startup_glitch` — which made the sentence above false, and made connecting to
+        a *broadcast* receiver write two commands to a device whose driver says it is never written
+        to. The caller now spends the glitch itself, once it knows which kind of link it holds.
         """
         started_at = self._clock.utc_now()
         buffer = ResponseBuffer()
@@ -183,8 +189,6 @@ class LineProtocol:
                 fault_message=str(exception),
             )
 
-        await self._clear_status()
-
         return Transaction(
             command=CONNECT_LABEL,
             outcome=outcome,
@@ -193,9 +197,33 @@ class LineProtocol:
             prompt_status=buffer.prompt_status if outcome is TransactionOutcome.COMPLETED else None,
         )
 
-    # -- internals ---------------------------------------------------------------------------
+    async def listen(self, on_line: Callable[[str], None]) -> None:
+        """Read a broadcast link until cancelled, handing over every complete line.
 
-    async def _clear_status(self) -> None:
+        §12's other link style. There is no transaction here to correlate — nothing was asked —
+        so this does no framing beyond splitting lines and never writes to the port. The caller
+        files the lines; :class:`~smartclock_device.transport.broadcast.BroadcastListener` is what
+        turns them back into something the poll plan can be answered from.
+
+        **It runs until cancelled**, and a transport fault propagates: §7.2's supervisor is what
+        decides that a link which stopped delivering needs reconnecting, and swallowing the fault
+        here would leave a listener reading a closed port forever.
+        """
+        buffer = ResponseBuffer(detect_prompt=False)
+
+        while True:
+            chunk = await self._transport.read()
+            if not chunk:
+                # A read that returns nothing must not become a spin: yield, so a closed or idle
+                # port costs the event loop nothing rather than one core.
+                await asyncio.sleep(0)
+                continue
+
+            buffer.feed(chunk)
+            for line in buffer.drain_lines():
+                on_line(line)
+
+    async def spend_startup_glitch(self) -> None:
         """Send the status-clear command and throw the answer away, twice if the first is refused.
 
         The first command after the port opens is unreliable on this hardware. Asserting DTR and
@@ -208,6 +236,12 @@ class LineProtocol:
         So the connect sequence spends the glitch deliberately, on the one tier S command whose
         whole purpose is to clear status and whose response nobody wants. Twice, because the first
         attempt is the one being sacrificed.
+
+        **Called by the session after synchronise, and only for a query/response link.** It lived
+        inside :meth:`synchronise` until a broadcast family arrived, and there it wrote two commands
+        to a talker before any driver had been asked — costing two full timeouts on a device that
+        cannot answer, and breaking the one promise that family's driver makes about itself. The
+        glitch is the SmartClock's own power-up behaviour, so spending it is the caller's decision.
         """
         cleared = await self.execute(_CLEAR_STATUS, timeouts.AUTO_DETECT_PROBE)
 
@@ -215,6 +249,8 @@ class LineProtocol:
         # "that command failed". Spending the glitch is done when the queue is empty.
         if not cleared.succeeded or cleared.error_queue_not_empty:
             await self.execute(_CLEAR_STATUS, timeouts.AUTO_DETECT_PROBE)
+
+    # -- internals ---------------------------------------------------------------------------
 
     def _needs_resynchronising(self, lines_received: int, budget: timedelta) -> None:
         """Note that a reply was abandoned part-read, so the next command realigns before sending.

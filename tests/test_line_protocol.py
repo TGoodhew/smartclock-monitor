@@ -353,11 +353,18 @@ async def test_connecting_spends_the_dtr_glitch_on_a_command_nobody_wants() -> N
     """Asserting DTR and RTS puts a glitch on the line the receiver reads as a character, and it
     answers the *next* thing it is asked with a framing error, having discarded that command
     unexecuted. So the connect sequence spends it deliberately on ``*CLS`` — tier S, whose whole
-    purpose is to clear status and whose response nobody wants."""
+    purpose is to clear status and whose response nobody wants.
+
+    Spent by the *caller*, after synchronise: it is this receiver's own power-up behaviour, and
+    doing it inside synchronise wrote two commands to a broadcast talker before any driver had
+    been asked."""
     transport = FakeTransport({"*CLS": ""})
     protocol = await opened(transport)
 
     await protocol.synchronise(BRIEF)
+    assert transport.written == [], "synchronise listens; it does not send"
+
+    await protocol.spend_startup_glitch()
 
     assert transport.written == ["*CLS"]
 
@@ -369,6 +376,7 @@ async def test_the_glitch_is_spent_twice_when_the_first_attempt_is_refused() -> 
     protocol = await opened(transport)
 
     await protocol.synchronise(BRIEF)
+    await protocol.spend_startup_glitch()
 
     assert transport.written == ["*CLS", "*CLS"]
 
