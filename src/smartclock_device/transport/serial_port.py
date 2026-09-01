@@ -148,7 +148,7 @@ class SerialTransport:
                 data = await asyncio.to_thread(port.read, _READ_SIZE)
             except Exception as exception:
                 raise TransportError(
-                    classify(exception), f"Reading {self._port} failed: {exception}"
+                    self._fault_for(exception), f"Reading {self._port} failed: {exception}"
                 ) from exception
 
             if data:
@@ -164,7 +164,7 @@ class SerialTransport:
             await asyncio.to_thread(port.flush)
         except Exception as exception:
             raise TransportError(
-                classify(exception), f"Writing to {self._port} failed: {exception}"
+                self._fault_for(exception), f"Writing to {self._port} failed: {exception}"
             ) from exception
 
     def discard_input(self) -> None:
@@ -194,6 +194,25 @@ class SerialTransport:
         except Exception:
             # Closing a port that has already gone is not a failure worth reporting.
             return
+
+    def _fault_for(self, exception: BaseException) -> TransportFault:
+        """Classify a failure that happened *during* an operation.
+
+        **A port that is no longer open when the failure surfaced is a removal, whatever the
+        exception says.** Closing a port while a read is blocked in a worker thread sets the
+        descriptor to ``None`` underneath it, and pyserial then fails with ``TypeError: 'NoneType'
+        object cannot be interpreted as an integer`` — which classifies as UNKNOWN and reaches the
+        user as *"failed for an unrecognised reason"*.
+
+        That is §6.4's own case, and the message is the one §9.11 exists to prevent: it tells
+        someone whose adapter has just been pulled nothing they can act on. The state of the port
+        is better evidence than the exception here, because we can see the port went away.
+
+        Found by closing the transport under a live poll against a Z3805A.
+        """
+        if self._serial is None or not self._serial.is_open:
+            return TransportFault.DEVICE_REMOVED
+        return classify(exception)
 
     def _require_open(self) -> serial.Serial:
         port = self._serial

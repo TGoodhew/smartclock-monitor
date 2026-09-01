@@ -532,3 +532,72 @@ def test_every_fault_has_copy_a_user_can_act_on() -> None:
         sentence = describe(fault, "/dev/ttyUSB0")
         assert sentence.endswith(".")
         assert "/dev/ttyUSB0" in sentence
+
+
+# ---- A port closed underneath a live operation (§6.4) --------------------------------------------
+
+
+class _ClosedUnderneath:
+    """A pyserial stand-in that fails the way a real one does when closed mid-read.
+
+    Closing a port while a read is blocked in a worker thread sets the descriptor to ``None``
+    underneath it, and pyserial then raises ``TypeError: 'NoneType' object cannot be interpreted as
+    an integer``. Reproduced against a Z3805A rather than imagined.
+    """
+
+    is_open = False
+
+    def read(self, size: int) -> bytes:
+        raise TypeError("'NoneType' object cannot be interpreted as an integer")
+
+    def write(self, data: bytes) -> int:
+        raise TypeError("'NoneType' object cannot be interpreted as an integer")
+
+    def flush(self) -> None:
+        return None
+
+
+def test_a_read_that_fails_after_the_port_closed_is_a_removal() -> None:
+    """§6.4's own case. The exception classifies as UNKNOWN and reached the user as *"failed for
+    an unrecognised reason"* — which tells someone whose adapter has just been pulled nothing they
+    can act on, and is exactly what §9.11's copy rule exists to prevent.
+
+    The state of the port is better evidence than the exception, because we can see it went away.
+    """
+    from smartclock_device.transport.serial_port import SerialTransport
+
+    transport = SerialTransport("/dev/fake")
+    transport._serial = _ClosedUnderneath()
+
+    fault = transport._fault_for(TypeError("'NoneType' object cannot be interpreted as an integer"))
+
+    assert fault is TransportFault.DEVICE_REMOVED
+    assert describe(fault, "/dev/fake") == "/dev/fake was disconnected."
+    assert "unrecognised" not in describe(fault, "/dev/fake")
+
+
+def test_a_failure_on_a_port_that_is_still_open_keeps_its_own_classification() -> None:
+    """The narrowing matters: the port's state only overrides the exception when the port has
+    actually gone. A live port that reports a permission problem must still say so."""
+    import serial as pyserial
+
+    from smartclock_device.transport.serial_port import SerialTransport
+
+    class _StillOpen(_ClosedUnderneath):
+        is_open = True
+
+    transport = SerialTransport("/dev/fake")
+    transport._serial = _StillOpen()
+
+    denied = pyserial.SerialException("could not open port /dev/fake: Permission denied")
+    denied.errno = 13
+    assert transport._fault_for(denied) is TransportFault.ACCESS_DENIED
+
+
+def test_an_unopened_transport_reports_removal_rather_than_guessing() -> None:
+    """Before ``open()`` there is no port, and a failure surfacing then is the same shape."""
+    from smartclock_device.transport.serial_port import SerialTransport
+
+    transport = SerialTransport("/dev/fake")
+
+    assert transport._fault_for(TypeError("anything")) is TransportFault.DEVICE_REMOVED

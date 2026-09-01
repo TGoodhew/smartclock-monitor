@@ -40,6 +40,7 @@ from smartclock_device.models.receiver_status import (
 from smartclock_monitor.services import preferences
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.polling import Reading
+from smartclock_monitor.services.supervisor import Supervisor
 from smartclock_monitor.services.trend_store import TrendStore
 from smartclock_monitor.themes.qss import stylesheet
 from smartclock_monitor.themes.severity import Severity
@@ -158,9 +159,17 @@ class MainWindow(QMainWindow):
         # must reach the page as None rather than as an absent attribute.
         self._store: TrendStore | None = None
         self._runner: CommandRunner | None = None
+        self._supervisor: Supervisor | None = None
         # Loaded once at startup. §10.13: a missing or unreadable file reads as the defaults, and
         # the default for anything advanced is off.
         self._preferences = preferences.load()
+        # §9.11's connection-lost state: a countdown that cannot be cut short is thirty seconds
+        # of an application looking hung. Hidden until there is a supervisor to ask.
+        self._retry = QPushButton("Retry now")
+        self._retry.setAccessibleName("Try reconnecting immediately")
+        self._retry.clicked.connect(self.retry_now)
+        self._retry.setVisible(False)
+
         self._details_button = QPushButton("Details…")
         self._details_button.setAccessibleName("Open the details window")
         self._details_button.setToolTip("Satellites, position and timing (Ctrl+D)")
@@ -213,6 +222,7 @@ class MainWindow(QMainWindow):
         header.setSpacing(Spacing.SMALL)
         header.addWidget(_label(APPLICATION_NAME, "title"))
         header.addStretch(1)
+        header.addWidget(self._retry)
         header.addWidget(self._details_button)
         header.addWidget(_label("Theme", "caption"))
         header.addWidget(self._theme_picker)
@@ -312,6 +322,16 @@ class MainWindow(QMainWindow):
         user can set again, and nothing load-bearing lives in one of these files."""
         self._preferences = updated
         preferences.save(updated)
+
+    def set_supervisor(self, supervisor: Supervisor | None) -> None:
+        """§9.11's connection-lost state offers *Retry now* and *Stop retrying* beside the
+        countdown. This is what those reach."""
+        self._supervisor = supervisor
+        self._retry.setVisible(supervisor is not None)
+
+    def retry_now(self) -> None:
+        if self._supervisor is not None:
+            self._supervisor.retry_now()
 
     def set_command_runner(self, runner: CommandRunner | None) -> None:
         """Held for a details window opened later, forwarded to one already open."""

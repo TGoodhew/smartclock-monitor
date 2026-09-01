@@ -1,0 +1,271 @@
+"""§7.2's reconnect policy.
+
+The session already reported ``LOST`` — on a fault immediately, and on three consecutive timeouts —
+and nothing acted on it. An unplugged adapter stopped the poll loop and left the last reading on
+screen looking current, which is the worst of the three things it could have done.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from datetime import timedelta
+
+import pytest
+
+from conftest import NOW
+from smartclock_device.clock import FixedClock
+from smartclock_device.drivers.smartclock import SmartClockDriver
+from smartclock_device.transport.fake import FakeTransport
+from smartclock_monitor.services.session import ConnectionState, DeviceSession
+from smartclock_monitor.services.supervisor import (
+    FIRST_BACKOFF,
+    MAXIMUM_BACKOFF,
+    Supervisor,
+    backoff_seconds,
+)
+
+PROBE = timedelta(milliseconds=5)
+IDENTITY = "SYMMETRICOM,Z3805A,3625A02931,1.01.03-A"
+
+
+def clock() -> FixedClock:
+    return FixedClock(NOW)
+
+
+async def a_session(*, answering: bool = True) -> DeviceSession:
+    responses = {"*CLS": "", "*IDN?": IDENTITY} if answering else {"*CLS": ""}
+    session = DeviceSession(
+        FakeTransport(responses, default_response=""), SmartClockDriver(clock=clock()), clock()
+    )
+    await session.open(probe=PROBE)
+    return session
+
+
+# ---- The backoff -------------------------------------------------------------------------------
+
+
+def test_the_backoff_is_the_one_section_7_2_gives() -> None:
+    """*"retry with exponential backoff (2 s, 4 s, 8 s, capped 30 s)"*, verbatim."""
+    assert [backoff_seconds(attempt) for attempt in range(1, 7)] == [2, 4, 8, 16, 30, 30]
+
+
+def test_the_backoff_is_capped() -> None:
+    """Without the cap the fourteenth attempt waits four and a half hours, which is
+    indistinguishable from having given up."""
+    assert backoff_seconds(20) == MAXIMUM_BACKOFF
+    assert backoff_seconds(1) == FIRST_BACKOFF
+
+
+# ---- The cycle ---------------------------------------------------------------------------------
+
+
+def test_it_reconnects_after_the_link_is_lost() -> None:
+    """The whole point. A supervisor that connected once would be what was there before."""
+    opened: list[DeviceSession] = []
+
+    async def run() -> None:
+        async def connect() -> DeviceSession | None:
+            session = await a_session()
+            opened.append(session)
+            # Drop it as soon as the supervisor starts polling.
+            session._state = ConnectionState.LOST
+            return session
+
+        supervisor = Supervisor(
+            connect=connect,
+            driver=SmartClockDriver(clock=clock()),
+            clock=clock(),
+            # The cycle is under test, not §7.2's delays. Testing the two together would mean
+            # either a slow suite or a flaky one.
+            backoff=lambda _attempt: 0,
+        )
+
+        task = asyncio.ensure_future(supervisor.run())
+        await asyncio.sleep(0.4)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+
+    assert len(opened) >= 2, "it connected once and gave up"
+
+
+def test_a_failed_connection_is_retried_too() -> None:
+    """A receiver that is not there yet is the ordinary case on launch — the adapter is plugged in
+    a moment later, and the application should find it without being restarted."""
+    attempts = 0
+
+    async def run() -> None:
+        nonlocal attempts
+
+        async def connect() -> DeviceSession | None:
+            nonlocal attempts
+            attempts += 1
+            return None
+
+        supervisor = Supervisor(
+            connect=connect,
+            driver=SmartClockDriver(clock=clock()),
+            clock=clock(),
+            backoff=lambda _attempt: 0,
+        )
+
+        task = asyncio.ensure_future(supervisor.run())
+        await asyncio.sleep(0.3)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+
+    assert attempts >= 2
+
+
+def test_the_session_is_announced_and_withdrawn() -> None:
+    """The window clears its command runner when the link drops, so pages disable their controls
+    rather than offering buttons that would send into a closed port."""
+    seen: list[str] = []
+
+    async def run() -> None:
+        async def connect() -> DeviceSession | None:
+            session = await a_session()
+            session._state = ConnectionState.LOST
+            return session
+
+        supervisor = Supervisor(
+            connect=connect,
+            driver=SmartClockDriver(clock=clock()),
+            clock=clock(),
+            on_session=lambda session: seen.append("open" if session is not None else "closed"),
+            backoff=lambda _attempt: 0,
+        )
+
+        task = asyncio.ensure_future(supervisor.run())
+        await asyncio.sleep(0.3)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+
+    assert "open" in seen and "closed" in seen
+    assert seen.index("open") < seen.index("closed")
+
+
+def test_the_countdown_is_reported() -> None:
+    """§9.11: thirty seconds of silence from an application is indistinguishable from a crash."""
+    said: list[str] = []
+
+    async def run() -> None:
+        async def connect() -> DeviceSession | None:
+            return None
+
+        supervisor = Supervisor(
+            connect=connect,
+            driver=SmartClockDriver(clock=clock()),
+            clock=clock(),
+            on_status=said.append,
+        )
+
+        task = asyncio.ensure_future(supervisor.run())
+        await asyncio.sleep(1.2)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+
+    assert any("Retrying in" in line for line in said)
+    assert any("second" in line for line in said)
+
+
+def test_retry_now_cuts_the_countdown_short() -> None:
+    attempts = 0
+
+    async def run() -> None:
+        nonlocal attempts
+
+        async def connect() -> DeviceSession | None:
+            nonlocal attempts
+            attempts += 1
+            return None
+
+        supervisor = Supervisor(
+            connect=connect, driver=SmartClockDriver(clock=clock()), clock=clock()
+        )
+        task = asyncio.ensure_future(supervisor.run())
+
+        await asyncio.sleep(0.05)
+        before = attempts
+        for _ in range(3):
+            supervisor.retry_now()
+            await asyncio.sleep(0.05)
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+        # Without retry_now the first backoff is two seconds, so nothing would have happened.
+        assert attempts > before
+
+    asyncio.run(run())
+
+
+def test_not_staying_connected_waits_to_be_asked() -> None:
+    """§10.12's "Reconnect automatically", off. A lost link is reported and left — but the task
+    stays alive, because ending it would mean a Connect button with nothing behind it."""
+    attempts = 0
+    said: list[str] = []
+
+    async def run() -> None:
+        nonlocal attempts
+
+        async def connect() -> DeviceSession | None:
+            nonlocal attempts
+            attempts += 1
+            return None
+
+        supervisor = Supervisor(
+            connect=connect,
+            driver=SmartClockDriver(clock=clock()),
+            clock=clock(),
+            on_status=said.append,
+            stay_connected=False,
+        )
+        task = asyncio.ensure_future(supervisor.run())
+        await asyncio.sleep(0.2)
+
+        assert attempts == 1, "it must not keep trying"
+        assert task.done() is False, "the task must stay alive to be asked again"
+
+        supervisor.retry_now()
+        await asyncio.sleep(0.1)
+        assert attempts == 2, "asking must work"
+
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(run())
+
+    assert any("Not reconnecting" in line for line in said)
+
+
+def test_stop_retrying_ends_the_cycle() -> None:
+    async def run() -> None:
+        async def connect() -> DeviceSession | None:
+            return None
+
+        supervisor = Supervisor(
+            connect=connect, driver=SmartClockDriver(clock=clock()), clock=clock()
+        )
+        task = asyncio.ensure_future(supervisor.run())
+        await asyncio.sleep(0.05)
+
+        supervisor.stop_retrying()
+        await asyncio.sleep(0.2)
+
+        assert task.done() is True
+
+    asyncio.run(run())
