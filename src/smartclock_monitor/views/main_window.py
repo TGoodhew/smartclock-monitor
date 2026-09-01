@@ -54,6 +54,7 @@ from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import ALL_THEMES, Theme, palette_for
 from smartclock_monitor.views.connection_dialog import ConnectionChoice, ConnectionDialog
 from smartclock_monitor.views.details_window import DetailsWindow
+from smartclock_monitor.views.help_window import HelpWindow
 from smartclock_monitor.widgets.medallion import StatusMedallion
 from smartclock_monitor.widgets.severity_pill import SeverityPill
 
@@ -63,6 +64,14 @@ from smartclock_monitor.widgets.severity_pill import SeverityPill
 #: (``Package.Current.DisplayName``, which has no Linux equivalent): the name appears in the title
 #: bar, the about surface and the guide, and a rename that has to be made in nine places gets made
 #: in eight.
+#: §9.6.2's minimum **content** sizes, in effective pixels.
+#:
+#: On Qt those are also the units ``setMinimumSize`` takes — logical pixels already have the device
+#: ratio applied — so §9.6.2's conversion, its recomputation on a scaling change and its work-area
+#: cap are Windows-specific arithmetic that does not arise here.
+MAIN_MINIMUM = (380, 240)
+COMPACT_MINIMUM = (380, 144)
+
 APPLICATION_NAME = "SmartClock Monitor"
 
 #: The em dash a missing value renders as (§11.1). Never a zero, which would claim a reading.
@@ -145,7 +154,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle(APPLICATION_NAME)
         # G1's box. A floor rather than a fixed size: §9.6.1's breakpoints grow the layout, and the
         # acceptance criterion is that it *fits* in 420 by 260, not that it is stuck there.
-        self.setMinimumSize(420, 260)
+        self.setMinimumSize(*MAIN_MINIMUM)
 
         self._medallion = StatusMedallion(palette_for(theme))
         self._mode_pill = SeverityPill(Severity.NEUTRAL, "Disconnected", palette_for(theme))
@@ -169,6 +178,8 @@ class MainWindow(QMainWindow):
         self._supervisor: Supervisor | None = None
         self._tray: tray.Tray | None = None
         self._told_about_hiding = False
+        self._compact = False
+        self._help: HelpWindow | None = None
         # Loaded once at startup. §10.13: a missing or unreadable file reads as the defaults, and
         # the default for anything advanced is off.
         self._preferences = preferences.load()
@@ -196,6 +207,9 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("Ctrl+E"), self, lambda: self._in_details("export_current"))
         QShortcut(QKeySequence("Ctrl+,"), self, lambda: self._in_details("show_settings"))
         QShortcut(QKeySequence("Ctrl+Shift+C"), self, self.choose_connection)
+        QShortcut(QKeySequence("Ctrl+Shift+M"), self, self.toggle_compact)
+        QShortcut(QKeySequence("F1"), self, self.open_help)
+        QShortcut(QKeySequence("Esc"), self, self.leave_compact)
 
         self._theme_picker = QComboBox()
         for available in ALL_THEMES:
@@ -286,9 +300,63 @@ class MainWindow(QMainWindow):
         grid.addWidget(self._interval, 1, 0)
         grid.addWidget(self._efc, 1, 1)
         outer.addWidget(readouts)
+        self._readouts = readouts
 
         outer.addStretch(1)
         return root
+
+    # -- §9.6.2's compact mode -------------------------------------------------------------------
+
+    def set_compact(self, compact: bool) -> None:
+        """§9.6.2's compact state: a 64 px medallion, the mode text, and nothing else.
+
+        **Collapsed, not clipped and not scrolled** — the readout row is removed from the layout,
+        so nothing stays focusable or hit-testable off-screen (A11Y-1, A11Y-6). A hidden widget in
+        Qt is out of the layout and out of the tab order, which is the behaviour that rule wants;
+        merely shrinking the window would have left both.
+
+        **The figures here are content sizes in effective pixels**, which is what §9.6.2's
+        amendment spends four paragraphs establishing — and on Qt they are also what
+        ``setMinimumSize`` takes, because Qt's logical pixels already have the device ratio
+        applied. The conversion, the recomputation on a scaling change and the work-area cap that
+        amendment requires are all Windows-specific arithmetic that does not arise here. This is a
+        case where the platform difference makes the port simpler, and it is worth saying so
+        rather than leaving the next reader to wonder where the conversion went.
+        """
+        self._compact = compact
+        self._readouts.setVisible(not compact)
+        self._health_pill.setVisible(not compact)
+        self._detail.setVisible(not compact)
+
+        if compact:
+            self._medallion.setMinimumSize(64, 64)
+            self._medallion.setMaximumHeight(64)
+            self.setMinimumSize(*COMPACT_MINIMUM)
+            self.resize(*COMPACT_MINIMUM)
+        else:
+            self._medallion.setMinimumSize(132, 132)
+            self._medallion.setMaximumHeight(180)
+            self.setMinimumSize(*MAIN_MINIMUM)
+
+    def toggle_compact(self) -> None:
+        self.set_compact(not self._compact)
+
+    def leave_compact(self) -> None:
+        """``Esc`` exits compact mode (§9.7.5) and does nothing otherwise.
+
+        Nothing, rather than closing the window: Escape closes a dialog and a flyout, and a window
+        that also vanished on it would be surprising in a way the other two are not.
+        """
+        if self._compact:
+            self.set_compact(False)
+
+    @property
+    def is_compact(self) -> bool:
+        return self._compact
+
+    @property
+    def readouts_card(self) -> QWidget:
+        return self._readouts
 
     # -- Theme ---------------------------------------------------------------------------------
 
@@ -333,6 +401,7 @@ class MainWindow(QMainWindow):
             self._details.apply_preferences(self._preferences)
             self._details.exit_requested = self.exit_application
             self._details.set_can_keep_running(self.can_keep_running)
+            self._details.help_requested = self.open_help
             self._details.settings_changed = self._remember_preferences
             if self._last_reading is not None:
                 self._details.show_reading(self._last_reading)
@@ -427,6 +496,20 @@ class MainWindow(QMainWindow):
         )
         self._tray.show()
         return True
+
+    def open_help(self) -> None:
+        """§9.7.5's F1, from either window. Kept rather than rebuilt, so a reader keeps their
+        scroll position when they go back to the application and press it again."""
+        if self._help is None:
+            self._help = HelpWindow(palette_for(self._theme), self)
+            self._help.setWindowFlag(Qt.WindowType.Window, True)
+        self._help.show()
+        self._help.raise_()
+        self._help.activateWindow()
+
+    @property
+    def help_window(self) -> HelpWindow | None:
+        return self._help
 
     def _reopen(self) -> None:
         self.showNormal()
