@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import Final
 
 from smartclock_device.clock import SystemClock
+from smartclock_device.drivers.registry import Registry
 from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.transport.base import Transport
 from smartclock_device.transport.faults import TransportError
@@ -174,7 +175,11 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
     assert isinstance(window, MainWindow)
 
     clock = SystemClock()
-    driver = SmartClockDriver(clock=clock)
+
+    # §12's composition root: registration order is priority order. One family today, and the
+    # registry is what makes a second an entry here rather than an edit everywhere.
+    registry = Registry([SmartClockDriver(clock=clock)])
+    driver = registry.drivers[0]
 
     # #127: the writer starts before anything is opened, so the port opening is the first line.
     app_log.configure()
@@ -223,7 +228,7 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         """One connection attempt. Called again by the supervisor after every drop."""
         if arguments.demo or not chosen["port"]:
             window.set_connection_text("Demo — replaying captured status screens")
-            session = DeviceSession(ReplayTransport(clock), driver, clock)
+            session = DeviceSession(ReplayTransport(clock), driver, clock, registry=registry)
             try:
                 await session.open()
             except TransportError as error:
@@ -235,7 +240,7 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         return await _connect_serial(
             str(chosen["port"]),
             chosen["settings"],  # type: ignore[arg-type]
-            driver,
+            registry,
             clock,
             window,
             changes,
@@ -281,7 +286,7 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
 async def _connect_serial(
     port: str,
     settings: SerialSettings | None,
-    driver: object,
+    registry: Registry,
     clock: SystemClock,
     window: object,
     changes: app_log.ChangeLog,
@@ -291,13 +296,14 @@ async def _connect_serial(
     Returns ``None`` when there is nothing to poll, having already said why in the status bar —
     §9.11's rule that the failure reaches the user in words they can act on.
     """
-    from smartclock_device.drivers.base import ReceiverDriver
     from smartclock_device.transport.serial_port import SerialTransport
     from smartclock_monitor.services.autodetect import detect, open_with
     from smartclock_monitor.views.main_window import MainWindow
 
     assert isinstance(window, MainWindow)
-    assert isinstance(driver, ReceiverDriver)
+    # The walk needs *a* driver to keep asking with; which family actually serves the receiver is
+    # decided after the identity is read, by the session.
+    driver = registry.drivers[0]
 
     def build(port: str, settings: SerialSettings) -> Transport:
         return SerialTransport(port, settings)
@@ -306,13 +312,14 @@ async def _connect_serial(
         if settings is not None:
             window.set_connection_text(f"Connecting to {port} @ {settings}…")
             changes.opened(port, settings)
-            return await open_with(port, settings, driver, clock, build)
+            return await open_with(port, settings, driver, clock, build, registry=registry)
 
         found = await detect(
             port,
             driver,
             clock,
             build,
+            registry=registry,
             on_progress=lambda candidate, index, total: window.set_connection_text(
                 f"Trying {candidate} on {port} — {index} of {total}…"
             ),

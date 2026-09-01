@@ -23,6 +23,7 @@ from datetime import timedelta
 
 from smartclock_device.clock import Clock
 from smartclock_device.drivers.base import ReceiverDriver
+from smartclock_device.drivers.registry import Registry
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.transport import timeouts
 from smartclock_device.transport.base import Transport
@@ -69,6 +70,7 @@ async def detect(
     probe: timedelta = timeouts.AUTO_DETECT_PROBE,
     on_progress: Progress | None = None,
     should_cancel: Callable[[], bool] | None = None,
+    registry: Registry | None = None,
 ) -> Detected | None:
     """Walk the sequence and return the first combination a receiver answers on.
 
@@ -84,7 +86,7 @@ async def detect(
         if on_progress is not None:
             on_progress(settings, index, len(sequence))
 
-        session = DeviceSession(build(port, settings), driver, clock)
+        session = DeviceSession(build(port, settings), driver, clock, registry=registry)
         try:
             await session.open(probe=probe)
         except TransportError:
@@ -132,6 +134,7 @@ async def open_with(
     build: TransportFactory,
     *,
     probe: timedelta = timeouts.AUTO_DETECT_PROBE,
+    registry: Registry | None = None,
 ) -> DeviceSession:
     """Open one known combination, without walking.
 
@@ -139,6 +142,6 @@ async def open_with(
     setting is asserting something about their hardware, and quietly trying seven others would
     make the picker a suggestion.
     """
-    session = DeviceSession(build(port, settings), driver, clock)
+    session = DeviceSession(build(port, settings), driver, clock, registry=registry)
     await session.open(probe=probe)
     return session
