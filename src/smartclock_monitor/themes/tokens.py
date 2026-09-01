@@ -160,7 +160,7 @@ _SERIES_DARK: Final[tuple[str, ...]] = (
 #: simulated ramp stays monotonic.
 #:
 #: **§9.4.4 gives one ramp and no second column, and that is a defect in Dark** — issue #9 here and
-#: TGoodhew/WinZ3805A#1, since the same values are resolved from one dictionary there.
+#: TGoodhew/WinZ3805A#367, since the same values are resolved from one dictionary there.
 #: A sequential ramp is read by lightness, so which end recedes depends on the surface it is drawn
 #: on. Used verbatim in Dark, the *strongest* signal draws #08474D on the #2B2B2B card — 1.13:1,
 #: below anything §9.4.5 permits and invisible in practice — while the *weakest* draws the
