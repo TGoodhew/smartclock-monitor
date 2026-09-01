@@ -411,12 +411,20 @@ def test_the_data_ramps_match_the_specification() -> None:
         "#08474D",
     )
 
-    # Dark carries the same seven values in the other order — see the token file. Asserted as an
-    # exact reversal so that a *new* colour appearing in Dark fails here rather than passing as a
-    # re-derivation nobody reviewed.
-    assert palette_for(Theme.DARK).sequential == tuple(
-        reversed(palette_for(Theme.LIGHT).sequential)
+    # Dark is **derived**, not reversed — `build/palette/sequential.py`, figures in
+    # `docs/palette-figures.md`. Pinned exactly so a re-derivation nobody reviewed fails here.
+    assert palette_for(Theme.DARK).sequential == (
+        "#216D74",
+        "#2A828A",
+        "#3398A1",
+        "#48ADB7",
+        "#70C1C9",
+        "#9BD3D9",
+        "#C5E6E9",
     )
+    assert palette_for(Theme.DARK).sequential != tuple(
+        reversed(palette_for(Theme.LIGHT).sequential)
+    ), "Dark is back to the reversal, which mirrors the spec ramp's unevenness onto the weak end"
 
     for theme in (Theme.LIGHT, Theme.DARK):
         assert palette_for(theme).diverging == (

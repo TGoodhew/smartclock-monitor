@@ -133,6 +133,13 @@ against published figures before anything trusts it.
 byte-identical is what lets either repository trust the other's colours; reformatting it to
 this project's house style would buy nothing and cost that.
 
+**`sequential.py` is the one addition**, and it is written in that repository's style rather
+than this one's, so the copy back is a copy. Every carried file is still byte-identical; the
+*directory* is not, and that is tracked as
+[TGoodhew/WinZ3805A#1](https://github.com/TGoodhew/WinZ3805A/issues/1). It derives §9.4.4's
+sequential ramp for a dark surface, which the specification does not provide. Figures in
+`docs/palette-figures.md`, re-checked by `validate.py`.
+
 ---
 
 ## Design system
@@ -232,7 +239,7 @@ src/smartclock_device/        the receiver. NO Qt, NO application imports, ever.
 src/smartclock_monitor/       the application
   services/ viewmodels/ widgets/ views/ themes/ platform/
 tests/fixtures/               ten captured status screens — irreplaceable
-build/palette/                the colour derivation, carried verbatim, excluded from lint
+build/palette/                the colour derivation, carried verbatim (+ sequential.py), no lint
 .github/workflows/ci.yml      lint, types, palette self-test, then tests on Linux and Windows
 ```
 

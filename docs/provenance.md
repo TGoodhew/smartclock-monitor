@@ -16,9 +16,30 @@ than written here, and two of those can go wrong silently if the two repositorie
 | `docs/how-to-use.md` and `docs/images/how-to-use/` | same | Verbatim. The guide is correct about *what the application does*; every screenshot in it is a Windows capture and is wrong for this port until retaken. |
 | `docs/adding-a-receiver.md` | same | Verbatim. Describes the C# driver model. Kept because the *architecture* it teaches is what this port reproduces, not because the code samples compile here. **`docs/driver-contract.md` is this port's member-by-member mapping** — written here rather than by editing the inherited file, which would fork it. |
 | `tests/fixtures/` | `tests/WinZ3805A.Tests/Fixtures/` | Verbatim, including `capture-log.md`. Marked `-text`: these are device output and their exact bytes, line endings included, are the point. |
-| `build/palette/` | same | Verbatim, and already Python. Runs unchanged. |
+| `build/palette/` | same | Verbatim, and already Python. Runs unchanged — **plus one file added here**, `sequential.py`. See below. |
 
 Nothing else was taken. No C# was translated mechanically; the source tree here is new.
+
+## The one file added to a carried directory
+
+`build/palette/sequential.py`. Every file copied from WinZ3805A is still byte-identical; the
+*directory* is not, because this one is new.
+
+It derives §9.4.4's sequential ramp for a dark surface, which the specification does not provide —
+it gives one column of seven values and no per-theme variant, and a sequential ramp is read by
+lightness, so used verbatim on the Dark card the encoding is exactly inverted. Issue
+[#9](https://github.com/TGoodhew/smartclock-monitor/issues/9) here.
+
+**The same defect is expected upstream**, where the same values are resolved from one dictionary
+for both themes, and it is filed as
+[TGoodhew/WinZ3805A#1](https://github.com/TGoodhew/WinZ3805A/issues/1). Copying this file there
+restores the directory to identical. It is written in that repository's style, not this one's, so
+that the copy is a copy.
+
+Figures in [`palette-figures.md`](palette-figures.md); `validate.py` reproduces them and prints
+`!!` beside any it cannot.
+
+---
 
 ## The two that must not drift
 
