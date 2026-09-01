@@ -124,3 +124,83 @@ def test_both_launch_options_default_on() -> None:
     assert choice is not None
     assert choice.reconnect_automatically is True
     assert choice.connect_on_launch is True
+
+
+# ---- Reaching it from the window ----------------------------------------------------------------
+
+
+def test_the_main_window_offers_a_connect_button() -> None:
+    """The dialog was built and tested before anything opened it, which is a control that exists
+    and cannot be reached — the same defect class as one that looks live and does nothing."""
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from smartclock_monitor.themes.tokens import Theme
+    from smartclock_monitor.views.main_window import MainWindow
+
+    window = MainWindow(Theme.DARK)
+
+    assert window._connect_button.isVisible() or window._connect_button is not None
+    assert "Ctrl+Shift+C" in window._connect_button.toolTip()
+
+
+def test_the_choice_reaches_whoever_can_act_on_it(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The window does not know how to open a port and must not learn — it hands the choice to
+    whoever owns it."""
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QDialog
+
+    from smartclock_monitor.themes.tokens import Theme
+    from smartclock_monitor.views import main_window as module
+    from smartclock_monitor.views.main_window import MainWindow
+
+    del QDialog
+    monkeypatch.setattr(module, "ConnectionDialog", lambda *a, **k: _Accepting())
+
+    taken: list[object] = []
+    window = MainWindow(Theme.DARK)
+    window.on_connection_chosen = taken.append
+
+    choice = window.choose_connection()
+
+    assert choice is not None
+    assert taken == [choice]
+    assert choice.port == "/dev/ttyUSB0"
+
+
+class _Accepting:
+    """A stand-in dialog that answers as though the user pressed Connect."""
+
+    def exec(self) -> int:
+        from PySide6.QtWidgets import QDialog
+
+        return int(QDialog.DialogCode.Accepted)
+
+    def choice(self) -> object:
+        from smartclock_monitor.views.connection_dialog import ConnectionChoice
+
+        return ConnectionChoice(port="/dev/ttyUSB0", settings=None)
+
+
+def test_cancelling_hands_over_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
+    import os
+
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from smartclock_monitor.themes.tokens import Theme
+    from smartclock_monitor.views import main_window as module
+    from smartclock_monitor.views.main_window import MainWindow
+
+    class _Rejecting(_Accepting):
+        def exec(self) -> int:
+            return 0
+
+    monkeypatch.setattr(module, "ConnectionDialog", lambda *a, **k: _Rejecting())
+
+    taken: list[object] = []
+    window = MainWindow(Theme.DARK)
+    window.on_connection_chosen = taken.append
+
+    assert window.choose_connection() is None
+    assert taken == []

@@ -77,6 +77,7 @@ class Supervisor:
 
     _retry_now: asyncio.Event = field(default_factory=asyncio.Event, init=False)
     _stopped: bool = field(default=False, init=False)
+    _restarting: bool = field(default=False, init=False)
     _session: DeviceSession | None = field(default=None, init=False)
 
     # -- What the interface calls ----------------------------------------------------------------
@@ -92,6 +93,18 @@ class Supervisor:
 
     def resume(self) -> None:
         self._stopped = False
+        self._retry_now.set()
+
+    def reconnect(self) -> None:
+        """Drop the current session and connect again, now.
+
+        **A deliberate restart, not a fault.** Closing the transport under a live poll is exactly
+        the case the transport reports as a removal, and telling a user who has just pressed
+        Connect that their adapter "was disconnected" would be the application misreading its own
+        instruction. So the poll is asked to stop, and the cycle skips the countdown.
+        """
+        self._stopped = False
+        self._restarting = True
         self._retry_now.set()
 
     @property
@@ -134,6 +147,13 @@ class Supervisor:
                 self._adopt(None)
                 await _quietly_close(session)
 
+            if self._restarting:
+                # Asked for, so no countdown and no penalty: the next attempt is the first one.
+                self._restarting = False
+                self._retry_now.clear()
+                attempt = 0
+                continue
+
             attempt += 1
             if not await self._wait_to_retry(attempt):
                 return
@@ -154,13 +174,27 @@ class Supervisor:
         service.on_reading = self.on_reading
 
         polling = asyncio.ensure_future(service.run())
+        # Woken by the event as well as by the interval, so a *Connect* press is acted on at once
+        # rather than up to a second later. Polling a flag would have been simpler and would have
+        # made the button feel broken on the press that mattered.
+        woken = asyncio.ensure_future(self._retry_now.wait())
         try:
             while not polling.done():
+                if self._restarting:
+                    self._say("Reconnecting…")
+                    return
                 if session.state is ConnectionState.LOST:
                     self._say(session.last_fault or "The connection was lost.")
                     return
-                await asyncio.wait([polling], timeout=_WATCH_INTERVAL)
+                await asyncio.wait(
+                    [polling, woken],
+                    timeout=_WATCH_INTERVAL,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
         finally:
+            woken.cancel()
+            with suppress(asyncio.CancelledError):
+                await woken
             polling.cancel()
             # Awaited rather than abandoned: a cancelled task that is never awaited leaves its
             # exception unretrieved, which asyncio reports at garbage-collection time and which
