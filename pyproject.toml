@@ -65,11 +65,15 @@ packages = ["src/smartclock_device", "src/smartclock_monitor"]
 # finished XAML. So it is on now, while the tree is empty and it is free.
 # ---------------------------------------------------------------------------
 [tool.mypy]
-files = ["src", "tests"]
+files = ["src", "tests", "tools"]
+# tools/ is not a package and is imported by tests/test_nmea.py, which drives the NMEA driver
+# from the simulator's own output rather than from sentences pasted into the test. It is checked
+# too: a simulator that drifts from the spec it emits would produce tests that pass against a
+# fiction, which is the one thing a simulator must not do.
 strict = true
 warn_unreachable = true
 disallow_any_explicit = false     # PySide6 signal plumbing needs a little slack
-mypy_path = "src"
+mypy_path = "src:tools"
 
 [[tool.mypy.overrides]]
 module = ["serial.*", "serial_asyncio.*", "qasync.*"]
