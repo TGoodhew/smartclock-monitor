@@ -19,8 +19,11 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 
 from conftest import NOW
+from smartclock_device.clock import FixedClock
 from smartclock_device.commands import catalog
 from smartclock_device.commands.scpi_command import ScpiCommand
+from smartclock_device.drivers.base import ReceiverDriver
+from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.models import status_register_map as registers
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
 from smartclock_device.transport.transaction import Transaction, TransactionOutcome
@@ -60,9 +63,19 @@ class FakeRunner:
     connected: bool = True
     sent: list[tuple[str, object]] = field(default_factory=list)
 
+    #: Which family is on the other end. Defaults to the SmartClock, because that is what almost
+    #: every test is about; a test for §12's capability gating supplies one that supports less.
+    driver_for: ReceiverDriver | None = None
+
     @property
     def is_connected(self) -> bool:
         return self.connected
+
+    @property
+    def driver(self) -> ReceiverDriver | None:
+        if self.driver_for is not None:
+            return self.driver_for
+        return SmartClockDriver(clock=FixedClock(NOW)) if self.connected else None
 
     def run(self, commands: Sequence[tuple[ScpiCommand, object]], then: Then | None = None) -> None:
         outcomes = []

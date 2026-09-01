@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Protocol
 
 from smartclock_device.commands.scpi_command import ScpiCommand
+from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_monitor.services.session import CommandOutcome, DeviceSession
 
 #: What a caller gets back. One outcome per command, in the order they were asked for.
@@ -52,6 +53,16 @@ class CommandRunner(Protocol):
         """
         ...
 
+    @property
+    def driver(self) -> ReceiverDriver | None:
+        """The driver the session selected, so a page can ask what this family supports.
+
+        ``None`` before anything is connected. Exposed here rather than the session itself because
+        a page has no business with a session — §12's seam is that the application asks *the driver
+        the session selected*, and this is the narrowest thing that satisfies it.
+        """
+        ...
+
 
 @dataclass
 class SessionCommands:
@@ -73,6 +84,10 @@ class SessionCommands:
         from smartclock_monitor.services.session import ConnectionState
 
         return self.session.state is ConnectionState.CONNECTED
+
+    @property
+    def driver(self) -> ReceiverDriver | None:
+        return self.session.driver
 
     @property
     def is_busy(self) -> bool:

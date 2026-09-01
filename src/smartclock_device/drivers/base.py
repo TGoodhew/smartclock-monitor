@@ -88,6 +88,21 @@ class ReceiverDriver(Protocol):
         """
         ...
 
+    def supports(self, command: ScpiCommand) -> bool:
+        """Whether **this family** can send this command at all.
+
+        Asked by a page before it offers a control, so a family that has no such command gets a
+        disabled control with an explanation rather than a button that fails on click — or, worse,
+        a crash on navigation. §12's #304 records that exact defect in the original: every Details
+        page asked for its tier C commands with a form that throws, which was "correct while one
+        family shipped, and a crash on navigation the day a reads-only talker arrived".
+
+        Distinct from :meth:`is_allowed`, which takes a mnemonic and answers the *point-of-send*
+        question. This takes a command object and answers a question about the family, before
+        anything is sent and often before anything is connected.
+        """
+        ...
+
     def is_blocked(self, mnemonic: str | None) -> bool:
         """Whether §8.4 excludes this command for this family.
 

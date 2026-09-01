@@ -54,6 +54,7 @@ from smartclock_monitor.services.session import CommandOutcome
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
+from smartclock_monitor.views.capability import gate
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.pages import DASH, Page, card, label
 from smartclock_monitor.widgets.severity_pill import SeverityPill
@@ -289,10 +290,17 @@ class DiagnosticsPage(Page):
 
     def _retune(self) -> None:
         live = self._runner is not None and self._runner.is_connected
-        for button in (self._run, self._refresh_log, self._clear_log, self._read_errors):
-            button.setEnabled(live)
-        for button in self._experimental_buttons:
-            button.setEnabled(live)
+        driver = self._runner.driver if live and self._runner is not None else None
+
+        gate(self._run, driver, catalog.RUN_SELF_TEST)
+        gate(self._clear_log, driver, catalog.CLEAR_DIAGNOSTIC_LOG)
+        gate(self._refresh_log, driver, catalog.DIAGNOSTIC_LOG)
+        gate(self._read_errors, driver, catalog.ERROR_QUEUE)
+
+        # §8.5's six are gated one by one: a family might have some and not others, and a card
+        # that enabled all six because one existed would offer five buttons that fail on click.
+        for button, command in zip(self._experimental_buttons, catalog.EXPERIMENTAL, strict=True):
+            gate(button, driver, command)
 
     # -- Reading ---------------------------------------------------------------------------------
 
