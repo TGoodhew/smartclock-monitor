@@ -69,6 +69,20 @@ RADII: Final[tuple[int, ...]] = (Radius.CONTROL, Radius.CARD)
 #: property of one control.
 MINIMUM_POINTER_TARGET: Final = 32
 
+#: §9.10.2's one recorded exception to the floor above, for sky-plot markers only.
+#:
+#: **A marker's position is the data.** It is the satellite's actual place in the sky and cannot be
+#: moved to make room, so growing the target past a point stops helping and starts hurting: two
+#: targets that overlap mean one marker silently takes the other's clicks, which is worse than a
+#: small target because a missed click is obvious and a wrong selection is not.
+#:
+#: The number is not a preference. On this plot at its own 240 px minimum, PRN 5 and PRN 20 in
+#: ``locked-stabilizing.txt`` sit **27.0 px** apart — so 32 px targets overlap on real captured sky
+#: and 24 px ones do not. §9.10.2 predicted exactly that and named the compliant path with it: the
+#: keyboard model reaches every satellite regardless of size, and the tracked/not-tracked tables
+#: carry the same data at ≥ 40 px with selection shared both ways.
+SKY_PLOT_POINTER_TARGET: Final = 24
+
 #: §9.12's touch floor, for the modes this application does not have (#186). Named because §10.5's
 #: tables meet it deliberately: they are the compliant alternate to a control that can meet neither
 #: floor, so that argument should rest on the stronger number rather than the one it needs.
