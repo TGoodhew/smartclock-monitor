@@ -57,6 +57,7 @@ from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
 from smartclock_monitor.views.confirm_dialog import ask
+from smartclock_monitor.views.manage_satellites import ask_to_manage, parse_exclusions
 from smartclock_monitor.widgets.copy_menu import attach_table_menu, attach_value_menu
 from smartclock_monitor.widgets.severity_pill import SeverityPill
 from smartclock_monitor.widgets.sky_plot import SkyPlot
@@ -285,6 +286,10 @@ class SatellitesPage(Page):
     _COLUMNS = ("PRN", "Elevation", "Azimuth", "Signal", "State")
 
     def __init__(self, palette: Palette = LIGHT, parent: QWidget | None = None) -> None:
+        self._runner: CommandRunner | None = None
+        self._excluded: frozenset[int] = frozenset()
+        self._exclusions_known = False
+        self._mask_written: int | None = None
         super().__init__(palette, parent)
 
         layout = QHBoxLayout(self)
@@ -315,10 +320,30 @@ class SatellitesPage(Page):
             header.setSectionResizeMode(len(self._COLUMNS) - 1, QHeaderView.ResizeMode.Stretch)
         table_layout.addWidget(self._table)
         self._attach_table_menu()
+
+        controls = QHBoxLayout()
+        controls.addWidget(label("Elevation mask", "caption"))
+        self._mask = QSpinBox()
+        self._mask.setRange(0, 90)
+        self._mask.setSuffix("°")
+        self._mask.setAccessibleName("Elevation mask in degrees")
+        self._mask.setKeyboardTracking(False)
+        controls.addWidget(self._mask)
+        self._apply_mask = QPushButton("Apply")
+        self._apply_mask.setProperty("role", "destructive")
+        self._apply_mask.clicked.connect(self._send_mask)
+        controls.addWidget(self._apply_mask)
+        controls.addStretch(1)
+        self._manage = QPushButton("Manage…")
+        self._manage.setAccessibleName("Choose which satellites the receiver may track")
+        self._manage.clicked.connect(self._manage_satellites)
+        controls.addWidget(self._manage)
+        table_layout.addLayout(controls)
         layout.addWidget(table_card, 1)
 
     def show_reading(self, reading: Reading) -> None:
         status = reading.status
+        self._sync_mask(status.elevation_mask_degrees)
         self._plot.set_satellites(
             status.tracked,
             status.not_tracked,
@@ -364,6 +389,88 @@ class SatellitesPage(Page):
     @property
     def plot(self) -> SkyPlot:
         return self._plot
+
+    # -- §10.5's mask editor and exclusion list --------------------------------------------------
+
+    def set_command_runner(self, runner: CommandRunner | None) -> None:
+        self._runner = runner
+        live = runner is not None and runner.is_connected
+        self._apply_mask.setEnabled(live)
+        self._manage.setEnabled(live)
+        if live:
+            self.refresh_exclusions()
+
+    def refresh_exclusions(self) -> None:
+        """§10.5: read **on navigation, on reconnect, and after the Manage dialog — never on the
+        sweep.** It changes only when someone changes it, and a second query on the 1 s cadence to
+        catch an event that happens twice a year would be paying wire time for nothing (§7.3).
+        """
+        runner = self._runner
+        if runner is None or not runner.is_connected:
+            return
+        runner.run([(catalog.EXCLUDED_SATELLITES, None)], self._absorb_exclusions)
+
+    def _absorb_exclusions(self, outcomes: Sequence[CommandOutcome]) -> None:
+        line = None
+        if outcomes and outcomes[0].transaction is not None:
+            line = outcomes[0].transaction.first_line
+        self._excluded, self._exclusions_known = parse_exclusions(line)
+
+    @property
+    def excluded(self) -> frozenset[int]:
+        return self._excluded
+
+    def _manage_satellites(self) -> None:
+        runner = self._runner
+        if runner is None:
+            return
+
+        commands = ask_to_manage(
+            self._excluded, known=self._exclusions_known, palette=self._palette, parent=self
+        )
+        if not commands:
+            # None means cancelled and [] means nothing changed. Neither sends anything, and
+            # neither is worth telling the user about.
+            return
+
+        # One confirmation for one action, naming every command it will send.
+        rendered = [
+            text
+            for text in (command.rendered(argument) for command, argument in commands)
+            if text is not None
+        ]
+        if not ask(commands[0][0], commands[0][1], self._palette, self, detail=rendered):
+            return
+
+        runner.run(commands, lambda _o: self.refresh_exclusions())
+
+    def _sync_mask(self, degrees: int | None) -> None:
+        """§10.5: the editor **opens on the receiver's own mask**, which the status screen already
+        carries — so unlike §10.8's duration limit this costs no wire time.
+
+        It was a hard-coded 10 in the original until #320, and that it happened to match the unit
+        it was developed against made it worse rather than better: *a default that is right by
+        luck is a default nobody checks.*
+
+        Not overwritten once the user has typed. A sweep lands every second and would otherwise
+        undo them mid-edit — decided by comparing against the last value this page wrote, for the
+        same reason the holdover limit does.
+        """
+        if degrees is None:
+            return
+        if self._mask_written is None or self._mask.value() == self._mask_written:
+            self._mask.setValue(degrees)
+            self._mask_written = degrees
+
+    def _send_mask(self) -> None:
+        runner = self._runner
+        if runner is None:
+            return
+        degrees = self._mask.value()
+        if not ask(catalog.SET_ELEVATION_MASK, degrees, self._palette, self):
+            return
+        self._mask_written = degrees
+        runner.run([(catalog.SET_ELEVATION_MASK, degrees)])
 
     def _attach_table_menu(self) -> None:
         attach_table_menu(self._table, self.csv_rows)

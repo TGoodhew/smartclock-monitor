@@ -457,6 +457,80 @@ ANTENNA_DELAY: Final = ScpiCommand(
     unit="s",
 )
 
+# ---- §10.5's satellite exclusion -----------------------------------------------------------------
+#
+# §8.3 gives :IGN:ALL and :INCL:NONE their own sentences, and its amendment note explains why that
+# matters more than it looks: :IGN:NONE shared the PRN form's sentence — "Exclude the selected
+# satellites from tracking?" — for a command that *clears* the exclusion list, so a user confirming
+# it would reasonably believe they were excluding satellites while making every one eligible again.
+
+#: How many PRNs there are. The manage dialog lists 1–32 and the bounds are checked per element.
+FIRST_PRN: Final = 1
+LAST_PRN: Final = 32
+
+EXCLUDED_SATELLITES: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:IGN?",
+    summary="Which satellites are excluded from tracking",
+    response=ResponseFormat.VALUE_LIST,
+)
+
+EXCLUDE_SATELLITES: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:IGN",
+    summary="Exclude satellites from tracking",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.INTEGER_LIST,
+    minimum=FIRST_PRN,
+    maximum=LAST_PRN,
+    confirmation="Exclude the selected satellites from tracking?",
+)
+
+EXCLUDE_ALL_SATELLITES: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:IGN:ALL",
+    summary="Exclude every satellite from tracking",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    confirmation=("Exclude all satellites? The receiver will lose lock and enter holdover."),
+    requires_acknowledgement=True,
+)
+
+#: Its **own** sentence — see the note above. This is the one §8.3 was amended for.
+CLEAR_EXCLUSIONS: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:IGN:NONE",
+    summary="Clear the exclusion list",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    confirmation=("Clear the exclusion list? Every satellite becomes eligible for tracking again."),
+)
+
+INCLUDE_SATELLITES: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:INCL",
+    summary="Set the tracking inclusion list",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.INTEGER_LIST,
+    minimum=FIRST_PRN,
+    maximum=LAST_PRN,
+    confirmation="Update the tracking inclusion list?",
+)
+
+INCLUDE_ALL_SATELLITES: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:INCL:ALL",
+    summary="Make every satellite eligible for tracking",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    confirmation="Make every satellite eligible for tracking?",
+)
+
+INCLUDE_NO_SATELLITES: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:INCL:NONE",
+    summary="Track no satellites",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    confirmation="Track no satellites? The receiver will lose lock and enter holdover.",
+    requires_acknowledgement=True,
+)
+
 #: Every catalogued command. **The allowlist.**
 ALL: Final[tuple[ScpiCommand, ...]] = (
     IDENTITY,
@@ -494,6 +568,13 @@ ALL: Final[tuple[ScpiCommand, ...]] = (
     SET_ELEVATION_MASK,
     SET_ANTENNA_DELAY,
     *REGISTER_SETTERS,
+    EXCLUDED_SATELLITES,
+    EXCLUDE_SATELLITES,
+    EXCLUDE_ALL_SATELLITES,
+    CLEAR_EXCLUSIONS,
+    INCLUDE_SATELLITES,
+    INCLUDE_ALL_SATELLITES,
+    INCLUDE_NO_SATELLITES,
 )
 
 _BY_MNEMONIC: Final[MappingProxyType[str, ScpiCommand]] = MappingProxyType(
