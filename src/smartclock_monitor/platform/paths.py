@@ -44,6 +44,15 @@ def data_directory(environment: dict[str, str] | None = None) -> Path:
     return root / APPLICATION_DIRECTORY
 
 
+def log_directory(environment: dict[str, str] | None = None) -> Path:
+    """Where the application's own log goes.
+
+    Beside the trend store rather than in a second place: §10.9's *Show log folder* opens one
+    folder, and a user looking for "the files this thing wrote" should find all of them there.
+    """
+    return data_directory(environment) / "logs"
+
+
 def trend_database(environment: dict[str, str] | None = None) -> Path:
     """The default path for the trend store."""
     return data_directory(environment) / TREND_DATABASE

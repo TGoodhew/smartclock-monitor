@@ -340,6 +340,10 @@ class DetailsWindow(QMainWindow):
             if was_showing:
                 self._navigation.setCurrentRow(0)
 
+        diagnostics = self.page_named(DiagnosticsPage.title)
+        if isinstance(diagnostics, DiagnosticsPage):
+            diagnostics.set_experimental_visible(preferences.undocumented_queries)
+
         settings = self.page_named(SettingsPage.title)
         if isinstance(settings, SettingsPage) and settings.preferences != preferences:
             settings.set_preferences(preferences)
