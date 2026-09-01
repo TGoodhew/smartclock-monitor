@@ -15,6 +15,7 @@ detail — are set in the device face so that "what the machine said" stays visu
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from datetime import datetime
 
 from PySide6.QtCore import Qt
@@ -40,6 +41,7 @@ from smartclock_device.models.receiver_status import (
 from smartclock_monitor.services import preferences
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.polling import Reading
+from smartclock_monitor.services.preferences import Preferences
 from smartclock_monitor.services.supervisor import Supervisor
 from smartclock_monitor.services.trend_store import TrendStore
 from smartclock_monitor.themes.qss import stylesheet
@@ -324,11 +326,21 @@ class MainWindow(QMainWindow):
         self._details.raise_()
         self._details.activateWindow()
 
-    def _remember_preferences(self, updated: preferences.Preferences) -> None:
+    @property
+    def preferences(self) -> Preferences:
+        return self._preferences
+
+    #: Set by whoever owns the window, to hear about a preference the user changed. ``None`` means
+    #: nobody is listening, which is what a test wants.
+    on_preferences_changed: Callable[[Preferences], None] | None = None
+
+    def _remember_preferences(self, updated: Preferences) -> None:
         """§10.13: a write that fails is not reported. A preference is by definition something the
         user can set again, and nothing load-bearing lives in one of these files."""
         self._preferences = updated
         preferences.save(updated)
+        if self.on_preferences_changed is not None:
+            self.on_preferences_changed(updated)
 
     def set_supervisor(self, supervisor: Supervisor | None) -> None:
         """§9.11's connection-lost state offers *Retry now* and *Stop retrying* beside the
