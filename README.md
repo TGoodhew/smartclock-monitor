@@ -71,10 +71,34 @@ this, keep it.
 
 ## Running it
 
+On a **fresh Ubuntu** — Debian and its derivatives are the same — three things are needed before
+Python is:
+
 ```bash
-python -m venv .venv && . .venv/bin/activate    # Windows: .venv\Scripts\activate
+sudo apt update
+sudo apt install -y python3-venv python3-pip           # Ubuntu ships venv separately
+sudo apt install -y libegl1 libgl1 libxkbcommon0       # Qt will not open a window without these
+```
+
+Then:
+
+```bash
+python3 -m venv .venv && . .venv/bin/activate    # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
 ```
+
+**If anything is wrong, ask it rather than reading a traceback.** The first run on a new machine
+tends to fail three layers below the actual problem — PySide6 imports and then cannot create a
+window, a port exists and cannot be opened — so the application will tell you what is missing and
+the command that fixes it:
+
+```bash
+smartclock-monitor --doctor
+```
+
+It checks the Python version, PySide6, whether Qt can open a display at all, the bundled typefaces,
+pyserial, which serial ports are visible, and whether **this shell** is in the `dialout` group. It
+exits non-zero if anything is broken, so it works in a script.
 
 **Without hardware.** The ten captured status screens, replayed through the real line protocol,
 session and poll loop — the same code path a receiver drives, with only the source of the bytes
@@ -103,9 +127,14 @@ scheme, that is a real reduction against the Windows application — see
 [`docs/divergences.md`](docs/divergences.md).
 
 > **Linux serial access** is the first thing that will go wrong. Your user needs to be in the
-> `dialout` group (`sudo usermod -aG dialout $USER`, then log out and back in). Under WSL, a USB
-> adapter needs `usbipd attach` from an elevated Windows prompt before it appears at all — only
-> real motherboard ports show up as `/dev/ttyS*` without it.
+> `dialout` group (`sudo usermod -aG dialout $USER`, then log out and back in). The trap is that
+> being *listed* in the group is not the same as this shell *having* it: a terminal opened before
+> the group was granted keeps the old set and every open is refused until you log out — which is
+> why `--doctor` asks the running process rather than reading `/etc/group`. `newgrp dialout` fixes
+> one shell without logging out. Never `chmod` the device node.
+>
+> Under WSL, a USB adapter needs `usbipd attach` from an elevated Windows prompt before it appears
+> at all — only real motherboard ports show up as `/dev/ttyS*` without it.
 
 ## Building
 
