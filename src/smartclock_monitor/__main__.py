@@ -57,6 +57,15 @@ def build_parser() -> argparse.ArgumentParser:
         prog="smartclock-monitor",
         description="Monitor an HP/Symmetricom SmartClock GPS-disciplined oscillator.",
     )
+    parser.add_argument(
+        "--doctor",
+        action="store_true",
+        help=(
+            "check this machine and say what is missing — Qt's libraries, serial access, the "
+            "bundled fonts — then exit. Runs before anything else and needs no receiver."
+        ),
+    )
+
     source = parser.add_mutually_exclusive_group()
     source.add_argument(
         "--demo",
@@ -140,6 +149,13 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if arguments.list_ports:
         return list_ports()
+
+    # Before the Qt import below, deliberately: the machine that needs the doctor most is the one
+    # where importing PySide6 is itself the thing that fails.
+    if arguments.doctor:
+        from smartclock_monitor.doctor import report
+
+        return report()
 
     # Imported here rather than at module scope so that --list-ports and --help work on a machine
     # with no display and no Qt libraries installed.
