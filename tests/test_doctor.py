@@ -8,6 +8,7 @@ broken in an interesting way.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -86,3 +87,84 @@ def test_it_finds_the_bundled_faces() -> None:
 
     assert finding.ok, finding.detail
     assert "Cascadia Mono" in finding.detail
+
+
+# ---- The adapter that is present and has no port -------------------------------------------------
+
+
+def _fake_usb(tmp_path: Path, vendors: list[str]) -> Path:
+    """A sysfs-shaped tree with these vendor ids on the bus."""
+    root = tmp_path / "devices"
+    root.mkdir(parents=True, exist_ok=True)
+    for index, vendor in enumerate(vendors):
+        entry = root / f"1-{index}"
+        entry.mkdir()
+        (entry / "idVendor").write_text(vendor, encoding="ascii")
+    return root
+
+
+def test_an_adapter_with_no_port_is_reported_as_the_problem_it_is(tmp_path: Path) -> None:
+    """**The gap that looks like nothing at all.** An adapter can be attached and enumerated while
+    no ``/dev/ttyUSB*`` exists, and the port check then says, truthfully, that none was found — so
+    the user believes the cable is wrong when the kernel handed the device to something else.
+
+    On Ubuntu that is usually brltty, which ships by default and claims these chips because Braille
+    displays share their vendor ids. Not a misconfiguration anybody made, and not discoverable
+    without being told — which is the whole reason a doctor exists.
+    """
+    bus = _fake_usb(tmp_path, ["067b"])
+
+    finding = doctor._usb_serial_hardware(bus, has_port=False)
+
+    assert not finding.ok
+    assert "Prolific" in finding.detail
+    assert "no port" in finding.detail
+    assert "brltty" in finding.remedy
+
+
+def test_an_adapter_with_a_port_is_fine(tmp_path: Path) -> None:
+    """The ordinary working case must not read as a warning."""
+    bus = _fake_usb(tmp_path, ["067b"])
+
+    finding = doctor._usb_serial_hardware(bus, has_port=True)
+
+    assert finding.ok
+    assert "Prolific" in finding.detail
+
+
+def test_a_bus_with_no_serial_hardware_says_so_quietly(tmp_path: Path) -> None:
+    """A machine with nothing plugged in is the ordinary case and must not read as broken."""
+    finding = doctor._usb_serial_hardware(_fake_usb(tmp_path, []), has_port=False)
+
+    assert finding.ok
+    assert "none on the bus" in finding.detail
+
+
+def test_the_port_list_does_not_bury_the_adapter_in_stubs(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A desktop Linux kernel offers ttyS0 through ttyS31 whether or not any exists in hardware.
+    Printing all thirty-two buries the one fact that matters, which is what a clean VM reported —
+    WSL offers eight, few enough that it never showed here."""
+    from types import SimpleNamespace
+
+    from serial.tools import list_ports
+
+    stubs = [
+        SimpleNamespace(device=f"/dev/ttyS{n}", vid=None, pid=None, description="n/a")
+        for n in range(32)
+    ]
+    adapter = SimpleNamespace(
+        device="/dev/ttyUSB0", vid=0x067B, pid=0x2303, description="USB-Serial Controller"
+    )
+
+    monkeypatch.setattr(list_ports, "comports", lambda: [*stubs, adapter])
+    with_adapter = doctor._ports()
+
+    monkeypatch.setattr(list_ports, "comports", lambda: stubs)
+    without = doctor._ports()
+
+    assert "/dev/ttyUSB0" in with_adapter.detail
+    assert "ttyS0" not in with_adapter.detail, "the stubs are back to drowning the adapter"
+    assert "32 built-in" in with_adapter.detail, "the stubs are not accounted for at all"
+
+    assert "no USB adapter found" in without.detail
+    assert "ttyS" not in without.detail

@@ -97,7 +97,8 @@ smartclock-monitor --doctor
 ```
 
 It checks the Python version, PySide6, whether Qt can open a display at all, the bundled typefaces,
-pyserial, which serial ports are visible, and whether **this shell** is in the `dialout` group. It
+pyserial, which serial ports are visible, whether a USB serial adapter is on the bus at all, and
+whether **this shell** is in the `dialout` group. It
 exits non-zero if anything is broken, so it works in a script.
 
 **Without hardware.** The ten captured status screens, replayed through the real line protocol,
@@ -132,6 +133,13 @@ scheme, that is a real reduction against the Windows application — see
 > the group was granted keeps the old set and every open is refused until you log out — which is
 > why `--doctor` asks the running process rather than reading `/etc/group`. `newgrp dialout` fixes
 > one shell without logging out. Never `chmod` the device node.
+>
+> **The adapter is plugged in and there is no `/dev/ttyUSB*`.** On Ubuntu desktop this is almost
+> always `brltty`, which is installed by default and claims several USB-serial chips because Braille
+> displays are built on them — Prolific PL2303 most often. Nothing is misconfigured and nothing in
+> the port list hints at it, which is why `--doctor` reads the USB bus separately and will say *"a
+> Prolific is on the bus and Linux created no port for it"* rather than the literally-true and
+> useless *"no adapter found"*. `sudo apt remove brltty`, then unplug and replug.
 >
 > Under WSL, a USB adapter needs `usbipd attach` from an elevated Windows prompt before it appears
 > at all — only real motherboard ports show up as `/dev/ttyS*` without it.
