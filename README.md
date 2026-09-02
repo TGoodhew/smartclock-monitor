@@ -152,6 +152,29 @@ the specification and asks the suite to account for every P0 — each names the 
 or is listed with the reason it needs a person instead. An audit nobody re-runs is a snapshot;
 this one fails when it stops being true.
 
+## Packaging it
+
+A self-contained directory that needs no Python on the target machine:
+
+```bash
+pip install -e ".[package]"
+pyinstaller build/smartclock-monitor.spec
+./dist/smartclock-monitor/smartclock-monitor --doctor
+```
+
+About 180 MB, most of it Qt. A directory rather than a single file on purpose: `--onefile` unpacks
+that much on every launch, which costs seconds a run and fails where `/tmp` is mounted `noexec` —
+the wrong trade for something left docked beside a spectrum analyser for weeks. It is also what an
+AppImage or an installer wraps.
+
+**The parts that go wrong silently are the data files.** Qt's own plugins PyInstaller finds; the
+bundled typefaces, the guide and the captured screens `--demo` replays are read through
+`importlib.resources` and are invisible to its dependency graph. Left out, the application starts
+in the wrong font, with a help key that opens an apology, and a demo that shows nothing for ever.
+The spec ships all three and `--doctor` reports the fonts, so a bundle missing them says so.
+
+Flatpak and an AppImage are the intended Linux distribution (D2); neither is built yet.
+
 ## Adding another receiver
 
 Every receiver-specific fact sits behind a driver, so a second family is a new file rather than a

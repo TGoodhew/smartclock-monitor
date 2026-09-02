@@ -23,6 +23,8 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Sequence
 from dataclasses import dataclass
+from importlib import resources
+from importlib.resources.abc import Traversable
 from pathlib import Path
 from typing import Final
 
@@ -31,8 +33,17 @@ from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockM
 from smartclock_device.parsing.status_screen import StatusScreenParser
 from smartclock_device.transport.faults import TransportError, TransportFault
 
-#: Where the captured screens live.
-FIXTURES: Final = Path(__file__).resolve().parents[3] / "tests" / "fixtures"
+#: Where the captured screens live in a **repository checkout**.
+#:
+#: Not the only place they can be. An installed copy has no `tests/` directory at all, so this path
+#: resolves to nothing and `--demo` starts an application that never shows a reading — silently,
+#: because a demo with no screens looks exactly like a receiver that has not answered yet. That was
+#: true of every non-editable install, wheel and bundle alike, while the README offered `--demo` as
+#: the first thing to try. See :func:`fixture_root`.
+CHECKOUT_FIXTURES: Final = Path(__file__).resolve().parents[3] / "tests" / "fixtures"
+
+#: Where they live in an installed copy, put there by `pyproject.toml` and the PyInstaller spec.
+PACKAGED_FIXTURES: Final = "smartclock_monitor.resources.fixtures"
 
 #: The order the demo walks them in: a receiver being switched on, finding the sky, locking,
 #: losing the antenna, and recovering. It reads as a story rather than as a list.
@@ -58,9 +69,51 @@ _REFUSAL_PROMPT: Final = "E-230> "
 _IDENTITY: Final = "SYMMETRICOM,Z3805A,3625A02931,1.01.03-A"
 
 
+def fixture_root() -> Traversable:
+    """Where the captured screens are on *this* installation.
+
+    The packaged copy first, then the checkout. Both are the same bytes — the fixtures are device
+    output and `.gitattributes` marks them `-text` so nothing rewrites their line endings on the
+    way into a wheel either.
+
+    Raises with both paths named when neither exists. **Loudly, and this is the one place that is
+    right**: §11.1's rule is that a *parser* never raises, because an unreadable field is ordinary.
+    A demo with no screens is not ordinary — it is an installation that cannot do the thing the
+    README tells a new user to try first, and starting anyway means a window that waits for ever
+    for a receiver that was never going to answer.
+    """
+    try:
+        packaged = resources.files(PACKAGED_FIXTURES)
+        if (packaged / "locked-stabilizing.txt").is_file():
+            # Returned as it comes. ``Path(str(packaged))`` looks harmless and is not: on an
+            # installed copy this is a MultiplexedPath, whose ``str`` is its *repr*, so that built
+            # a relative path named "MultiplexedPath('…')" and every read failed. Both this and a
+            # real Path support ``/`` and ``read_bytes``, which is all a caller needs.
+            return packaged
+    except (ModuleNotFoundError, OSError):
+        pass
+
+    if (CHECKOUT_FIXTURES / "locked-stabilizing.txt").is_file():
+        return CHECKOUT_FIXTURES
+
+    raise FileNotFoundError(
+        "The captured status screens --demo replays are not installed. Looked for "
+        f"{PACKAGED_FIXTURES!r} in the package and {CHECKOUT_FIXTURES} on disk. "
+        "A checkout has them at tests/fixtures/; an installed copy should carry them and this one "
+        "does not."
+    )
+
+
 def _read(name: str) -> str:
-    """A fixture exactly as the device wrote it, CRLF endings included."""
-    return (FIXTURES / name).read_bytes().decode("latin-1")
+    """A fixture exactly as the device wrote it, CRLF endings included.
+
+    Joined a segment at a time: the demo names screens as ``captured/power-up…`` and a
+    ``Traversable`` is not required to accept a separator inside one component.
+    """
+    found = fixture_root()
+    for part in name.split("/"):
+        found = found / part
+    return found.read_bytes().decode("latin-1")
 
 
 @dataclass(frozen=True, slots=True)

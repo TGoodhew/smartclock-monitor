@@ -39,6 +39,13 @@ dev = [
     "numpy>=1.26",       # build/palette only
 ]
 
+# Kept out of `dev` on purpose: PyInstaller pulls a compiler toolchain's worth of machinery and
+# nobody running the tests needs it. `pip install -e ".[package]"` when you are building an
+# artefact, which is a different job from working on the code.
+package = [
+    "pyinstaller>=6.10",
+]
+
 [project.scripts]
 smartclock-monitor = "smartclock_monitor.__main__:main"
 
@@ -53,6 +60,12 @@ packages = ["src/smartclock_device", "src/smartclock_monitor"]
 # document would give an installed copy a help key that opens an apology.
 [tool.hatch.build.targets.wheel.force-include]
 "docs/how-to-use.md" = "smartclock_monitor/resources/how-to-use.md"
+
+# The captured screens --demo replays. Without them an installed copy starts and never shows a
+# reading, which looks exactly like a receiver that has not answered yet — and --demo is the first
+# thing the README tells a new user to run. Copied byte-for-byte; they are device output and
+# .gitattributes marks them -text so nothing rewrites their endings on the way in.
+"tests/fixtures" = "smartclock_monitor/resources/fixtures"
 
 # ---------------------------------------------------------------------------
 # mypy --strict from the first commit, not later.
