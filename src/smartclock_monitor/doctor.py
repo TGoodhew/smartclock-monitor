@@ -19,6 +19,7 @@ the installation where PySide6 itself is the broken thing.
 from __future__ import annotations
 
 import os
+import pathlib
 import platform
 import shutil
 import sys
@@ -140,15 +141,57 @@ def _pyserial() -> Finding:
     return Finding("pyserial", True, getattr(serial, "__version__", "present"))
 
 
+#: Name fragments that denote a USB serial adapter, across the three platforms.
+#:
+#: Used *alongside* the USB vendor id rather than instead of it: a real adapter normally reports a
+#: vid, and under WSL's usbipd passthrough it reports none at all — so either signal on its own
+#: misses a receiver that is plugged in and working.
+_ADAPTER_HINTS: Final = ("ttyusb", "ttyacm", "usbserial", "usbmodem", "com")
+
+
+def _is_adapter(port: object) -> bool:
+    if getattr(port, "vid", None) is not None:
+        return True
+    device = str(getattr(port, "device", "")).lower()
+    return any(hint in device for hint in _ADAPTER_HINTS)
+
+
+def _uart(count: int) -> str:
+    return "port" if count == 1 else "ports"
+
+
 def _ports() -> Finding:
+    """Which ports could plausibly have a receiver on them.
+
+    **Not a list of every device node.** A desktop Linux kernel offers ttyS0 through ttyS31 whether
+    or not any of them exists in hardware, and printing all thirty-two buries the one fact that
+    matters — whether an adapter is attached — in a wall of names. Reported from a clean VM, where
+    that is exactly what it did; WSL offers eight, which is few enough that the problem never
+    showed here.
+    """
     try:
         from serial.tools import list_ports
     except ImportError:
         return Finding("Serial ports", False, "pyserial is not importable", "See above.")
 
-    found = [port.device for port in list_ports.comports()]
-    if found:
-        return Finding("Serial ports", True, ", ".join(sorted(found)))
+    ports = sorted(list_ports.comports(), key=lambda port: port.device)
+    adapters = [port for port in ports if _is_adapter(port)]
+    builtin = len(ports) - len(adapters)
+
+    if adapters:
+        detail = ", ".join(
+            port.device
+            if port.description in ("n/a", "", None)
+            else f"{port.device} ({port.description})"
+            for port in adapters
+        )
+        if builtin:
+            detail += f"  (+{builtin} built-in {_uart(builtin)}, which a receiver rarely sits on)"
+        return Finding("Serial ports", True, detail)
+
+    detail = "no USB adapter found"
+    if builtin:
+        detail += f" — {builtin} built-in {_uart(builtin)} only"
 
     remedy = "Nothing is plugged in, or the adapter needs its driver."
     if _is_wsl():
@@ -156,8 +199,83 @@ def _ports() -> Finding:
             "Under WSL a USB adapter needs 'usbipd attach' from an elevated Windows prompt "
             "before it appears at all."
         )
-    # Not a failure: --demo needs no port, and this is the ordinary state of a dev machine.
-    return Finding("Serial ports", True, "none found", remedy)
+    # Not a failure: --demo needs no port, and a machine with none is the ordinary case.
+    return Finding("Serial ports", True, detail, remedy)
+
+
+#: USB vendor ids that make serial adapters, and the name each is usually sold under.
+#:
+#: Not exhaustive and does not need to be: this exists to recognise the common cases well enough to
+#: say "the adapter is on the bus and Linux made no port for it", which is a different problem from
+#: "nothing is plugged in" and has different remedies.
+_SERIAL_VENDORS: Final[dict[str, str]] = {
+    "067b": "Prolific",
+    "0403": "FTDI",
+    "10c4": "Silicon Labs CP210x",
+    "1a86": "QinHeng CH340",
+    "04d8": "Microchip",
+    "2341": "Arduino",
+}
+
+
+def _usb_serial_hardware(
+    devices: pathlib.Path | None = None, has_port: bool | None = None
+) -> Finding:
+    """Whether a serial adapter is on the bus, and whether Linux gave it a port.
+
+    **The gap this closes is the one that looks like nothing at all.** An adapter can be attached,
+    enumerated and visible in ``lsusb`` while no ``/dev/ttyUSB*`` exists — and the port check above
+    then reports, quite truthfully, that no adapter was found. The user is left believing the cable
+    is wrong when the kernel simply handed the device to something else.
+
+    On Ubuntu that something else is usually ``brltty``, which is installed by default and claims
+    several of these chips because Braille displays share their vendor ids. Prolific is the usual
+    casualty. It is not a misconfiguration anybody made and it is not discoverable without being
+    told, which is exactly what a doctor is for.
+
+    Read from sysfs rather than by running ``lsusb``, which is not installed everywhere.
+
+    :param devices: where to look. Injected so the interesting case — hardware present, no port —
+        can be tested on a machine that does not have it, which is every machine that is working.
+    :param has_port: whether a tty exists. Injected for the same reason.
+    """
+    if devices is None:
+        if platform.system() != "Linux":
+            return Finding("USB serial hardware", True, "checked on Linux only")
+        devices = pathlib.Path("/sys/bus/usb/devices")
+
+    if not devices.is_dir():
+        return Finding("USB serial hardware", True, "no USB bus visible")
+
+    seen: list[str] = []
+    for entry in sorted(devices.iterdir()):
+        vendor = entry / "idVendor"
+        try:
+            identifier = vendor.read_text(encoding="ascii").strip().lower()
+        except OSError:
+            continue
+        if identifier in _SERIAL_VENDORS:
+            seen.append(_SERIAL_VENDORS[identifier])
+
+    if not seen:
+        return Finding("USB serial hardware", True, "none on the bus")
+
+    names = ", ".join(sorted(set(seen)))
+    if has_port is None:
+        has_port = any(
+            any(pathlib.Path("/dev").glob(pattern)) for pattern in ("ttyUSB*", "ttyACM*")
+        )
+    if has_port:
+        return Finding("USB serial hardware", True, f"{names}, with a port")
+
+    return Finding(
+        "USB serial hardware",
+        False,
+        f"{names} is on the bus and Linux created no port for it",
+        "Usually brltty, installed by default on Ubuntu desktop, which claims these chips because "
+        "Braille displays share their vendor ids: 'sudo apt remove brltty', then unplug and "
+        "replug. Otherwise 'dmesg | tail -30' will say what took it.",
+    )
 
 
 def _dialout() -> Finding:
@@ -206,6 +324,7 @@ def checks() -> Iterator[Finding]:
     yield _fonts()
     yield _pyserial()
     yield _ports()
+    yield _usb_serial_hardware()
     yield _dialout()
 
 
