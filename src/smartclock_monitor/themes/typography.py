@@ -20,8 +20,13 @@ another machine's fontconfig.
 
 Noto Sans rather than DejaVu Sans, which was the other candidate present nearly everywhere: DejaVu
 is materially wider at the same point size, and this application's widest page is already the thing
-setting the Details window's minimum. Noto is also SIL OFL 1.1, so bundling it later needs no new
-licence conversation — the same door Cascadia Mono left open.
+setting the Details window's minimum.
+
+**Both faces are now bundled** — see ``themes/fonts`` — which is what turns "named" into "pinned".
+Naming a face this port did not ship left every machine without it falling through the chain below,
+and CI rejected two window minimums measured that way before the layout was made to compute its own.
+The families stay first in these chains regardless: a desktop that has them is no worse off, and one
+where loading fails renders exactly as it did before.
 
 **§9.4.5's contrast figures do not depend on the face.** They were re-derived for this port against
 its own palette, and `test_design_tokens.py` asserts 4.5:1 for every text token on every surface it
