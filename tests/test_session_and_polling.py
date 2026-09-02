@@ -438,14 +438,19 @@ def test_a_missing_screen_set_says_so_rather_than_starting_empty() -> None:
     own README opens with is not ordinary, and starting anyway means a window waiting for ever."""
     from smartclock_monitor.services import replay
 
+    absent = Path("/nonexistent/fixtures")
+
     with (
         pytest.MonkeyPatch.context() as patch,
         pytest.raises(FileNotFoundError) as raised,
     ):
         patch.setattr(replay, "PACKAGED_FIXTURES", "smartclock_monitor.resources.not_a_package")
-        patch.setattr(replay, "CHECKOUT_FIXTURES", Path("/nonexistent/fixtures"))
+        patch.setattr(replay, "CHECKOUT_FIXTURES", absent)
         replay.fixture_root()
 
     message = str(raised.value)
     assert "not_a_package" in message, "the message does not name where it looked"
-    assert "/nonexistent/fixtures" in message, "the message does not name the other place"
+    # Compared against the path's **own** rendering, not a literal. Written as the literal
+    # "/nonexistent/fixtures" this passed here and failed on Windows, where a Path renders with
+    # backslashes — the message was right and the assertion was not.
+    assert str(absent) in message, "the message does not name the other place"
