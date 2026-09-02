@@ -409,3 +409,43 @@ def test_every_demo_screen_exists(name: str) -> None:
     """The sequence names fixtures by hand, and a typo would show as a missing state rather than
     as an error."""
     assert (FIXTURES / name).is_file()
+
+
+# ---- The demo's screens have to be where an installed copy can find them ------------------------
+
+
+def test_the_demo_finds_its_screens_here() -> None:
+    """A checkout resolves them from ``tests/fixtures``; an installed copy has no such directory.
+
+    Both paths are covered because the second one broke silently for the whole life of the project:
+    `--demo` is the first thing the README tells a new user to run, and outside a checkout it
+    started an application that never showed a reading — which looks exactly like a receiver that
+    has not answered yet.
+    """
+    from smartclock_monitor.services.replay import DEMO_SEQUENCE, fixture_root
+
+    root = fixture_root()
+    for name in DEMO_SEQUENCE:
+        found = root
+        for part in name.split("/"):
+            found = found / part
+        assert found.is_file(), f"{name} is not where the demo will look for it"
+
+
+def test_a_missing_screen_set_says_so_rather_than_starting_empty() -> None:
+    """**Loudly, and this is the one place that is right.** §11.1's rule is that a parser never
+    raises, because an unreadable field is ordinary. An installation that cannot do the thing its
+    own README opens with is not ordinary, and starting anyway means a window waiting for ever."""
+    from smartclock_monitor.services import replay
+
+    with (
+        pytest.MonkeyPatch.context() as patch,
+        pytest.raises(FileNotFoundError) as raised,
+    ):
+        patch.setattr(replay, "PACKAGED_FIXTURES", "smartclock_monitor.resources.not_a_package")
+        patch.setattr(replay, "CHECKOUT_FIXTURES", Path("/nonexistent/fixtures"))
+        replay.fixture_root()
+
+    message = str(raised.value)
+    assert "not_a_package" in message, "the message does not name where it looked"
+    assert "/nonexistent/fixtures" in message, "the message does not name the other place"
