@@ -47,6 +47,7 @@ from smartclock_monitor.services.replay import ReplayTransport
 from smartclock_monitor.services.session import DeviceSession
 from smartclock_monitor.services.supervisor import Supervisor
 from smartclock_monitor.services.trend_store import TrendStore, TrendStoreError
+from smartclock_monitor.themes import fonts
 from smartclock_monitor.themes.tokens import Theme
 from smartclock_monitor.views.connection_dialog import ConnectionChoice
 
@@ -149,6 +150,11 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     application = QApplication(sys.argv[:1])
     application.setApplicationName(APPLICATION_NAME)
+
+    # **Before the first window.** A widget measured before its font exists is measured in the
+    # default one, and every layout minimum computed from that is wrong — which is the defect this
+    # bundling exists to end, so registering late would leave it in place.
+    fonts.load()
 
     window = MainWindow(Theme(arguments.theme))
     window.show()

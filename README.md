@@ -146,5 +146,10 @@ MIT, as WinZ3805A is. See [LICENSE](LICENSE).
 `docs/` and `tests/fixtures/` are reproduced from WinZ3805A under the same licence.
 
 Type is **Noto Sans** for the interface and **Cascadia Mono** for every string the receiver emits —
-§9.5's split is what tells "what the machine said" from "what the app says about it". Both are SIL
-Open Font License; neither is bundled yet, so both fall back to whatever the desktop has.
+§9.5's split is what tells "what the machine said" from "what the app says about it".
+
+**Both are bundled**, unmodified, under the SIL Open Font License 1.1, whose clause 2 permits it
+provided the notice travels with the font — so each ships its licence beside it in
+[`src/smartclock_monitor/themes/fonts/`](src/smartclock_monitor/themes/fonts/). They are shipped
+rather than merely named because naming a face does not pin its metrics on a machine that lacks it,
+and a layout measured in one font and drawn in another is measured wrong.
