@@ -435,6 +435,12 @@ class MainWindow(QMainWindow):
         # port has no footer and they are in the header, so the header is what that instruction
         # means here. Left visible it needed 415 px in a 380 px window and clipped `Connect…` to
         # "onnect…", which is #20's defect returning through a door #20 did not close.
+        #
+        # **Nothing is stranded by taking the row away.** `Ctrl+Shift+M` and `Esc` both leave
+        # compact mode and both are bound to the window rather than to a button, which is what
+        # §9.7.5's amendment asks for precisely so that a collapse cannot trap the user. §9.6.2
+        # also gives a double-click on the medallion; that is not built here, and the guide says
+        # so rather than promising it.
         self._header.setVisible(not compact)
 
         # **The status bar goes with it**, and §9.6.2's own arithmetic is why: it spends its 144 on
