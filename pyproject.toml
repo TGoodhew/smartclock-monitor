@@ -1,10 +1,28 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling", "hatch-vcs"]
 build-backend = "hatchling.build"
 
 [project]
 name = "smartclock-monitor"
-version = "0.0.1"
+
+# ---------------------------------------------------------------------------
+# The version is derived from git, not written here (#33).
+#
+# It sat at "0.0.1" through every merge the port has had, so the number the
+# status bar and the guide's foot report identified the *project* rather than
+# the build — which is most of what those two surfaces are for. A literal
+# changes only when somebody remembers, and the thing it describes changes on
+# every commit.
+#
+# `hatch-vcs` answers from the repository instead: the latest tag, how far past
+# it this commit is, and which commit. A release is `git tag v0.2.0`; there is
+# nothing to bump and nothing to forget.
+#
+# Nothing downstream changed for this. #23 had already made both surfaces read
+# `importlib.metadata`, and the PyInstaller spec already carries the .dist-info
+# that makes that work inside a bundle.
+# ---------------------------------------------------------------------------
+dynamic = ["version"]
 description = "Monitor and control HP/Symmetricom SmartClock GPS-disciplined oscillators over RS-232"
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -52,6 +70,15 @@ smartclock-monitor = "smartclock_monitor.__main__:main"
 [project.urls]
 Homepage = "https://github.com/TGoodhew/smartclock-monitor"
 "Windows sibling" = "https://github.com/TGoodhew/WinZ3805A"
+
+[tool.hatch.version]
+source = "vcs"
+
+# Without a tag to count from — a shallow CI checkout, or a source tarball with no .git — the
+# scheme has no answer. Say so in the version itself rather than failing the build: an
+# installation reporting 0.0.0 is a legible symptom, and `tests/test_versioning.py` fails on the
+# cause (a shallow checkout) so it is caught where it happens rather than months later.
+raw-options = { fallback_version = "0.0.0" }
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/smartclock_device", "src/smartclock_monitor"]
