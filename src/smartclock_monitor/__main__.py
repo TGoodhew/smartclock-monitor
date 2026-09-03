@@ -256,7 +256,10 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         """
         if session is None:
             window.set_command_runner(None)
-            changes.disconnected("the link went")
+            if supervisor.stopped_by_user:
+                changes.user_disconnected()
+            else:
+                changes.disconnected("the link went")
             return
         identity = session.identity
         named = identity.model if identity is not None else "receiver"

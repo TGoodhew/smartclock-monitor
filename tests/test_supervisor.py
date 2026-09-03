@@ -276,6 +276,118 @@ def test_stop_retrying_ends_the_cycle() -> None:
     asyncio.run(run())
 
 
+# ---- A deliberate disconnect (§9.7.5's other half of Connect) ------------------------------------
+
+
+def test_a_deliberate_disconnect_does_not_reconnect_itself() -> None:
+    """The gate #28 asks for, and the one a naive implementation fails.
+
+    `stay_connected` defaults to on, so closing the session without stopping the cycle brings the
+    port back within a backoff interval — a second or two after the user asked for it to go. That
+    reads as a bug, and it is the reason `disconnect` is `stop_retrying` and a closed session
+    together rather than just the close.
+    """
+    attempts = 0
+
+    async def run() -> None:
+        nonlocal attempts
+
+        async def connect() -> DeviceSession | None:
+            nonlocal attempts
+            attempts += 1
+            return await a_session()
+
+        supervisor = Supervisor(
+            connect=connect,
+            driver=SmartClockDriver(clock=clock()),
+            clock=clock(),
+            backoff=lambda _: 0,
+        )
+        task = asyncio.ensure_future(supervisor.run())
+        await asyncio.sleep(0.05)
+        assert attempts == 1, "it must connect once to have something to disconnect from"
+
+        supervisor.disconnect()
+        await asyncio.sleep(0.2)
+
+        assert attempts == 1, (
+            f"it reconnected on its own after a deliberate disconnect ({attempts})"
+        )
+        assert supervisor.session is None, "the session is still open"
+        assert supervisor.stopped_by_user is True
+
+        await _stops_promptly(task)
+
+    asyncio.run(run())
+
+
+def test_a_deliberate_disconnect_does_not_read_as_a_fault() -> None:
+    """§9.11: *"an intentional disconnect is not a fault"*. The sentence a lost link gets —
+    "Not reconnecting" — is a report of failure, and it is the wrong one for an instruction the
+    user gave."""
+    said: list[str] = []
+
+    async def run() -> None:
+        async def connect() -> DeviceSession | None:
+            return await a_session()
+
+        supervisor = Supervisor(
+            connect=connect,
+            driver=SmartClockDriver(clock=clock()),
+            clock=clock(),
+            backoff=lambda _: 0,
+        )
+        supervisor.on_status = said.append
+        task = asyncio.ensure_future(supervisor.run())
+        await asyncio.sleep(0.05)
+
+        supervisor.disconnect()
+        await asyncio.sleep(0.2)
+        await _stops_promptly(task)
+
+    asyncio.run(run())
+
+    assert any("Disconnected" in line for line in said), said
+    assert not any("Not reconnecting" in line for line in said), said
+    assert not any("Lost the connection" in line for line in said), said
+
+
+def test_connecting_again_after_a_deliberate_disconnect_comes_back() -> None:
+    """A disconnect that could not be undone would be a quit with extra steps."""
+    attempts = 0
+
+    async def run() -> None:
+        nonlocal attempts
+
+        async def connect() -> DeviceSession | None:
+            nonlocal attempts
+            attempts += 1
+            return await a_session()
+
+        supervisor = Supervisor(
+            connect=connect,
+            driver=SmartClockDriver(clock=clock()),
+            clock=clock(),
+            backoff=lambda _: 0,
+        )
+        task = asyncio.ensure_future(supervisor.run())
+        await asyncio.sleep(0.05)
+
+        supervisor.disconnect()
+        await asyncio.sleep(0.1)
+        assert supervisor.stopped_by_user is True
+
+        supervisor.reconnect()
+        await asyncio.sleep(0.15)
+
+        assert attempts == 2, f"it did not come back ({attempts})"
+        assert supervisor.stopped_by_user is False
+
+        await _stops_promptly(task)
+
+    asyncio.run(run())
+
+
 # ---- A deliberate reconnect (§10.12's Connect button) --------------------------------------------
 
 
