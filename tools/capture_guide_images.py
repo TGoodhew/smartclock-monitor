@@ -42,12 +42,6 @@ from typing import Final
 # Before any Qt import: a display is optional, and CI has none.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-# §10.9's *Application log* card prints the real path, which on this machine is a real home
-# directory. Pinned so the picture is the same wherever it is rendered — the alternative is an
-# image that changes with whoever ran the tool, and a committed screenshot of somebody's home
-# directory. `platform/paths.py` honours this variable precisely so it can be pointed elsewhere.
-os.environ["XDG_DATA_HOME"] = "/home/you/.local/share"
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
@@ -113,6 +107,13 @@ WHEN: Final = datetime(2026, 8, 27, 20, 52, 20, tzinfo=UTC)
 #: What the connection dialog lists. Fixed for the same reason, and a USB adapter rather than a
 #: motherboard port because that is what a receiver is almost always on.
 PORTS: Final = [("/dev/ttyUSB0", "/dev/ttyUSB0 — FT232R USB UART")]
+
+#: §10.9's *Application log* card prints the real path, which on the machine rendering these is a
+#: real home directory. Pinned in `main` — not at import — so the picture is the same wherever it
+#: is rendered, and so that importing this module for its helpers cannot move another process's
+#: data directory out from under it. `platform/paths.py` honours the variable precisely so it can
+#: be pointed somewhere.
+DATA_HOME: Final = "/home/you/.local/share"
 
 
 @dataclass
@@ -346,6 +347,8 @@ def main() -> int:
         help="where to write them (default: the guide's own image directory)",
     )
     arguments = parser.parse_args()
+
+    os.environ["XDG_DATA_HOME"] = DATA_HOME
 
     application = QApplication.instance() or QApplication([])
     assert isinstance(application, QApplication)
