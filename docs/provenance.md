@@ -16,25 +16,41 @@ than written here, and two of those can go wrong silently if the two repositorie
 | `docs/how-to-use.md` and `docs/images/how-to-use/` | same | Verbatim. The guide is correct about *what the application does*; every screenshot in it is a Windows capture and is wrong for this port until retaken. |
 | `docs/adding-a-receiver.md` | same | Verbatim. Describes the C# driver model. Kept because the *architecture* it teaches is what this port reproduces, not because the code samples compile here. **`docs/driver-contract.md` is this port's member-by-member mapping** — written here rather than by editing the inherited file, which would fork it. |
 | `tests/fixtures/` | `tests/WinZ3805A.Tests/Fixtures/` | Verbatim, including `capture-log.md`. Marked `-text`: these are device output and their exact bytes, line endings included, are the point. |
-| `build/palette/` | same | Verbatim, and already Python. Runs unchanged — **plus one file added here**, `sequential.py`. See below. |
+| `build/palette/` | same | **Byte-identical, directory included.** Already Python, runs unchanged. Two files were added since the fork — `sequential.py` here, `diverging.py` upstream — and both have been carried the other way, so the copies agree again. See below. |
 
 Nothing else was taken. No C# was translated mechanically; the source tree here is new.
 
-## The one file added to a carried directory
+## `build/palette/` — identical again, and now shared in both directions
 
-`build/palette/sequential.py`. Every file copied from WinZ3805A is still byte-identical; the
-*directory* is not, because this one is new.
+**Every file is byte-identical to WinZ3805A's copy, the directory included.** That was not true
+between 31 Aug and today, and the two files that made it untrue are the reason this section exists.
 
-It derives §9.4.4's sequential ramp for a dark surface, which the specification does not provide —
-it gives one column of seven values and no per-theme variant, and a sequential ramp is read by
-lightness, so used verbatim on the Dark card the encoding is exactly inverted. Issue
-[#9](https://github.com/TGoodhew/smartclock-monitor/issues/9) here.
+`sequential.py` was written **here**, where the defect was found: §9.4.4 gives one column of seven
+values and no per-theme variant, and a sequential ramp is read by lightness, so used verbatim on the
+Dark card the encoding is exactly inverted
+([#9](https://github.com/TGoodhew/smartclock-monitor/issues/9) here,
+[TGoodhew/WinZ3805A#367](https://github.com/TGoodhew/WinZ3805A/issues/367) there). It was written in
+that repository's style rather than this one's precisely so the copy back would be a copy, and it
+has since been copied back.
 
-**The same defect is expected upstream**, where the same values are resolved from one dictionary
-for both themes, and it is filed as
-[TGoodhew/WinZ3805A#367](https://github.com/TGoodhew/WinZ3805A/issues/367). Copying this file there
-restores the directory to identical. It is written in that repository's style, not this one's, so
-that the copy is a copy.
+`diverging.py` came the other way. The same reasoning applied to §9.4.4's *other* ramp turned up a
+second and worse defect — on Dark the ordering inverts as the sequential one's did, and on **Light**
+three of the five stops are under §9.4.5's 3:1 floor on the theme the ramp was drawn for. Derived
+upstream in [TGoodhew/WinZ3805A#372](https://github.com/TGoodhew/WinZ3805A/pull/372), filed here as
+[#19](https://github.com/TGoodhew/smartclock-monitor/issues/19), carried across verbatim with the
+`sequential.py` and `validate.py` changes that went with it.
+
+So the direction of travel is now both ways, and the property to protect is unchanged: **the two
+copies being identical is what lets either repository trust the other's colours.** A fix to any file
+in this directory belongs in both, byte for byte, in whichever repository finds it.
+
+**One constant in it is not actually shared**, and both files say so in place: `SEMANTIC` is
+WinZ3805A's §9.4.3, whose accent and info are the brand teal where this port's are blue. The
+clearance figures those scripts print are therefore measured against the wrong palette when run
+here. Measured against this port's own colours the ramps clear by 11.2 ΔE₀₀ on Light and 7.5 on
+Dark, well above the 5.0 asserted — recorded, with the command to reproduce it, in
+[`palette-figures.md`](palette-figures.md). Correcting the constant would fork the directory to fix
+a comment, so it stays.
 
 Figures in [`palette-figures.md`](palette-figures.md); `validate.py` reproduces them and prints
 `!!` beside any it cannot.
