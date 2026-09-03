@@ -233,7 +233,7 @@ repository matching the remote: delete the branch on both sides
 ```
 docs/requirements.md          the specification — inherited, byte-exact, never edited
 docs/provenance.md            what was copied, and what must not drift
-docs/how-to-use.md            the guide; its screenshots are Windows captures, to be retaken
+docs/how-to-use.md            the guide, and the F1 help. Forked from the inherited one — see provenance
 src/smartclock_device/        the receiver. NO Qt, NO application imports, ever.
   transport/ commands/ parsing/ models/ drivers/ (and drivers/nmea/)
 src/smartclock_monitor/       the application

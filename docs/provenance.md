@@ -13,12 +13,49 @@ than written here, and two of those can go wrong silently if the two repositorie
 | Path here | Path there | State |
 |---|---|---|
 | `docs/requirements.md` | `docs/requirements.md` | **Byte-exact.** Marked `-text` in `.gitattributes` so no checkout converts its line endings — the file's byte count, hashes and column positions are referenced elsewhere and must stay stable. |
-| `docs/how-to-use.md` and `docs/images/how-to-use/` | same | Verbatim. The guide is correct about *what the application does*; every screenshot in it is a Windows capture and is wrong for this port until retaken. |
+| `docs/how-to-use.md` and `docs/images/how-to-use/` | same | **Forked.** It was carried verbatim and is not any more — see *The one document that had to fork*, below. Do not diff the two expecting them to agree. |
 | `docs/adding-a-receiver.md` | same | Verbatim. Describes the C# driver model. Kept because the *architecture* it teaches is what this port reproduces, not because the code samples compile here. **`docs/driver-contract.md` is this port's member-by-member mapping** — written here rather than by editing the inherited file, which would fork it. |
 | `tests/fixtures/` | `tests/WinZ3805A.Tests/Fixtures/` | Verbatim, including `capture-log.md`. Marked `-text`: these are device output and their exact bytes, line endings included, are the point. |
 | `build/palette/` | same | **Byte-identical, directory included.** Already Python, runs unchanged. Two files were added since the fork — `sequential.py` here, `diverging.py` upstream — and both have been carried the other way, so the copies agree again. See below. |
 
 Nothing else was taken. No C# was translated mechanically; the source tree here is new.
+
+Of the five, **three are still verbatim and one is forked**; the fifth, `build/palette/`, is
+byte-identical again in both directions. Both departures are written down below rather than
+left to a diff.
+
+## The one document that had to fork
+
+`docs/how-to-use.md`, and the pictures in `docs/images/how-to-use/` with it.
+
+It was carried across on the reasoning that the guide is "correct about *what the application
+does*, and only its screenshots are wrong". That was true when it was written and is not now.
+**D3, D4 and D5 changed what the application does**, and the layout was never the same in the
+first place: this port's main window has no clock line, no time-zone flyout and no footer; its
+details window has a command bar rather than a title bar with a status pill; its navigation pane is
+in a different order, which moves every accelerator and puts Settings on `Ctrl+9`; §10.5 has one
+table where that one has two; and the Settings page offers three switches where that one offers
+six, of which three describe a notification area this port does not ship.
+
+**It is also the application's `F1` help.** That is what settled it. Every other inherited document
+is read beside the code by somebody who can hold two repositories in mind; this one is read by a
+user who is looking at the window while it describes a different window. A wrong sentence here
+costs more than a wrong sentence anywhere else in the repository, and the comparability the other
+carried files buy is worth nothing to that reader.
+
+So the two guides now diverge, deliberately and permanently. What survives word for word is
+everything about the **receiver** rather than the application — the two holdover thresholds and why
+only one is settable, the unverified power-up time, the week rollover, the signal-strength scales —
+because those paragraphs are right in both repositories and their value is that somebody worked out
+how to say them once. What was rewritten is everything about the **windows**.
+
+The pictures are rendered by `tools/capture_guide_images.py` from the captured fixtures, and
+`tests/test_guide.py` keeps the guide and the application in step: every picture named exists, no
+picture exists that is no longer named, every picture carries alt text, and every page the details
+window has is written about. That gate is what replaces the comparability that was lost.
+
+**A fix to the receiver half is still worth carrying both ways by hand.** Nothing enforces that,
+and nothing can now; this paragraph is the whole of the arrangement.
 
 ## `build/palette/` — identical again, and now shared in both directions
 
