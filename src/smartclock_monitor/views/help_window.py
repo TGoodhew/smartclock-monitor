@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from importlib import metadata
 from pathlib import Path
+from typing import Final
 
 from PySide6.QtGui import QCloseEvent
 from PySide6.QtWidgets import QMainWindow, QTextBrowser, QWidget
@@ -41,6 +42,15 @@ def guide_path() -> Path | None:
     return None
 
 
+#: What :func:`version` answers where the package metadata is not there to read — a checkout run
+#: without an install, and, until the spec carried `copy_metadata`, every frozen build.
+#:
+#: Named rather than repeated because the status bar has to recognise it: §9.7.5's guide footer can
+#: afford the whole phrase, a one-line status bar cannot, and comparing against a literal in two
+#: files is how the two quietly stop matching.
+NOT_INSTALLED: Final = "not installed"
+
+
 def version() -> str:
     """The installed version, or a plain word where the package is not installed.
 
@@ -51,7 +61,7 @@ def version() -> str:
     try:
         return metadata.version("smartclock-monitor")
     except metadata.PackageNotFoundError:
-        return "not installed"
+        return NOT_INSTALLED
 
 
 def guide_markdown() -> str:

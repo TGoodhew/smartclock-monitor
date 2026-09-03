@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+from importlib import metadata
+from pathlib import Path
 
 import pytest
 
@@ -19,7 +21,12 @@ from smartclock_monitor.views.help_window import (
     guide_path,
     version,
 )
-from smartclock_monitor.views.main_window import COMPACT_MINIMUM, MAIN_MINIMUM, MainWindow
+from smartclock_monitor.views.main_window import (
+    COMPACT_MINIMUM,
+    MAIN_MINIMUM,
+    MainWindow,
+    version_label,
+)
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -192,6 +199,55 @@ def test_an_uninstalled_package_says_so_rather_than_guessing() -> None:
     """A guess would be worse than an admission: this line exists so somebody reporting a problem
     can quote it."""
     assert version()  # never empty, never raises
+
+
+def test_the_status_bar_leads_with_the_release() -> None:
+    """#23: a screenshot of the window should be enough to say which build produced it.
+
+    Every message carries it, not only the connected one — the states somebody photographs are
+    usually the ones that went wrong, so stamping the success line alone would leave the reports
+    that matter unlabelled.
+    """
+    window = MainWindow(Theme.DARK)
+    window.show()
+    window.set_connection_text("Connected to Z3805A — /dev/ttyUSB0 @ 9600-8-N-1")
+
+    shown = window.statusBar().currentMessage()
+    assert shown.startswith(version_label()), shown
+    assert "Connected to Z3805A" in shown
+    window.close()
+
+
+def test_the_release_shown_is_the_installed_one_and_not_a_literal() -> None:
+    """The gate #23 asks for, and the reason there is no "bump this every build" note anywhere.
+
+    §6.3 forbids hard-coding the application's *name* because "a rename that has to be made in nine
+    places gets made in eight". A version is that argument with a number: it changes every release,
+    so a copy goes stale silently while still looking authoritative. This asserts the label is the
+    metadata rather than a string that happens to match it today — which is what would fail if
+    somebody ever pinned it.
+    """
+    installed = metadata.version("smartclock-monitor")
+
+    assert version() == installed
+    assert version_label() == f"v{installed}"
+
+
+def test_a_frozen_build_can_still_read_its_own_version() -> None:
+    """`importlib.metadata` needs the package's `.dist-info`, and PyInstaller does not carry it
+    unless asked. Without this the derivation above resolves to NOT_INSTALLED in every bundle —
+    the one distribution channel where the user has no other way to find the number, and silently,
+    because that answer is legitimate everywhere else.
+
+    Asserted against the spec file rather than by building: a PyInstaller run needs a toolchain
+    that is deliberately not in the `dev` extra, and the defect is the missing declaration.
+    """
+    spec = (
+        Path(__file__).resolve().parent.parent / "build" / "smartclock-monitor.spec"
+    ).read_text()
+
+    assert "copy_metadata" in spec, "the bundle will report its version as NOT_INSTALLED"
+    assert 'copy_metadata("smartclock-monitor")' in spec
 
 
 def test_the_window_renders_the_guide_natively() -> None:
