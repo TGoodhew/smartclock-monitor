@@ -29,6 +29,8 @@ its reasoning in [`platform-decisions.md`](platform-decisions.md) and its argume
 | **Diverging ramp** | One ramp, both themes | Derived per surface | *Fix* — see below |
 | **Main window minimum width** | 380 px (§9.6.2) | **415 px**, measured | Different — see below |
 | **Main window minimum height** | 240 px (§9.6.2) | **285 px**, measured | Different — see below |
+| **Compact mode, in and out** | Double-click the medallion, or `Ctrl+Shift+M` | `Ctrl+Shift+M` and `Esc` only | *Reduction* — see below |
+| **The user's guide** | One document | **Forked** — same receiver half, rewritten window half | Different — see below |
 | **Multiple receivers (P2-1)** | Not built | Not built | Same |
 
 ---
@@ -97,6 +99,25 @@ lists as *shipped* in WinZ3805A:
 nothing to read on these desktops, and §9.4.2's guarantee is that the brand accent is chosen for
 hue separation from the severity colours. The Settings page says so on screen rather than offering
 a switch that cannot work.
+
+### Compact mode has two ways out, not three
+
+§9.6.2 gives a double-click on the medallion alongside `Ctrl+Shift+M`. That gesture is **not built
+here** — the two keys are the whole of it, and the guide says so rather than promising it. Nothing
+is unreachable as a result: both keys are bound to the window rather than to a control, which is
+what §9.7.5's amendment asks for so that a collapse cannot strand a keyboard user.
+
+---
+
+## The guide describes this application, not that one
+
+`docs/how-to-use.md` was carried across verbatim and has been rewritten. Everything it says about
+the **receiver** is word for word what it always said; everything it says about the **windows** is
+new, because the windows are not the same ones.
+
+It is the `F1` help as well as a document, which is what made this the one inherited file that had
+to fork: its reader is looking at the window while it describes a window. `provenance.md` has the
+full reasoning and the arrangement that replaces the lost comparability.
 
 ---
 

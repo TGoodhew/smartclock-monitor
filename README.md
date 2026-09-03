@@ -18,11 +18,13 @@ Python 3 and Qt, so it runs on Linux, Windows and macOS.
 > there because a driver seam with one implementation is a seam nobody has tested — see
 > [`docs/driver-contract.md`](docs/driver-contract.md).
 >
-> **Phase 8 is mostly decided rather than pending.** Its shell-integration half — tray icon,
+> **Phase 8 is decided rather than pending.** Its shell-integration half — tray icon,
 > notifications, taskbar badge — is settled as *not shipped* on these desktops
-> ([D5](docs/platform-decisions.md)), and the window closing behaviour follows from that. What
-> remains of it is the guide: every screenshot in
-> [`docs/how-to-use.md`](docs/how-to-use.md) is a Windows capture and has still to be retaken.
+> ([D5](docs/platform-decisions.md)), and the window closing behaviour follows from that. The
+> guide is done: [`docs/how-to-use.md`](docs/how-to-use.md) now describes *this* application,
+> its pictures are rendered from it by `tools/capture_guide_images.py`, and `tests/test_guide.py`
+> keeps the two in step. It is the one inherited document that had to fork — see
+> [`docs/provenance.md`](docs/provenance.md).
 >
 > **If you know the Windows application**, [`docs/divergences.md`](docs/divergences.md) is the
 > page to read: what is different here, what is a reduction, and what is deliberately identical.
@@ -44,7 +46,7 @@ What *is* shared is everything that was never Windows-specific in the first plac
 | [`docs/requirements.md`](docs/requirements.md) | verbatim | The specification. Receiver behaviour, the safety model and the design system, almost all of it platform-neutral in substance even where it is Windows-specific in wording. |
 | [`tests/fixtures/`](tests/fixtures/) | verbatim | Ten captured status screens from real hardware. They are the parser's pass/fail oracle. |
 | [`build/palette/`](build/palette/) | verbatim, already Python | The §9.4.4 colour derivation and its self-check. Needs no porting at all. One file is **added** here — `sequential.py`, deriving the signal-strength ramp for a dark surface, which the specification does not provide. Figures in [`docs/palette-figures.md`](docs/palette-figures.md); filed upstream as [WinZ3805A#367](https://github.com/TGoodhew/WinZ3805A/issues/367). |
-| [`docs/how-to-use.md`](docs/how-to-use.md) | verbatim | The user guide, which is also the application's F1 help. Its screenshots are Windows captures and must all be retaken. |
+| [`docs/how-to-use.md`](docs/how-to-use.md) | verbatim, then **forked** | The user guide, which is also the application's F1 help. Everything it says about the *receiver* is unchanged; everything it says about the *windows* was rewritten, because the windows are not the same ones. The one carried document that could not stay carried — [`docs/provenance.md`](docs/provenance.md) says why. |
 
 Taken from WinZ3805A at commit
 [`73d5962`](https://github.com/TGoodhew/WinZ3805A/commit/73d5962a0ae43e7f9a2c0963d7edd3b109c32787).
