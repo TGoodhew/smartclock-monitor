@@ -375,13 +375,17 @@ def test_connecting_again_after_a_deliberate_disconnect_comes_back() -> None:
 
         supervisor.disconnect()
         await asyncio.sleep(0.1)
-        assert supervisor.stopped_by_user is True
+        # Read into locals rather than asserted twice on the property: mypy narrows the second
+        # read to the first's result and calls everything after it unreachable.
+        parked = supervisor.stopped_by_user
+        assert parked, "the disconnect did not park the cycle"
 
         supervisor.reconnect()
         await asyncio.sleep(0.15)
 
         assert attempts == 2, f"it did not come back ({attempts})"
-        assert supervisor.stopped_by_user is False
+        resumed = supervisor.stopped_by_user
+        assert not resumed, "it came back but still believes it is disconnected"
 
         await _stops_promptly(task)
 

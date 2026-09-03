@@ -225,6 +225,8 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         supervisor.reconnect()
 
     window.on_connection_chosen = take
+    # So a session started from --port is the one the dialog offers back after a disconnect.
+    window.remember_port(arguments.port)
 
     async def connect() -> DeviceSession | None:
         """One connection attempt. Called again by the supervisor after every drop."""

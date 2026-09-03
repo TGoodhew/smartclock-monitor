@@ -90,9 +90,14 @@ class ConnectionDialog(QDialog):
         palette: Palette = LIGHT,
         parent: QWidget | None = None,
         list_ports: PortLister | None = None,
+        preselect: str | None = None,
     ) -> None:
         super().__init__(parent)
         self._list_ports = list_ports or _ports
+        #: The port to start on. `refresh_ports` already keeps a selection across a refresh, but
+        #: that memory dies with the dialog — and the dialog is rebuilt every time it opens, so a
+        #: user who disconnects and reconnects was offered whichever port happened to sort first.
+        self._preselect = preselect
         self._palette = palette
 
         self.setWindowTitle("Connect to receiver")
@@ -217,7 +222,7 @@ class ConnectionDialog(QDialog):
 
     def refresh_ports(self) -> None:
         """Re-list the ports, keeping the current selection where it survives."""
-        wanted = self._ports.currentData()
+        wanted = self._ports.currentData() or self._preselect
         self._ports.clear()
         for device, label in self._list_ports():
             self._ports.addItem(label, device)

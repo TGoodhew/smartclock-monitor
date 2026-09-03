@@ -199,6 +199,10 @@ class MainWindow(QMainWindow):
         #: a runner as one opens and with `None` as one goes — the presence of a runner *is* the
         #: presence of a session, so a second flag tracking the same fact could disagree with it.
         self._connected = False
+        #: The port to offer next time §10.12's dialog opens. Seeded from the command line by the
+        #: owner and updated whenever the dialog is used, so Disconnect then Connect comes back to
+        #: the port you were on rather than to whichever one sorts first.
+        self._last_port: str | None = None
         #: What the window needs, with the readout card shown and hidden. Measured at first show,
         #: because the answer depends on the font — see `_measure_height_budget`.
         self._full_height: int | None = None
@@ -272,6 +276,20 @@ class MainWindow(QMainWindow):
         by the measurement while the gate keeps passing.
         """
         return (self._connect_button, self._retry, self._details_button, self._theme_picker)
+
+    def remember_port(self, port: str | None) -> None:
+        """Seed the port §10.12's dialog opens on, for a connection this window did not choose.
+
+        A session started from `--port` never went through the dialog, so without this the first
+        Connect after a Disconnect would forget a port the application had been using all along.
+        """
+        if port:
+            self._last_port = port
+
+    @property
+    def connect_button(self) -> QPushButton:
+        """§10.3's Connect / Disconnect button, typed — `header_controls` is deliberately not."""
+        return self._connect_button
 
     @property
     def medallion(self) -> StatusMedallion:
@@ -760,13 +778,15 @@ class MainWindow(QMainWindow):
 
     def choose_connection(self) -> ConnectionChoice | None:
         """§10.12's dialog. Returns what was chosen, or ``None`` if the user cancelled."""
-        dialog = ConnectionDialog(palette_for(self._theme), self)
+        dialog = ConnectionDialog(palette_for(self._theme), self, preselect=self._last_port)
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return None
 
         choice = dialog.choice()
         if choice is None:
             return None
+
+        self._last_port = choice.port
 
         self.set_connection_text(
             f"Connecting to {choice.port}"

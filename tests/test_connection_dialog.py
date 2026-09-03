@@ -32,6 +32,40 @@ def dialog(ports: list[tuple[str, str]] | None = None) -> ConnectionDialog:
     return ConnectionDialog(list_ports=lambda: PORTS if ports is None else ports)
 
 
+def test_it_opens_on_the_port_it_was_given() -> None:
+    """A disconnect then a reconnect should come back to the port you were on.
+
+    `refresh_ports` already keeps a selection across a refresh, but that memory dies with the
+    dialog — and the dialog is rebuilt every time it opens, so without this the user was offered
+    whichever port happened to sort first. On a machine with 32 built-in `ttyS*` devices and one
+    USB adapter, that is never the one they want.
+    """
+    many = [
+        ("/dev/ttyS0", "/dev/ttyS0"),
+        ("/dev/ttyS1", "/dev/ttyS1"),
+        ("/dev/ttyUSB0", "/dev/ttyUSB0 — USB-Serial Controller D"),
+    ]
+
+    fresh = ConnectionDialog(list_ports=lambda: many)
+    assert fresh.choice() is not None
+    assert fresh.choice().port == "/dev/ttyS0", "without a hint it opens on the first port"  # type: ignore[union-attr]
+
+    remembered = ConnectionDialog(list_ports=lambda: many, preselect="/dev/ttyUSB0")
+    chosen = remembered.choice()
+    assert chosen is not None
+    assert chosen.port == "/dev/ttyUSB0"
+
+
+def test_a_remembered_port_that_has_gone_does_not_break_the_dialog() -> None:
+    """The adapter can be unplugged while the application is disconnected. §9.11's rule applies:
+    offer what is there rather than an empty picker or a stale name."""
+    box = ConnectionDialog(list_ports=lambda: PORTS, preselect="/dev/ttyS31")
+    chosen = box.choice()
+
+    assert chosen is not None
+    assert chosen.port == "/dev/ttyUSB0", "it must fall back to a port that exists"
+
+
 def test_it_opens_on_auto_detect() -> None:
     """§10.12: the fresh-install default. §7.1's whole point is that a second-hand receiver's
     settings are not knowable in advance, so the dialog opens on the option that finds out rather
