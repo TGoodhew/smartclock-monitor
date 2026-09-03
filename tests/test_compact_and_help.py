@@ -235,7 +235,7 @@ def test_the_connect_button_says_which_half_it_is() -> None:
     window = MainWindow(Theme.DARK)
     window.show()
 
-    button = window.header_controls[0]
+    button = window.connect_button
     assert button.text() == "Connect…"
     assert "connect" in button.accessibleName().lower()
     assert "disconnect" not in button.accessibleName().lower()
