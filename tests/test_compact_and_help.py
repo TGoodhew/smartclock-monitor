@@ -11,6 +11,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtGui import QKeySequence
 from PySide6.QtWidgets import QApplication
 
+from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import Theme, palette_for
 from smartclock_monitor.views.help_window import (
     HelpWindow,
@@ -51,6 +52,64 @@ def test_compact_collapses_rather_than_clips() -> None:
     assert window.is_compact is True
     assert window.readouts_card.isVisible() is False
     assert window.minimumHeight() == COMPACT_MINIMUM[1]
+    window.close()
+
+
+def test_no_header_control_is_clipped_at_the_minimum_width() -> None:
+    """§9.6.2's *collapsed, not clipped* applied to the row §10.3 actually has.
+
+    That section's rule names the **footer**, because in WinZ3805A these buttons live in one and it
+    collapses at the minimum. This port has no footer and the buttons are in the header, where
+    nothing collapses them — so at §9.6.2's literal 380 px the row was 35 px over its space and Qt
+    clipped it: `Connect…` lost its first character, `Retry now` its last, and the theme picker
+    rendered as `Dar` (#20). A clipped button is still focusable and still hit-testable while
+    unreadable, which is what A11Y-1 and A11Y-6 forbid.
+
+    The floor is measured rather than pinned, so this asserts the property and not a number.
+
+    **Asserted as arithmetic rather than by resizing and reading widths back.** Qt reports a
+    minimum for the row that is *below* the sum of its controls' preferred sizes — 367 px against
+    the 415 they need — which is precisely why it clips rather than refusing to shrink. So a test
+    that resized to the minimum and compared `width()` to `sizeHint()` passed while the row was
+    visibly cut off, which is worse than no test. The check is therefore that the enforced floor is
+    at least the width at which every control gets its preferred size, computed here from the row
+    itself so a control added to it is counted.
+    """
+    window = MainWindow(Theme.DARK)
+    window.show()
+    QApplication.processEvents()
+
+    controls = window.header_controls
+    for control in controls:
+        control.ensurePolished()
+    needed = (
+        sum(control.sizeHint().width() for control in controls)
+        + Spacing.SMALL * (len(controls) - 1)
+        + Spacing.CARD_PADDING * 2
+    )
+
+    assert window.minimumWidth() >= needed, (
+        f"The window may be {window.minimumWidth()} px wide, but the button row needs {needed} px "
+        f"— it will be clipped: "
+        + ", ".join(f"{c.accessibleName()!r} {c.sizeHint().width()}px" for c in controls)
+    )
+    window.close()
+
+
+def test_the_minimum_width_stays_inside_g1s_box() -> None:
+    """G1 accepts the main window at **420 by 260 px or smaller** — it is a glanceable window
+    meant to be left open on a second monitor, so its box is an upper bound rather than a target.
+
+    The floor above is derived from font metrics, which is the only honest way to size it, and the
+    risk that buys is a face wide enough to push the row past G1's width on some desktop. The two
+    typefaces are bundled precisely so metrics are pinned rather than inherited, so this should
+    hold everywhere; if it ever fails it is a real G1 regression and not a flaky measurement.
+    """
+    window = MainWindow(Theme.DARK)
+    window.show()
+    assert window.minimumWidth() <= 420, (
+        f"The header needs {window.minimumWidth()} px, which puts the window outside G1's box."
+    )
     window.close()
 
 
