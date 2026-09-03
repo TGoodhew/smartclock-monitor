@@ -25,6 +25,7 @@ qt = pytest.importorskip("PySide6.QtWidgets", reason="Qt is not available on thi
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from conftest import NOW  # noqa: E402
+from smartclock_device.models.device_identity import DeviceIdentity  # noqa: E402
 from smartclock_device.models.receiver_status import (  # noqa: E402
     OutputValidity,
     ReceiverStatus,
@@ -369,3 +370,60 @@ def test_two_satellites_of_equal_strength_are_drawn_alike() -> None:
         for prn in (2, 17, 31)
     ]
     assert len({marker._step() for marker in markers}) == 1
+
+
+# -- P0-1's identity, from the session to the surface that shows it ------------------------------
+
+
+def _identity() -> DeviceIdentity:
+    from smartclock_device.models.device_identity import DeviceIdentity
+
+    parsed = DeviceIdentity.parse("SYMMETRICOM,Z3805A,3625A02931,1.01.03-A")
+    assert parsed is not None
+    return parsed
+
+
+def test_the_identity_reaches_a_details_window_opened_afterwards(
+    application: QApplication,
+) -> None:
+    """P0-1 is not met by a string that reaches only the status bar and the log.
+
+    The identity is read once, at the moment the link opens; §10.4's card is usually opened minutes
+    later. So the window holds it, exactly as it holds the runner and the trend store — and until
+    that was wired the *Receiver* card showed four dashes for the whole of every session.
+    """
+    del application
+    from smartclock_monitor.views.main_window import MainWindow
+
+    window = MainWindow(Theme.DARK)
+    window.set_identity(_identity(), "SYMMETRICOM,Z3805A,3625A02931,1.01.03-A")
+    window.open_details()
+
+    details = window.details
+    assert details is not None
+    exported = {row[2] for row in details.page_named("Overview").csv_rows()}
+    assert "Z3805A" in exported
+    assert "3625A02931" in exported
+
+
+def test_a_reconnect_replaces_the_identity_rather_than_leaving_the_last_one(
+    application: QApplication,
+) -> None:
+    """A reconnect can find a different receiver on the port. A stale identity is the one answer
+    worse than none, because it is the answer a user would act on."""
+    del application
+    from smartclock_monitor.views.main_window import DASH, MainWindow
+
+    window = MainWindow(Theme.DARK)
+    window.open_details()
+    window.set_identity(_identity(), "SYMMETRICOM,Z3805A,3625A02931,1.01.03-A")
+
+    details = window.details
+    assert details is not None
+    overview = details.page_named("Overview")
+    assert "Z3805A" in {row[2] for row in overview.csv_rows()}
+
+    window.set_identity(None, None)
+    exported = {row[2] for row in overview.csv_rows()}
+    assert "Z3805A" not in exported
+    assert DASH in exported
