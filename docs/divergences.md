@@ -28,6 +28,7 @@ its reasoning in [`platform-decisions.md`](platform-decisions.md) and its argume
 | **Sequential ramp on Dark** | One ramp, both themes | Derived per surface | *Fix* — see below |
 | **Diverging ramp** | One ramp, both themes | Derived per surface | *Fix* — see below |
 | **Main window minimum width** | 380 px (§9.6.2) | **415 px**, measured | Different — see below |
+| **Main window minimum height** | 240 px (§9.6.2) | **285 px**, measured | Different — see below |
 | **Multiple receivers (P2-1)** | Not built | Not built | Same |
 
 ---
@@ -124,7 +125,7 @@ defects were found rather than where two repositories differ.
 
 ---
 
-## §9.6.2's minimum width is 415 here, not 380
+## §9.6.2's minimums are 415 by 285 here, not 380 by 240
 
 §9.6.2 gives the main window a minimum of **380 by 240**. This port enforces **240 high and as wide
 as the button row measures**, which is 415 px on the bundled typefaces.
@@ -153,9 +154,27 @@ theme picker measured 28 px against 36 after polishing, and 18 against 75 on CI'
 The two typefaces are bundled so the metrics are pinned rather than inherited, which is why 415 is
 expected to hold everywhere rather than being this machine's number.
 
+**The height moved for the same reason, and later** ([#21](https://github.com/TGoodhew/smartclock-monitor/issues/21)).
+§9.6.2's 240 assumes the readout row is collapsed at the minimum, which it is here — but this port's
+main window carries the header row that the 380 discussion above is about, and the collapsed layout
+still measures 285. Below that there is nothing further the section permits to collapse, so the
+alternative to a floor is the overlap the collapse exists to prevent: the state pills drawn over
+each other and the medallion flattened out of shape.
+
+**Compact is not affected and is not reached by dragging.** §9.6.2 is explicit — *"compact cannot be
+entered by dragging, and that is the application's floor rather than the display's"* — so it remains
+a state the user chooses with `Ctrl+Shift+M`, at §9.6.2's own `380 x 144`. That state has its own
+defect, tracked separately as
+[#30](https://github.com/TGoodhew/smartclock-monitor/issues/30).
+
+**Both figures are measured at runtime, not written down.** 415 and 285 are what this machine's
+bundled typefaces produce; the code asks the layout rather than carrying the numbers, so a desktop
+whose metrics differ gets its own answer. They are quoted here to say how far from §9.6.2 the port
+sits, not as constants to maintain.
+
 **The specification is not edited.** [`requirements.md`](requirements.md) stays byte-identical to
 WinZ3805A's copy, as [`provenance.md`](provenance.md) requires; this document is the authority for
-the difference. §9.6.2's 380 is therefore knowingly stale for this port, and deliberately so.
+the difference. §9.6.2's 380 by 240 is therefore knowingly stale for this port, and deliberately so.
 
 ---
 
