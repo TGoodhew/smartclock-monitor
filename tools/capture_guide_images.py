@@ -42,12 +42,23 @@ from typing import Final
 # Before any Qt import: a display is optional, and CI has none.
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+# §10.9's *Application log* card prints the real path, which on this machine is a real home
+# directory. Pinned so the picture is the same wherever it is rendered — the alternative is an
+# image that changes with whoever ran the tool, and a committed screenshot of somebody's home
+# directory. `platform/paths.py` honours this variable precisely so it can be pointed elsewhere.
+os.environ["XDG_DATA_HOME"] = "/home/you/.local/share"
+
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from PySide6.QtCore import QRect  # noqa: E402
 from PySide6.QtGui import QPixmap  # noqa: E402
-from PySide6.QtWidgets import QApplication, QToolBar, QWidget  # noqa: E402
+from PySide6.QtWidgets import (  # noqa: E402
+    QApplication,
+    QScrollArea,
+    QToolBar,
+    QWidget,
+)
 
 from smartclock_device.clock import FixedClock  # noqa: E402
 from smartclock_device.commands.scpi_command import ScpiCommand  # noqa: E402
@@ -76,11 +87,16 @@ THEME: Final = Theme.LIGHT
 
 #: One width for every details page, stated in the guide so a reader can reproduce it. Wide enough
 #: that §10.5's two cards sit side by side, which is the layout the guide describes.
-PAGE_WIDTH: Final = 980
+PAGE_WIDTH: Final = 1120
 
-#: Tall enough that no page scrolls while it is being grabbed. The picture is trimmed to its
-#: content afterwards, so this only has to be *more* than the tallest page.
-SCRATCH_HEIGHT: Final = 2600
+#: The details window at a height someone would actually open it, and the height every page is
+#: measured from. Pages taller than this are grown to fit before they are grabbed; pages that
+#: expand to whatever they are given — §10.5 is the only one — are photographed at it.
+DETAILS_SIZE: Final = (PAGE_WIDTH, 760)
+
+#: How tall a page is allowed to grow before this gives up and photographs it scrolled. Well above
+#: the tallest page there is; it exists so a page that expands without limit cannot hang the run.
+MAXIMUM_HEIGHT: Final = 2600
 
 #: The main window at a size someone would actually leave it: room for its two cards, and no more.
 MAIN_SIZE: Final = (560, 400)
@@ -161,6 +177,35 @@ def reading(path: Path) -> Reading:
 def slug(title: str) -> str:
     """A page's title as it appears in an image name."""
     return title.lower().replace(" ", "-").replace("&", "and")
+
+
+def _grow_to_fit(window: DetailsWindow, page: QWidget, application: QApplication) -> None:
+    """Make the window tall enough that the current page does not scroll.
+
+    Asked of the scroll bar rather than of the layout, for the same reason `_trimmed` measures
+    pixels: these pages wrap their prose, so how tall one is is not known until it has a width.
+    The scroll bar's maximum *is* the shortfall, in pixels, after that has happened.
+
+    Twice around, because growing the viewport can rewrap a paragraph and change the answer. A
+    page that still scrolls after that is photographed as it is — §10.5's is deliberately elastic
+    and would grow for ever — and `MAXIMUM_HEIGHT` is what stops the loop rather than a judgement
+    about any particular page.
+    """
+    viewport = page.parentWidget()
+    area = None if viewport is None else viewport.parentWidget()
+    if not isinstance(area, QScrollArea):
+        return
+
+    for _ in range(2):
+        bar = area.verticalScrollBar()
+        shortfall = 0 if bar is None else bar.maximum()
+        if shortfall <= 0:
+            return
+        height = min(window.height() + shortfall, MAXIMUM_HEIGHT)
+        if height == window.height():
+            return
+        window.resize(window.width(), height)
+        application.processEvents()
 
 
 def _trimmed(widget: QWidget) -> QPixmap:
@@ -261,7 +306,7 @@ def _details(application: QApplication, sweep: Reading, out: Path) -> list[Path]
     window.apply_preferences(Preferences(advanced_console=True, undocumented_queries=True))
     window.set_command_runner(_Connected(SmartClockDriver(clock=FixedClock(WHEN))))
     window.set_identity(identity(), IDENTITY_ANSWER)
-    window.resize(PAGE_WIDTH, SCRATCH_HEIGHT)
+    window.resize(*DETAILS_SIZE)
     window.show_reading(sweep)
     window.show()
     application.processEvents()
@@ -274,7 +319,11 @@ def _details(application: QApplication, sweep: Reading, out: Path) -> list[Path]
     for index, page in enumerate(window.pages):
         window.navigation.setCurrentRow(index)
         application.processEvents()
+        _grow_to_fit(window, page, application)
         written.append(_save(_trimmed(page), out, f"page-{slug(page.title)}"))
+        # Back to the stated height, so the next page is measured from the same place this one was.
+        window.resize(*DETAILS_SIZE)
+        application.processEvents()
 
     # The two halves of §10.5 on their own, because the page is the one place where the picture of
     # the whole is too wide to read either half in.
