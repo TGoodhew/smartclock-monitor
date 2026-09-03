@@ -215,14 +215,49 @@ _SEQUENTIAL_DARK: Final[tuple[str, ...]] = (
     "#C5E6E9",
 )
 
-#: §9.4.4's diverging ramp, verbatim, ordered negative-strong → zero → positive-strong. One ramp
-#: for Light and Dark, for the same reason as the sequential one.
-_DIVERGING: Final[tuple[str, ...]] = (
-    "#08474D",
-    "#3FB8C4",
-    "#DDE4E5",
-    "#F0A882",
-    "#B23A00",
+#: §9.4.4's diverging ramp, ordered negative-strong → zero → positive-strong, **derived per
+#: surface** — `build/palette/diverging.py`, figures in `docs/palette-figures.md`.
+#:
+#: The specification gives one column, as it does for the sequential ramp, and one column cannot
+#: serve both cards for the same reason (#19, and TGoodhew/WinZ3805A#371 where it was found). A
+#: diverging ramp puts its neutral **near** the surface and its extremes **away** from it, so that
+#: magnitude reads as prominence — and "away" means darker on a light card and lighter on a dark
+#: one. Used verbatim the ordering inverts on Dark: the pale neutral `#DDE4E5` is the boldest mark
+#: on the card at 10.99:1 while a large excursion fades to 1.36:1.
+#:
+#: **The Light column was the more urgent half, and it was not an ordering problem.** These are the
+#: 1 PPS chart's per-column whiskers, drawn as a 1 px pen (`widgets/trend_chart.py`), so §9.4.5's
+#: 3:1 floor for meaningful non-text applies to every one of them. Three of the five were under it
+#: on the theme the ramp was drawn for, `#DDE4E5` worst at **1.24:1** — not a line anyone can
+#: follow.
+#:
+#: | | spec, verbatim | derived |
+#: |---|---|---|
+#: | weakest stop, Light | 1.24:1 | **3.06:1** |
+#: | weakest stop, Dark | 1.36:1 | **3.90:1** |
+#: | stops under 3:1, both cards | 5 of 10 | **none** |
+#: | prominence rises outward | Light only | **both cards** |
+#:
+#: Derived to **change as little as possible** rather than to optimise: the nearest legal ramp to
+#: the five §9.4.4 already had. Minimising step evenness the way `sequential.py` does is the wrong
+#: objective for a two-armed ramp, and `diverging.py`'s docstring says why. Arms stay 28.6 ΔE₀₀
+#: (Light) and 20.3 (Dark) apart at matching magnitude under normal vision, deuteranopia and
+#: protanopia, so the sign of an excursion survives dichromacy.
+_DIVERGING_LIGHT: Final[tuple[str, ...]] = (
+    "#1D5D64",
+    "#2A7D85",
+    "#8B9293",
+    "#C24D19",
+    "#93370F",
+)
+
+#: The same ramp derived for the Dark card. See `_DIVERGING_LIGHT` for why there are two.
+_DIVERGING_DARK: Final[tuple[str, ...]] = (
+    "#90DEE7",
+    "#75B6BD",
+    "#818788",
+    "#EB976A",
+    "#F3C9B4",
 )
 
 LIGHT: Final = Palette(
@@ -256,7 +291,7 @@ LIGHT: Final = Palette(
     neutral="#616161",
     series=_SERIES_LIGHT,
     sequential=_SEQUENTIAL,
-    diverging=_DIVERGING,
+    diverging=_DIVERGING_LIGHT,
     theme=Theme.LIGHT,
 )
 
@@ -286,7 +321,7 @@ DARK: Final = Palette(
     neutral="#9A9A9A",
     series=_SERIES_DARK,
     sequential=_SEQUENTIAL_DARK,
-    diverging=_DIVERGING,
+    diverging=_DIVERGING_DARK,
     theme=Theme.DARK,
 )
 
