@@ -319,7 +319,11 @@ class MainWindow(QMainWindow):
         )
         outer.setSpacing(Spacing.MEDIUM)
 
-        header = QHBoxLayout()
+        # A widget rather than a bare layout, so §9.6.2's compact state can remove the whole row
+        # rather than hiding four controls and leaving the spacing they sat in (#30).
+        self._header = QWidget()
+        header = QHBoxLayout(self._header)
+        header.setContentsMargins(0, 0, 0, 0)
         header.setSpacing(Spacing.SMALL)
 
         # **No in-window title.** §10.3's sketch has none: the name is the window's own title bar,
@@ -335,7 +339,7 @@ class MainWindow(QMainWindow):
         # No "Theme" caption. The picker shows the current theme's name and carries "Theme" as its
         # accessible name, so the caption cost 50 px to say what the control beside it says.
         header.addWidget(self._theme_picker)
-        outer.addLayout(header)
+        outer.addWidget(self._header)
 
         # The glanceable row: the medallion, and the two words beside it. Nothing else competes.
         glance = _card()
@@ -421,11 +425,27 @@ class MainWindow(QMainWindow):
         self._health_pill.setVisible(not compact)
         self._detail.setVisible(not compact)
 
+        # §9.6.2's compact row hides *the footer*, and in WinZ3805A the buttons are in one. This
+        # port has no footer and they are in the header, so the header is what that instruction
+        # means here. Left visible it needed 415 px in a 380 px window and clipped `Connect…` to
+        # "onnect…", which is #20's defect returning through a door #20 did not close.
+        self._header.setVisible(not compact)
+
         if compact:
             self._medallion.setMinimumSize(64, 64)
             self._medallion.setMaximumHeight(64)
-            self.setMinimumSize(*COMPACT_MINIMUM)
-            self.resize(*COMPACT_MINIMUM)
+            # **Measured, not asserted.** `setMinimumSize(*COMPACT_MINIMUM)` *lowered* the width
+            # floor `_size_minimum_width` had raised, discarding #20's fix on a keystroke, and set
+            # a height of 144 against a layout that needed 217. Both literals are kept as a floor
+            # rather than as the answer, which is the same rule the ordinary layout follows.
+            wanted = self._compact_size()
+            self.setMinimumSize(*wanted)
+            self.resize(*wanted)
+            # **And again once the loop has turned**, for the reason `showEvent` gives at length:
+            # measured here, with the header hidden a statement ago, the layout still reports the
+            # height it needed *with* the row — 223 px against the 155 it actually needs. Taking
+            # the first answer is safe but not compact, which is the one thing this state is for.
+            QTimer.singleShot(0, self._settle_compact_size)
         else:
             self._medallion.setMinimumSize(132, 132)
             self._medallion.setMaximumHeight(180)
@@ -443,6 +463,38 @@ class MainWindow(QMainWindow):
             # it produces is not readable on the next line — offscreen it is not applied at all.
             # Leaving compact restores the card, and the next resize refines from there.
             self._readouts.setVisible(True)
+
+    def _compact_size(self) -> tuple[int, int]:
+        """What the compact layout actually needs, never below §9.6.2's figures.
+
+        The width is straightforward once the header is gone: nothing else in the window asks for
+        more than §9.6.2's 380. The height is asked of the layout, because the pills and the mode
+        text are drawn in whatever font the theme carries and 144 was computed for a different one.
+        """
+        central = self.centralWidget()
+        bar = self.statusBar()
+        if central is None or bar is None:
+            return COMPACT_MINIMUM
+
+        layout = central.layout()
+        if layout is not None:
+            layout.invalidate()
+            layout.activate()
+
+        needed = central.minimumSizeHint().height() + bar.sizeHint().height()
+        return (COMPACT_MINIMUM[0], max(COMPACT_MINIMUM[1], needed))
+
+    def _settle_compact_size(self) -> None:
+        """Shrink to the settled measurement. Does nothing if compact has been left meanwhile."""
+        if not self._compact:
+            return
+
+        wanted = self._compact_size()
+        if wanted[1] >= self.minimumHeight():
+            return
+
+        self.setMinimumSize(*wanted)
+        self.resize(*wanted)
 
     def toggle_compact(self) -> None:
         self.set_compact(not self._compact)

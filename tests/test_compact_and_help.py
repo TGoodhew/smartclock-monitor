@@ -58,7 +58,9 @@ def test_compact_collapses_rather_than_clips() -> None:
 
     assert window.is_compact is True
     assert window.readouts_card.isVisible() is False
-    assert window.minimumHeight() == COMPACT_MINIMUM[1]
+    # Measured rather than pinned, as the ordinary layout's floors are (#20, #21, #30): §9.6.2's
+    # 144 is where the compact layout fits inside it, and it needed 217 with the header still in.
+    assert window.minimumHeight() >= COMPACT_MINIMUM[1]
     window.close()
 
 
@@ -179,6 +181,59 @@ def test_the_minimum_width_stays_inside_g1s_box() -> None:
     assert window.minimumWidth() <= 420, (
         f"The header needs {window.minimumWidth()} px, which puts the window outside G1's box."
     )
+    window.close()
+
+
+def test_compact_takes_the_button_row_out_of_the_layout() -> None:
+    """§9.6.2's compact row hides *the footer*, and in WinZ3805A the buttons are in one.
+
+    This port has no footer and they are in the header, so the header is what that instruction
+    means here. Left visible the row needed 415 px in a 380 px window and clipped `Connect…` to
+    "onnect…" — #20's defect returning through a door #20 did not close (#30).
+    """
+    window = MainWindow(Theme.DARK)
+    window.show()
+    assert window.connect_button.isVisible() is True
+
+    window.set_compact(True)
+
+    for control in window.header_controls:
+        assert control.isVisible() is False, (
+            f"{control.accessibleName()!r} is still in the compact layout, which has no room for it"
+        )
+
+    window.set_compact(False)
+    assert window.connect_button.isVisible() is True, "leaving compact must put the row back"
+    window.close()
+
+
+def test_compact_fits_what_it_still_shows() -> None:
+    """The window `Ctrl+Shift+M` produces must not be smaller than its own contents.
+
+    `set_compact` asserted §9.6.2's literals — `setMinimumSize(380, 144)` — against a layout that
+    needed 217 px, so the state pills drew over each other and the medallion flattened out of
+    shape, exactly as the ordinary layout did before #21. It also *lowered* the width floor
+    `_size_minimum_width` had raised, discarding #20's fix on a keystroke.
+    """
+    window = MainWindow(Theme.DARK)
+    window.show()
+    QApplication.processEvents()
+
+    window.set_compact(True)
+    QApplication.processEvents()
+
+    central = window.centralWidget()
+    assert central is not None
+    layout = central.layout()
+    assert layout is not None
+    layout.invalidate()
+    layout.activate()
+    needed = central.minimumSizeHint().height() + window.statusBar().sizeHint().height()
+
+    assert window.minimumHeight() >= needed, (
+        f"compact may be {window.minimumHeight()} px tall and its layout needs {needed} px"
+    )
+    assert window.minimumWidth() >= COMPACT_MINIMUM[0]
     window.close()
 
 
