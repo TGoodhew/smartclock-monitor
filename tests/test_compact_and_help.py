@@ -62,6 +62,68 @@ def test_compact_collapses_rather_than_clips() -> None:
     window.close()
 
 
+def test_the_readouts_collapse_when_the_window_is_too_short_for_them() -> None:
+    """§9.6.2's *collapsed, not clipped*, driven by size rather than by a keystroke (#21).
+
+    `set_compact` did every collapse the section asks for and was reachable only from
+    `Ctrl+Shift+M` — no `resizeEvent`, nothing consulting the window's height — so the ordinary
+    layout was never collapsed at any size. Forced below what it needed, Qt squeezed instead: the
+    three state pills drew over each other and the medallion lost the shape and the count G1
+    measures this window on.
+    """
+    window = MainWindow(Theme.DARK)
+    window.show()
+    QApplication.processEvents()
+    assert window.readouts_card.isVisible() is True, "the readouts belong on a tall window"
+
+    window.resize(window.width(), window.minimumHeight())
+    QApplication.processEvents()
+
+    assert window.readouts_card.isVisible() is False, (
+        "the readout card is still in the layout at the minimum height, so something is being "
+        "squeezed rather than collapsed"
+    )
+    window.close()
+
+
+def test_the_count_and_the_lock_state_survive_the_smallest_draggable_window() -> None:
+    """The two things §9.6.2 keeps, and the two G1 is measured on: *mode and tracked-satellite
+    count legible at 2 m*. They are the first things lost when a layout is squeezed, and they must
+    be the last.
+
+    The floor is what makes this hold rather than the collapse alone — below it there is nothing
+    further §9.6.2 permits to collapse, so a window that could still be dragged smaller would be
+    back to overlapping text.
+    """
+    window = MainWindow(Theme.DARK)
+    window.show()
+    QApplication.processEvents()
+
+    assert window.medallion.isVisible() is True, "the satellite count's home"
+    assert window.mode_pill.isVisible() is True, "the lock state"
+
+    # **Measured against the layout the floor actually holds, not by resizing to it.** A resize is
+    # a request, and the offscreen platform this runs under does not honour it — asking the window
+    # its height after one gives the height before. So the collapsed layout is put on screen
+    # directly, which is the state the floor exists to accommodate, and asked what it needs.
+    central = window.centralWidget()
+    assert central is not None
+    layout = central.layout()
+    assert layout is not None
+
+    window.readouts_card.setVisible(False)
+    layout.invalidate()
+    layout.activate()
+    QApplication.processEvents()
+    needed = central.minimumSizeHint().height() + window.statusBar().sizeHint().height()
+
+    assert window.minimumHeight() >= needed, (
+        f"the window may be dragged to {window.minimumHeight()} px tall but the collapsed layout "
+        f"needs {needed} px — the difference comes out of whatever will compress"
+    )
+    window.close()
+
+
 def test_no_header_control_is_clipped_at_the_minimum_width() -> None:
     """§9.6.2's *collapsed, not clipped* applied to the row §10.3 actually has.
 
@@ -139,7 +201,9 @@ def test_leaving_compact_puts_everything_back() -> None:
 
     assert window.is_compact is False
     assert window.readouts_card.isVisible() is True
-    assert window.minimumHeight() == MAIN_MINIMUM[1]
+    # The floor is measured, as the width's is (#20, #21): §9.6.2's 240 is where the reduced
+    # layout fits inside it, and in this port's layout it does not. Never below the spec figure.
+    assert window.minimumHeight() >= MAIN_MINIMUM[1]
     assert window.medallion.maximumHeight() == 180
     window.close()
 
