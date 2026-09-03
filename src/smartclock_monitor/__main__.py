@@ -258,6 +258,9 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         """
         if session is None:
             window.set_command_runner(None)
+            # Both halves are wanted: §10.4's card is emptied (this branch) and an intentional
+            # disconnect is not filed as a fault (#28, on main).
+            window.set_identity(None, None)
             if supervisor.stopped_by_user:
                 changes.user_disconnected()
             else:
@@ -268,6 +271,9 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         window.set_connection_text(f"Connected to {named} — {session.description}")
         changes.connected(session.description, identity.model if identity is not None else None)
         window.set_command_runner(SessionCommands(session))
+        # P0-1: the identity has to reach a surface, not only the status bar and the log. §10.4's
+        # *Receiver* card is that surface, and until this line nothing filled it.
+        window.set_identity(identity, session.identity_text)
 
     supervisor = Supervisor(
         connect=connect,

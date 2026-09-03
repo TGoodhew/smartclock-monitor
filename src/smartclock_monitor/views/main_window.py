@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import (
     OutputValidity,
     ReceiverStatus,
@@ -186,6 +187,11 @@ class MainWindow(QMainWindow):
 
         self._detail = _label("", "device")
         self._detail.setWordWrap(True)
+
+        # Held for a details window opened later, like the runner and the store above it. A pair
+        # rather than two attributes: §10.4 shows the raw answer *instead* where it did not parse,
+        # so the two are only ever meaningful together.
+        self._identity: tuple[DeviceIdentity | None, str | None] = (None, None)
 
         self._details: DetailsWindow | None = None
         # Held here rather than in the details window because the details window is created on
@@ -560,6 +566,7 @@ class MainWindow(QMainWindow):
             self._details.exit_requested = self.exit_application
             self._details.help_requested = self.open_help
             self._details.settings_changed = self._remember_preferences
+            self._details.set_identity(*self._identity)
             if self._last_reading is not None:
                 self._details.show_reading(self._last_reading)
 
@@ -909,6 +916,18 @@ class MainWindow(QMainWindow):
         self._store = store
         if self._details is not None:
             self._details.set_trend_store(store)
+
+    def set_identity(self, identity: DeviceIdentity | None, raw: str | None) -> None:
+        """Who the receiver says it is. Held for a details window opened later, forwarded to one
+        already open.
+
+        Held rather than read back off the session when the details window opens: P0-1 wants the
+        identity on a surface the user looks at, and most sessions open that window minutes after
+        connecting — long after the one moment the identity was read.
+        """
+        self._identity = (identity, raw)
+        if self._details is not None:
+            self._details.set_identity(identity, raw)
 
     @property
     def details(self) -> DetailsWindow | None:

@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.export import machine_rows, suggested_filename, to_csv
 from smartclock_monitor.services.polling import Reading
@@ -460,6 +461,21 @@ class DetailsWindow(QMainWindow):
             setter = getattr(page, "set_trend_store", None)
             if setter is not None:
                 setter(store)
+
+    def set_identity(self, identity: DeviceIdentity | None, raw: str | None) -> None:
+        """Hand the pages the four ``*IDN?`` fields, and the raw answer they came from.
+
+        Broadcast rather than addressed to §10.4's page by name, for the same reason the runner
+        and the store are: which page displays the identity is a fact about that page.
+
+        **Called on every connection change, including the one that ends a connection.** A
+        reconnect can find a different receiver on the port, and an identity left over from the
+        previous one is worse than no identity at all.
+        """
+        for page in self._pages:
+            setter = getattr(page, "set_identity", None)
+            if setter is not None:
+                setter(identity, raw)
 
     def show_reading(self, reading: Reading) -> None:
         """Feed every page, visible or not — see the module docstring."""
