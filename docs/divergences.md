@@ -26,6 +26,8 @@ its reasoning in [`platform-decisions.md`](platform-decisions.md) and its argume
 | **How pages name commands** | SCPI mnemonics | `Capability` enum | Different — see below |
 | **System accent colour (P1-11)** | Opt-in | Not offered | Neutral — nothing to read |
 | **Sequential ramp on Dark** | One ramp, both themes | Derived per surface | *Fix* — see below |
+| **Diverging ramp** | One ramp, both themes | Derived per surface | *Fix* — see below |
+| **Main window minimum width** | 380 px (§9.6.2) | **415 px**, measured | Different — see below |
 | **Multiple receivers (P2-1)** | Not built | Not built | Same |
 
 ---
@@ -102,14 +104,58 @@ a switch that cannot work.
 §9.4.4 gives the sequential ramp — signal strength on the sky plot — as **one** column of seven
 values with no per-theme variant. A sequential ramp is read by lightness, so used verbatim on the
 Dark card the encoding is exactly inverted: the strongest satellite draws the least visible mark
-at 1.13:1 and the weakest draws the brightest.
+at 1.36:1 and the weakest draws the brightest.
 
 This port derives a ramp for the dark surface instead. Figures in
 [`palette-figures.md`](palette-figures.md).
 
-**If WinZ3805A resolves `WzSequential1..7` from one dictionary in both themes, it has the same
-defect** — filed as [TGoodhew/WinZ3805A#367](https://github.com/TGoodhew/WinZ3805A/issues/367). This is
-the one place a colour differs between the two repositories, and it is meant to stop differing.
+**§9.4.4's *diverging* ramp had the same defect and a worse one**, found by applying the same
+reasoning to the ramp next door: on Dark its ordering inverts too, and on **Light** three of its
+five stops sit under §9.4.5's 3:1 floor on the theme it was drawn for. Those five are drawn as 1 px
+chart lines, so the floor applies to every one of them
+([#19](https://github.com/TGoodhew/smartclock-monitor/issues/19)).
+
+**Neither is a difference between the repositories any more.** Both were filed upstream, both were
+fixed there, and `build/palette/` is byte-identical again in both directions —
+[#367](https://github.com/TGoodhew/WinZ3805A/issues/367) for the sequential ramp,
+[#372](https://github.com/TGoodhew/WinZ3805A/pull/372) for the diverging one, whose derivation was
+written upstream and carried here. The colours agree; what this section now records is where two
+defects were found rather than where two repositories differ.
+
+---
+
+## §9.6.2's minimum width is 415 here, not 380
+
+§9.6.2 gives the main window a minimum of **380 by 240**. This port enforces **240 high and as wide
+as the button row measures**, which is 415 px on the bundled typefaces.
+
+**The 380 was never wrong; it was computed for a layout this port does not have.** That section's
+"behaviour at minimum" collapses *the footer*, and in WinZ3805A the buttons are in one — so at
+380 px there are no buttons on screen and 380 only ever had to hold the medallion and two lines of
+text. This port has no footer, and §10.3's buttons sit in the header instead, where nothing
+collapses them. Applied literally, the number left the row 35 px over its space and Qt clipped it:
+`Connect…` lost its first character, `Retry now` its last, and the theme picker rendered as `Dar`
+([#20](https://github.com/TGoodhew/smartclock-monitor/issues/20)).
+
+That is the one outcome §9.6.2 explicitly forbids — *"**collapsed** — not clipped, not scrolled"* —
+and a clipped button stays focusable and hit-testable while unreadable, which A11Y-1 and A11Y-6
+forbid in turn. So the choice was to break the number or to break the rule the number serves.
+
+**G1's box is what makes this safe.** Its acceptance criterion is a main window of *420 by 260 or
+smaller* — an upper bound, because the window is meant to be left open on a second monitor all day.
+415 fits inside it with 5 px to spare, so the floor moved without the goal moving. A gate asserts
+that, and would fail if a wider typeface ever pushed the row past 420.
+
+**Measured, not pinned.** The width comes from the controls' own reported sizes after the
+stylesheet is applied, for the reason `_size_theme_picker` gives at length: a literal that is right
+on one desktop is wrong on the next, and this repository has already been caught by that once — the
+theme picker measured 28 px against 36 after polishing, and 18 against 75 on CI's Windows runner.
+The two typefaces are bundled so the metrics are pinned rather than inherited, which is why 415 is
+expected to hold everywhere rather than being this machine's number.
+
+**The specification is not edited.** [`requirements.md`](requirements.md) stays byte-identical to
+WinZ3805A's copy, as [`provenance.md`](provenance.md) requires; this document is the authority for
+the difference. §9.6.2's 380 is therefore knowingly stale for this port, and deliberately so.
 
 ---
 
