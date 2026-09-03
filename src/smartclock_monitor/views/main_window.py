@@ -18,8 +18,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import datetime
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QKeySequence, QShortcut, QShowEvent
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QKeySequence, QResizeEvent, QShortcut, QShowEvent
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -195,6 +195,14 @@ class MainWindow(QMainWindow):
         self._runner: CommandRunner | None = None
         self._supervisor: Supervisor | None = None
         self._compact = False
+        #: What the window needs, with the readout card shown and hidden. Measured at first show,
+        #: because the answer depends on the font — see `_measure_height_budget`.
+        self._full_height: int | None = None
+        self._reduced_height: int | None = None
+        #: Guards the measurement, which toggles the card and so provokes the resize it runs from.
+        self._measuring = False
+        #: Whether the one-off grow-to-fit on first show has happened.
+        self._settled = False
         self._help: HelpWindow | None = None
         # Loaded once at startup. §10.13: a missing or unreadable file reads as the defaults, and
         # the default for anything advanced is off.
@@ -400,6 +408,19 @@ class MainWindow(QMainWindow):
             self._medallion.setMinimumSize(132, 132)
             self._medallion.setMaximumHeight(180)
             self.setMinimumSize(*MAIN_MINIMUM)
+            self._size_minimum_width()
+            self._size_minimum_height()
+            # **Grown back, not merely permitted to grow.** Entering compact resized the window to
+            # 380 x 144; leaving it without undoing that would hand the height budget a window too
+            # short for the readouts, which would collapse them again — so `Esc` would restore the
+            # medallion and appear to do nothing else. §9.6.2 offers compact as a state to leave,
+            # and leaving it has to be visible.
+            if self._full_height is not None and self.height() < self._full_height:
+                self.resize(self.width(), self._full_height)
+            # Shown directly rather than left to the budget: a resize is a request, and the height
+            # it produces is not readable on the next line — offscreen it is not applied at all.
+            # Leaving compact restores the card, and the next resize refines from there.
+            self._readouts.setVisible(True)
 
     def toggle_compact(self) -> None:
         self.set_compact(not self._compact)
@@ -521,6 +542,132 @@ class MainWindow(QMainWindow):
             + Spacing.CARD_PADDING * 2
         )
 
+    def _measure_height_budget(self) -> None:
+        """Record what the window needs with the readout card shown and hidden.
+
+        Measured once, after the stylesheet, for the reason `_size_theme_picker` gives: the answer
+        is font-dependent and a literal is wrong on some desktop. Both states are applied and asked
+        rather than one being derived from the other by arithmetic, because the card's height is not
+        the only thing that changes when it goes — the spacing around it goes with it.
+        """
+        central = self.centralWidget()
+        bar = self.statusBar()
+        if central is None or bar is None or central.layout() is None:
+            return
+
+        chrome = bar.sizeHint().height()
+        was_visible = self._readouts.isVisible()
+
+        def needed(showing: bool) -> int:
+            self._readouts.setVisible(showing)
+            layout = central.layout()
+            if layout is not None:
+                # **`invalidate` before `activate`, or the answer is the previous state's.** Qt
+                # caches `minimumSizeHint` up the parent chain and `activate` alone does not clear
+                # it, so measuring straight after a `setVisible` returns the height the layout
+                # needed *before* the card went — 3 px out here, and silently.
+                layout.invalidate()
+                layout.activate()
+            return central.minimumSizeHint().height() + chrome
+
+        self._full_height = needed(True)
+        self._reduced_height = needed(False)
+        self._readouts.setVisible(was_visible)
+
+    def _settle_height_budget(self) -> None:
+        """Re-take the measurement once the layout has actually run. See `showEvent`."""
+        if self._compact:
+            return
+        self._measure_height_budget()
+        self._size_minimum_height()
+
+        # **Opened showing everything.** Qt sizes a new window from `sizeHint`, which lands a few
+        # pixels under what the full layout needs, so the budget's first act would be to collapse
+        # the readouts on a window nobody had resized — the application would start in its reduced
+        # state for want of 3 px. Grown once, on the first settle only; after that the height is
+        # the user's and the budget follows it.
+        if not self._settled and self._full_height is not None:
+            self._settled = True
+            if self.height() < self._full_height:
+                self.resize(self.width(), self._full_height)
+
+        self._apply_height_budget()
+
+    def _apply_height_budget(self) -> None:
+        """§9.6.2's *collapsed, not clipped*, decided by the window's height not by a keystroke.
+
+        **This is the whole of the policy, and it was the whole of the defect.** `set_compact` did
+        every collapse §9.6.2 asks for and was reachable only from `Ctrl+Shift+M` — there was no
+        `resizeEvent` and nothing consulted the window's size, so the ordinary layout was never
+        collapsed at any height. Forced 213 px below what it needed, Qt took the difference out of
+        whatever would compress: the three state pills drew on top of each other and the medallion
+        flattened into a half-arc, losing the satellite count G1 measures this window on (#21).
+
+        The readout card is what goes, which is exactly what §9.6.2 collapses at the minimum — *the
+        readout row, the figures of merit* — leaving the medallion, its count and the state pills,
+        which are the two things that must survive.
+
+        Compact is **not** a breakpoint and is deliberately not reached from here: §9.6.2 is
+        explicit that *"compact cannot be entered by dragging, and that is the application's floor
+        rather than the display's"*. It stays a mode the user chooses.
+        """
+        if self._compact or self._full_height is None:
+            return
+
+        fits = self.height() >= self._full_height
+        if fits is not self._readouts.isVisible():
+            self._readouts.setVisible(fits)
+
+        # **The floor is re-read whenever the collapsed layout is the one on screen.** How tall the
+        # reduced layout needs to be depends on how wide it is — text wraps — so the figure taken
+        # once at first show is the figure for the width it was shown at, and it was 3 px short at
+        # the minimum width. While the card is collapsed the live layout *is* the reduced layout,
+        # so it can be asked directly rather than by toggling anything and repainting.
+        if not self._readouts.isVisible():
+            # **Twice, because the first answer is taken mid-settle.** Activating the layout
+            # propagates the card's removal one level, and the height that falls out is the height
+            # before everything above it has re-laid; asking again once it has settled is 3 px
+            # different, and 3 px is the difference between a floor that holds and one that lets
+            # the window be dragged into overlapping text. It converges immediately — a third call
+            # returns the same number — so this is a settle, not a loop.
+            for _ in range(2):
+                self._size_minimum_height(self._reduced_height_now())
+
+    def _reduced_height_now(self) -> int | None:
+        """What the layout on screen needs, in effective pixels. Only meaningful while collapsed."""
+        central = self.centralWidget()
+        bar = self.statusBar()
+        if central is None or bar is None:
+            return None
+        layout = central.layout()
+        if layout is None:
+            return None
+        layout.invalidate()
+        layout.activate()
+        return central.minimumSizeHint().height() + bar.sizeHint().height()
+
+    def _size_minimum_height(self, measured: int | None = None) -> None:
+        """Raise the floor to what the *reduced* layout needs, never lower it.
+
+        The counterpart to `_size_minimum_width`, and the same shape: §9.6.2's 240 is the floor
+        where the reduced layout fits inside it, and here it does not — this port's main window
+        carries a header row that the one that number was computed for does not have. Recorded in
+        `docs/divergences.md` beside the width.
+
+        Stopping the drag is the point. Collapsing the readouts is not enough on its own: below
+        this height there is nothing further to collapse that §9.6.2 permits, so the alternative to
+        a floor is the overlap again.
+        """
+        needed = self._reduced_height if measured is None else measured
+        if needed is None:
+            return
+        self.setMinimumHeight(max(MAIN_MINIMUM[1], needed))
+
+    def resizeEvent(self, event: QResizeEvent) -> None:  # noqa: N802 - Qt's own casing
+        super().resizeEvent(event)
+
+        self._apply_height_budget()
+
     def _size_minimum_width(self) -> None:
         """Widen the floor to whatever the header actually measures, never narrow it.
 
@@ -534,6 +681,17 @@ class MainWindow(QMainWindow):
         super().showEvent(event)
         self._size_theme_picker()
         self._size_minimum_width()
+        # An estimate now so nothing reads `None`, and the real answer once the loop has turned.
+        self._measure_height_budget()
+        self._size_minimum_height()
+        self._apply_height_budget()
+        # **Deferred, because only an event-loop turn settles this layout.** Measured inside
+        # `showEvent` the reduced layout reports 282 px; after one turn the same layout reports
+        # 285. Neither `invalidate`+`activate` nor `ensurePolished` closes the gap — it takes a
+        # posted event. Three pixels is the difference between a floor that holds and one that
+        # lets the window be dragged back into the overlap this exists to prevent, so the figure
+        # is taken again where it is right rather than where it is convenient.
+        QTimer.singleShot(0, self._settle_height_budget)
 
     # -- §10.3.1 closing ---------------------------------------------------------------------------
     #
