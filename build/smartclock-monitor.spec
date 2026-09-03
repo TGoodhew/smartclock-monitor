@@ -20,12 +20,18 @@ exactly the sort of failure that ships.
 
 from pathlib import Path
 
-from PyInstaller.utils.hooks import collect_data_files
+from PyInstaller.utils.hooks import collect_data_files, copy_metadata
 
 ROOT = Path(SPECPATH).parent  # noqa: F821 - PyInstaller injects SPECPATH
 
 # Read through importlib.resources at runtime, so nothing static references them.
 datas = [
+    # The package's own .dist-info. Without it `importlib.metadata.version` raises
+    # PackageNotFoundError in the bundle and every surface that reports the release — §9.7.5's
+    # guide footer, and the status bar — answers "not installed". That is wrong in the one
+    # distribution channel where the user has no other way to find the number, and it fails
+    # silently: the fallback is a legitimate answer everywhere else.
+    *copy_metadata("smartclock-monitor"),
     *collect_data_files("smartclock_monitor.themes.fonts", include_py_files=False),
     (str(ROOT / "docs" / "how-to-use.md"), "smartclock_monitor/resources"),
     # --demo replays these. Left out, the bundle starts and shows nothing for ever, which reads as
