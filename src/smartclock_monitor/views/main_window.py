@@ -437,6 +437,14 @@ class MainWindow(QMainWindow):
         # "onnect…", which is #20's defect returning through a door #20 did not close.
         self._header.setVisible(not compact)
 
+        # **The status bar goes with it**, and §9.6.2's own arithmetic is why: it spends its 144 on
+        # a title bar, a page margin, the 64 px medallion and a margin, and says in as many words
+        # that the compact layout "is already down to a medallion and one line of text". A status
+        # line is neither.
+        bar = self.statusBar()
+        if bar is not None:
+            bar.setVisible(not compact)
+
         if compact:
             self._medallion.setMinimumSize(64, 64)
             self._medallion.setMaximumHeight(64)
