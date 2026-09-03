@@ -7,7 +7,8 @@ how to build or change the application; the README and the specification do.
 
 Every picture here was rendered from this application in the **Light** theme, driven from the
 captured status screens in `tests/fixtures/`, so the numbers are real ones from a real Z3805A. The
-details pages are shown at 1120 px wide; narrower and the cards stack into one column.
+details pages were captured in a window 1120 px wide; narrower, and the Satellites page's two
+cards stack into one column.
 `tools/capture_guide_images.py` produces them, and is the only thing that does.
 
 > **If you know the Windows application**, [`divergences.md`](divergences.md) is the page to read
