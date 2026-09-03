@@ -248,6 +248,29 @@ def test_the_medallion_shrinks_to_64() -> None:
     assert window.medallion.minimumHeight() == 64
 
 
+def test_the_compact_layout_fits_the_figure_section_9_6_2_sets() -> None:
+    """A minimum the content does not fit in is not a minimum.
+
+    §9.6.2 spends its 144 px on a title bar, a page margin, §9.10.2's 64 px medallion and a margin,
+    and says the compact layout "is already down to a medallion and one line of text" — so anything
+    else still in the layout there is over budget by construction. The button row and the status
+    bar were, by 48 px, and `set_compact` puts the window at exactly this size: entering compact
+    mode clipped the medallion to an arc and drew the mode text across it, every time.
+
+    Measured rather than eyeballed, because that is the only form of this that fails when somebody
+    adds a second row to the header.
+    """
+    window = MainWindow(Theme.DARK)
+    window.show()
+    window.set_compact(True)
+
+    content = window.centralWidget()
+    assert content is not None
+    assert content.sizeHint().height() <= COMPACT_MINIMUM[1]
+    assert content.sizeHint().width() <= COMPACT_MINIMUM[0]
+    window.close()
+
+
 def test_leaving_compact_puts_everything_back() -> None:
     window = MainWindow(Theme.DARK)
     window.show()
@@ -260,6 +283,9 @@ def test_leaving_compact_puts_everything_back() -> None:
     # layout fits inside it, and in this port's layout it does not. Never below the spec figure.
     assert window.minimumHeight() >= MAIN_MINIMUM[1]
     assert window.medallion.maximumHeight() == 180
+    # Everything compact collapsed comes back with it, not only the readout row.
+    bar = window.statusBar()
+    assert bar is not None and bar.isVisible() is True
     window.close()
 
 
