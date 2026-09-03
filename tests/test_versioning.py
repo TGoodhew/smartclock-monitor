@@ -1,0 +1,77 @@
+"""#33's versioning: the number is derived from git, and stays that way.
+
+The version sat at ``0.0.1`` through every merge the port had, because a literal only changes when
+somebody remembers and the thing it describes changes on every commit. It is now a function of the
+repository state — and the two ways that quietly stops being true are what this module watches.
+"""
+
+from __future__ import annotations
+
+import re
+import tomllib
+from importlib import metadata
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+
+
+def _pyproject() -> dict[str, object]:
+    with (ROOT / "pyproject.toml").open("rb") as handle:
+        return tomllib.load(handle)
+
+
+def test_the_version_is_derived_rather_than_written_down() -> None:
+    """No literal to bump, so no literal to forget.
+
+    §6.3 forbids hard-coding the application's *name* because "a rename that has to be made in nine
+    places gets made in eight". A version is that argument with a number and a shorter half-life:
+    it changes every release, and a stale copy still looks authoritative.
+    """
+    project = _pyproject()["project"]
+    assert isinstance(project, dict)
+
+    assert "version" in project.get("dynamic", []), (
+        "pyproject declares a literal version again — it will go stale the first time it is not "
+        "bumped, which is the defect #33 removed"
+    )
+    assert "version" not in project, f"a literal version is back: {project.get('version')!r}"
+
+    build = _pyproject()["build-system"]
+    assert isinstance(build, dict)
+    assert "hatch-vcs" in build.get("requires", []), "nothing derives the version any more"
+
+
+def test_ci_checks_out_enough_history_to_derive_a_version() -> None:
+    """**The failure this exists for is silent.** Actions checks out a shallow clone with no tags,
+    and `hatch-vcs` answers `0.0.0` rather than failing — so every artefact CI produced would carry
+    the same wrong number and nothing would say so. A note in the workflow would have been read
+    once; this is read on every run.
+    """
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text()
+
+    # Read as text rather than parsed: a YAML parser would be one more dependency for one check,
+    # and what matters is a property of each checkout step, which its own block carries.
+    steps = re.split(r"^\s*- (?=uses:|name:)", text, flags=re.MULTILINE)
+    checkouts = [step for step in steps if step.startswith("uses: actions/checkout")]
+
+    assert checkouts, "no checkout steps found — has the workflow moved?"
+    for step in checkouts:
+        assert "fetch-depth: 0" in step, (
+            "a CI checkout is shallow, so hatch-vcs would derive 0.0.0 for it and say nothing:\n"
+            f"{step.strip()[:200]}"
+        )
+
+
+def test_the_installed_version_is_readable_and_not_the_old_literal() -> None:
+    """What the status bar and §9.7.5's guide footer actually read.
+
+    Not asserted to be any particular number — it is derived, so pinning one here would put the
+    literal back in a test instead of in `pyproject.toml`.
+    """
+    version = metadata.version("smartclock-monitor")
+
+    assert version, "the package reports no version at all"
+    assert version != "0.0.1", (
+        "the installed version is the literal #33 removed — this environment predates the change "
+        "and needs 'pip install -e .' again"
+    )

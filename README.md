@@ -175,6 +175,33 @@ The spec ships all three and `--doctor` reports the fonts, so a bundle missing t
 
 Flatpak and an AppImage are the intended Linux distribution (D2); neither is built yet.
 
+## Cutting a release
+
+**The version is derived from git, not written anywhere.** `hatch-vcs` reads the latest tag and how
+far past it the commit is, so a release is a tag and nothing else:
+
+```bash
+git switch main && git pull
+git tag -a v0.2.0 -m "What changed"
+git push origin v0.2.0
+```
+
+Between tags a build reports something like `0.2.1.dev7+g3ad956e` — the next version, the distance,
+and the commit — and at a tag it reports the tag. Both the status bar and the guide's foot read it
+through `importlib.metadata`, so a screenshot identifies the build it came from.
+
+Annotated (`-a`) rather than lightweight: `git describe`, and so `hatch-vcs`, prefers them, and the
+message is where the reason for the release lives.
+
+Two things to know:
+
+- **An editable install reports the version from when it was last installed.** `pip install -e .`
+  writes the metadata once; it does not re-derive on every run. Reinstall after tagging if the
+  number matters to what you are doing.
+- **A checkout without tags cannot derive anything** and falls back to `0.0.0`. CI checks out with
+  `fetch-depth: 0` for that reason, and `tests/test_versioning.py` fails if that ever stops being
+  true — otherwise every artefact would carry the same wrong number and nothing would say so.
+
 ## Adding another receiver
 
 Every receiver-specific fact sits behind a driver, so a second family is a new file rather than a
