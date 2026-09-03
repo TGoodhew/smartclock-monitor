@@ -77,6 +77,9 @@ class Supervisor:
 
     _retry_now: asyncio.Event = field(default_factory=asyncio.Event, init=False)
     _stopped: bool = field(default=False, init=False)
+    #: Whether the stop was *asked for*. §9.11: "an intentional disconnect is not a fault", and
+    #: everything downstream — the status line, the change log's level — turns on the difference.
+    _disconnecting: bool = field(default=False, init=False)
     _restarting: bool = field(default=False, init=False)
     _session: DeviceSession | None = field(default=None, init=False)
 
@@ -93,7 +96,26 @@ class Supervisor:
 
     def resume(self) -> None:
         self._stopped = False
+        self._disconnecting = False
         self._retry_now.set()
+
+    def disconnect(self) -> None:
+        """Close the link and stay closed until asked again (§9.7.5's other half of Connect).
+
+        **Both halves are needed.** Closing the session without stopping the cycle reconnects
+        within a backoff interval, because `stay_connected` defaults to on — the port would come
+        back on its own a second or two after the user asked for it to go, which reads as a bug
+        rather than as a feature. So this is `stop_retrying` and a closed session together, which
+        is what that method was written for and why it had no caller until now.
+        """
+        self._stopped = True
+        self._disconnecting = True
+        self._retry_now.set()
+
+    @property
+    def stopped_by_user(self) -> bool:
+        """Whether the link is down because somebody asked, rather than because it failed."""
+        return self._disconnecting
 
     def reconnect(self) -> None:
         """Drop the current session and connect again, now.
@@ -104,7 +126,13 @@ class Supervisor:
         instruction. So the poll is asked to stop, and the cycle skips the countdown.
         """
         self._stopped = False
-        self._restarting = True
+        self._disconnecting = False
+        # **Only when there is something to drop.** `_restarting` means "abandon the session in
+        # flight", and the poll loop acts on it the moment a session starts. Set with no session
+        # live — which is exactly the state a deliberate disconnect leaves behind — the next
+        # connect opens the port, sees the flag, abandons it and opens it again: one press, two
+        # opens, and a receiver that is asked to start twice.
+        self._restarting = self._session is not None
         self._retry_now.set()
 
     @property
@@ -180,6 +208,11 @@ class Supervisor:
         woken = asyncio.ensure_future(self._retry_now.wait())
         try:
             while not polling.done():
+                if self._disconnecting:
+                    # Nothing said here: `_wait_to_retry` reports the settled state a moment
+                    # later, and announcing the transition as well would put two lines in the
+                    # status bar for one press.
+                    return
                 if self._restarting:
                     self._say("Reconnecting…")
                     return
@@ -203,11 +236,30 @@ class Supervisor:
     async def _wait_to_retry(self, attempt: int) -> bool:
         """Count down to the next attempt. Returns whether to make one."""
         if not self.stay_connected or self._stopped:
-            self._say("Not reconnecting. Connect again when you are ready.")
+            # §9.11 again: the wording for a disconnect somebody asked for must not read as a
+            # failure report. "Not reconnecting" is the right sentence for a link that was lost
+            # and the wrong one for a link that was closed on purpose.
+            self._say(
+                "Disconnected. Connect when you are ready."
+                if self._disconnecting
+                else "Not reconnecting. Connect again when you are ready."
+            )
             # Wait indefinitely for someone to ask, rather than returning and ending the task:
             # ending it would mean a Connect button with nothing behind it.
-            await self._retry_now.wait()
-            return not self._stopped
+            #
+            # **A user's disconnect parks here; `stop_retrying` still ends the cycle.** The two
+            # look alike and are not: *Stop retrying* answers "leave it, this link is not coming
+            # back", while *Disconnect* is half of a toggle whose other half has to work. Ending
+            # the task on a disconnect would leave exactly the Connect button with nothing behind
+            # it that this comment warns about — the first version of this did, and the supervisor
+            # quietly finished the moment anyone pressed the new button.
+            while True:
+                await self._retry_now.wait()
+                if not self._stopped:
+                    return True
+                if not self._disconnecting:
+                    return False
+                self._retry_now.clear()
 
         for remaining in range(self.backoff(attempt), 0, -1):
             self._say(f"Lost the connection. Retrying in {remaining} second{_s(remaining)}…")

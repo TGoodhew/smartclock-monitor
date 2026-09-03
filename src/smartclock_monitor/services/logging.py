@@ -111,6 +111,15 @@ class ChangeLog:
     def disconnected(self, reason: str) -> None:
         log().warning("Disconnected: %s", reason)
 
+    def user_disconnected(self) -> None:
+        """A disconnect somebody asked for.
+
+        **INFO, not WARNING.** §9.11 is explicit that an intentional disconnect is not a fault, and
+        #127's log is read by somebody looking for faults — filing the user's own instruction at
+        the same level as a dropped adapter would make the log worse at the one job it has.
+        """
+        log().info("Disconnected at the user's request.")
+
     def observed(self, reading: Reading) -> None:
         """The receiver's mode and satellite count, **whenever they move**."""
         mode = reading.status.mode.name

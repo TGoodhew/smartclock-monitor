@@ -195,6 +195,10 @@ class MainWindow(QMainWindow):
         self._runner: CommandRunner | None = None
         self._supervisor: Supervisor | None = None
         self._compact = False
+        #: Whether a session is live. Set from `set_command_runner`, which is already called with
+        #: a runner as one opens and with `None` as one goes — the presence of a runner *is* the
+        #: presence of a session, so a second flag tracking the same fact could disagree with it.
+        self._connected = False
         #: What the window needs, with the readout card shown and hidden. Measured at first show,
         #: because the answer depends on the font — see `_measure_height_budget`.
         self._full_height: int | None = None
@@ -217,7 +221,7 @@ class MainWindow(QMainWindow):
         self._connect_button = QPushButton("Connect…")
         self._connect_button.setAccessibleName("Choose a port and connect")
         self._connect_button.setToolTip("Choose a serial port and connect (Ctrl+Shift+C)")
-        self._connect_button.clicked.connect(self.choose_connection)
+        self._connect_button.clicked.connect(self.connect_or_disconnect)
 
         self._details_button = QPushButton("Details…")
         self._details_button.setAccessibleName("Open the details window")
@@ -230,7 +234,7 @@ class MainWindow(QMainWindow):
         QShortcut(QKeySequence("F5"), self, lambda: self._in_details("refresh_current"))
         QShortcut(QKeySequence("Ctrl+E"), self, lambda: self._in_details("export_current"))
         QShortcut(QKeySequence("Ctrl+,"), self, lambda: self._in_details("show_settings"))
-        QShortcut(QKeySequence("Ctrl+Shift+C"), self, self.choose_connection)
+        QShortcut(QKeySequence("Ctrl+Shift+C"), self, self.connect_or_disconnect)
         QShortcut(QKeySequence("Ctrl+Shift+M"), self, self.toggle_compact)
         QShortcut(QKeySequence("F1"), self, self.open_help)
         QShortcut(QKeySequence("Esc"), self, self.leave_compact)
@@ -777,9 +781,53 @@ class MainWindow(QMainWindow):
         if self._supervisor is not None:
             self._supervisor.retry_now()
 
+    def connect_or_disconnect(self) -> ConnectionChoice | None:
+        """§9.7.5's `Ctrl+Shift+C`, which that table gives as *Connect / disconnect*.
+
+        Only the connect half existed; there was no way for a user to close the link at all short
+        of quitting, which D5 makes an exit rather than a disconnect (#28).
+
+        **The ellipsis decides which half needs a dialog.** *Connect…* opens §10.12's picker
+        because a port has to be chosen; *Disconnect* has nothing to ask, so it acts at once. That
+        also settles what *Connect* does after a manual disconnect — it opens the picker, like
+        every other connect, which keeps §10.12 reachable. Going straight back to the last port
+        would be one press fewer and would leave no way to change port without restarting.
+        """
+        if self._connected:
+            self.disconnect_now()
+            return None
+        return self.choose_connection()
+
+    def disconnect_now(self) -> None:
+        """Close the link and stay closed. Does nothing with no supervisor to ask."""
+        if self._supervisor is not None:
+            self._supervisor.disconnect()
+
+    def _update_connect_button(self) -> None:
+        """Keep the label, the accessible name and the tooltip saying the same thing.
+
+        **All three, together.** A screen-reader user hearing *"Choose a port and connect"* from a
+        button that disconnects is worse off than a sighted one, who at least sees the word — so
+        the accessible name is not an afterthought here, it is the half that would otherwise rot.
+        """
+        if self._connected:
+            self._connect_button.setText("Disconnect")
+            self._connect_button.setAccessibleName("Disconnect from the receiver")
+            self._connect_button.setToolTip("Close the link and stop polling (Ctrl+Shift+C)")
+        else:
+            self._connect_button.setText("Connect…")
+            self._connect_button.setAccessibleName("Choose a port and connect")
+            self._connect_button.setToolTip("Choose a serial port and connect (Ctrl+Shift+C)")
+
     def set_command_runner(self, runner: CommandRunner | None) -> None:
-        """Held for a details window opened later, forwarded to one already open."""
+        """Held for a details window opened later, forwarded to one already open.
+
+        Also where the connect button learns which word it carries: a runner arrives with a
+        session and goes with it, so this is already the moment the answer changes.
+        """
         self._runner = runner
+        self._connected = runner is not None
+        self._update_connect_button()
         if self._details is not None:
             self._details.set_command_runner(runner)
 

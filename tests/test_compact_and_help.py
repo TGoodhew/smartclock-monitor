@@ -224,6 +224,35 @@ def test_escape_leaves_compact_and_otherwise_does_nothing() -> None:
     window.close()
 
 
+def test_the_connect_button_says_which_half_it_is() -> None:
+    """§9.7.5 gives `Ctrl+Shift+C` as *Connect / disconnect*, and only the connect half existed
+    (#28). The button said *Connect…* while connected and opened the port picker on a live link.
+
+    **All three strings, not just the label.** A screen-reader user hearing "Choose a port and
+    connect" from a button that disconnects is worse off than a sighted one, who at least sees the
+    word — so the accessible name is the half that would otherwise rot unnoticed.
+    """
+    window = MainWindow(Theme.DARK)
+    window.show()
+
+    button = window.header_controls[0]
+    assert button.text() == "Connect…"
+    assert "connect" in button.accessibleName().lower()
+    assert "disconnect" not in button.accessibleName().lower()
+
+    window.set_command_runner(object())  # type: ignore[arg-type]  # standing in for a live session
+
+    assert button.text() == "Disconnect"
+    assert "disconnect" in button.accessibleName().lower()
+    assert "close the link" in button.toolTip().lower(), button.toolTip()
+
+    window.set_command_runner(None)
+
+    assert button.text() == "Connect…"
+    assert "disconnect" not in button.accessibleName().lower()
+    window.close()
+
+
 def test_the_accelerators_section_9_7_5_gives_are_bound() -> None:
     """Attached to the window, which is also how §9.7.5's own amendment says the original does it:
     a control in a collapsible area takes its accelerator with it when it collapses — and compact
