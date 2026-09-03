@@ -67,6 +67,10 @@ from smartclock_monitor.widgets.severity_pill import SeverityPill
 #: On Qt those are also the units ``setMinimumSize`` takes — logical pixels already have the device
 #: ratio applied — so §9.6.2's conversion, its recomputation on a scaling change and its work-area
 #: cap are Windows-specific arithmetic that does not arise here.
+#: **The width here is a floor, not the enforced minimum.** ``_size_minimum_width`` raises it to
+#: whatever §10.3's button row measures — 415 px on the bundled typefaces — because §9.6.2's 380
+#: was computed for a layout whose buttons live in a footer it collapses, and this port has no
+#: footer. Recorded in ``docs/divergences.md``; the specification itself is not edited.
 MAIN_MINIMUM = (380, 240)
 COMPACT_MINIMUM = (380, 144)
 
@@ -230,6 +234,16 @@ class MainWindow(QMainWindow):
         self.set_connection_text("Not connected")
 
     # -- What a test, or a future page, may read ------------------------------------------------
+
+    @property
+    def header_controls(self) -> tuple[QWidget, ...]:
+        """§10.3's button row, in layout order.
+
+        One list, read by the width measurement and by the gate that checks nothing in it is
+        clipped — so a control added to the row is accounted for by both or by neither, rather than
+        by the measurement while the gate keeps passing.
+        """
+        return (self._connect_button, self._retry, self._details_button, self._theme_picker)
 
     @property
     def medallion(self) -> StatusMedallion:
@@ -465,9 +479,45 @@ class MainWindow(QMainWindow):
         self._theme_picker.ensurePolished()
         self._theme_picker.setMinimumWidth(_widest_entry(self._theme_picker) + Spacing.PAGE)
 
+    def _header_minimum_width(self) -> int:
+        """What the button row needs, measured in the font it will actually be drawn in.
+
+        §9.6.2 gives the main window a 380 px minimum, and that number was computed for a layout
+        whose buttons live in a **footer** — which that section collapses at the minimum, so it
+        never had to hold them. This port has no footer (D-series divergence) and §10.3's buttons
+        are in the header instead, where nothing collapses them. At 380 the row was 35 px over its
+        space and Qt clipped it: `Connect…` lost its first character, `Retry now` its last, and the
+        theme picker rendered as `Dar`. §9.6.2 forbids exactly that — *collapsed, not clipped* —
+        and a clipped button stays focusable and hit-testable while unreadable (A11Y-1, A11Y-6).
+
+        **Measured rather than hard-coded**, for the reason `_size_theme_picker` gives at length:
+        the width depends on the font, and a literal that is right on one desktop is wrong on the
+        next. `Retry` is included even though it starts hidden — it appears as soon as a supervisor
+        is attached, and a window that had to grow at that moment would be the same defect arriving
+        later.
+        """
+        controls = self.header_controls
+        for control in controls:
+            control.ensurePolished()
+        return (
+            sum(control.sizeHint().width() for control in controls)
+            + Spacing.SMALL * (len(controls) - 1)
+            + Spacing.CARD_PADDING * 2
+        )
+
+    def _size_minimum_width(self) -> None:
+        """Widen the floor to whatever the header actually measures, never narrow it.
+
+        `max` rather than assignment: §9.6.2's 380 is the floor where the header fits inside it,
+        and this only ever raises it. Idempotent, and called from ``showEvent`` after the picker
+        has been sized, because the picker's own width is one of the four being added up.
+        """
+        self.setMinimumWidth(max(MAIN_MINIMUM[0], self._header_minimum_width()))
+
     def showEvent(self, event: QShowEvent) -> None:  # noqa: N802 - Qt's own casing
         super().showEvent(event)
         self._size_theme_picker()
+        self._size_minimum_width()
 
     # -- §10.3.1 closing ---------------------------------------------------------------------------
     #
