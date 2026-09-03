@@ -48,10 +48,11 @@ that a sequential ramp's neighbours measuring low under simulated protanopia is 
 a defect - they encode a magnitude, they are read by lightness, and the simulated ramp stays
 monotonic. That is checked here rather than maximised.
 
-THIS FILE IS NEW IN THE PYTHON PORT. build/palette/ is otherwise carried across from WinZ3805A
+THIS FILE IS SHARED, and must stay identical in both copies. It was written in the Python port,
+where the defect was found; build/palette/ is carried between WinZ3805A and smartclock-monitor
 byte-for-byte, and the two copies being identical is what lets either repository trust the other's
-colours. That property is broken while this file exists only here - see docs/provenance.md and
-TGoodhew/WinZ3805A, where the same defect and the same fix are filed.
+colours. Anything said here therefore has to be true in both, which is why the destinations below
+are named in pairs. WinZ3805A #367 and smartclock-monitor #9 are the same defect and the same fix.
 """
 import numpy as np, vec
 
@@ -84,8 +85,17 @@ def adjacent_de00(cols):
     return np.array([vec.ciede2000(L[i], L[i + 1]) for i in range(len(cols) - 1)])
 
 
-def in_gamut(rgb):
-    return bool(np.all(rgb >= -0.5) and np.all(rgb <= 255.5))
+def in_gamut(lab):
+    """True when this Lab colour has an sRGB representation.
+
+    NOTE THE FLAG, not the returned bytes. vec.unlin CLIPS, so lab2rgb's first return value is
+    always inside 0..255 and asking whether it is answers yes for every colour in the plane. An
+    earlier version of this file did exactly that and therefore "clamped to the gamut" while doing
+    nothing whatever. It changed nothing here - the specification's chroma curve never asks for an
+    impossible colour, and the ramp above re-derives byte for byte either way - and it changed the
+    answer immediately in diverging.py, which does ask. Corrected there, then here.
+    """
+    return bool(vec.lab2rgb(lab)[1])
 
 
 def hue_band():
@@ -114,7 +124,7 @@ def gamut_chroma(lightness, hue):
     lo, hi = 0.0, 140.0
     for _ in range(40):
         mid = (lo + hi) / 2.0
-        if in_gamut(vec.lab2rgb(vec.lch2lab(lightness, mid, hue))[0]):
+        if in_gamut(vec.lch2lab(lightness, mid, hue)):
             lo = mid
         else:
             hi = mid
@@ -214,6 +224,7 @@ if __name__ == '__main__':
     print("For reference, the specification ramp on the surface it was drawn for:")
     report("SPEC, verbatim, on the LIGHT card", arr(SPEC), CARD_LIGHT)
 
-    print("Put this in themes/tokens.py as _SEQUENTIAL_DARK:\n")
+    print("Put this in the Dark dictionary of Themes/Colors.xaml as WzSequential1..7Brush,")
+    print("and in themes/tokens.py as _SEQUENTIAL_DARK:\n")
     for h in hexes(derived):
         print(f'    "{h}",')
