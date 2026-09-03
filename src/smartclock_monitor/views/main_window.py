@@ -52,7 +52,7 @@ from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import ALL_THEMES, Theme, palette_for
 from smartclock_monitor.views.connection_dialog import ConnectionChoice, ConnectionDialog
 from smartclock_monitor.views.details_window import DetailsWindow
-from smartclock_monitor.views.help_window import HelpWindow
+from smartclock_monitor.views.help_window import NOT_INSTALLED, HelpWindow, version
 from smartclock_monitor.widgets.medallion import StatusMedallion
 from smartclock_monitor.widgets.severity_pill import SeverityPill
 
@@ -95,6 +95,22 @@ _MODE_LABEL: dict[SmartClockMode, str] = {
     SmartClockMode.POWER_UP: "Powering up",
     SmartClockMode.UNKNOWN: "Unknown",
 }
+
+
+def version_label() -> str:
+    """The release, as short as it can be said, for a one-line status bar.
+
+    Derived from the package metadata through :func:`version` — never a literal. §6.3 forbids
+    hard-coding the application's *name* on the reasoning that "a rename that has to be made in
+    nine places gets made in eight", and a version is that argument with a number: it changes every
+    release, so a copy of it goes stale silently and looks authoritative while doing so.
+
+    The unknown case stays honest rather than guessing. An editable checkout with no install is a
+    legitimate way to run this, not only a packaging failure, and a fabricated number would be
+    worse than an admission.
+    """
+    installed = version()
+    return installed if installed == NOT_INSTALLED else f"v{installed}"
 
 
 def _card(parent: QWidget | None = None) -> QFrame:
@@ -625,9 +641,17 @@ class MainWindow(QMainWindow):
     # -- What the poll loop tells it -------------------------------------------------------------
 
     def set_connection_text(self, text: str) -> None:
+        """Put a line in the status bar, behind the build it came from.
+
+        **The version leads every message, not only the connected one.** A screenshot of this
+        window should be enough to say which build produced it, and the states somebody photographs
+        are usually the ones that went wrong — so stamping only the success line would leave the
+        reports that matter unlabelled. §9.7.5 already puts the version at the guide's foot for the
+        same reason: *"somebody reporting a problem can quote it"*.
+        """
         bar = self.statusBar()
         if bar is not None:
-            bar.showMessage(text)
+            bar.showMessage(f"{version_label()} — {text}")
 
     def show_reading(self, reading: Reading) -> None:
         """Render one sweep. Called on the event loop, never from a worker thread."""
