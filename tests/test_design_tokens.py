@@ -362,16 +362,48 @@ def test_the_sequential_ramp_rises_monotonically_in_prominence() -> None:
         )
 
 
-def test_the_diverging_ramp_is_symmetric_about_its_middle_stop() -> None:
-    """The middle stop maps to exactly zero (§9.4.4), so it must be the *neutral* one. A ramp whose
-    midpoint sat nearer one end would put the colour break off zero while still looking diverging,
-    which is the failure the section spends a paragraph forbidding."""
+def test_the_diverging_ramp_rises_in_prominence_outward_from_its_middle_stop() -> None:
+    """The middle stop maps to exactly zero (§9.4.4), so it must be the *quietest* one, and each arm
+    must get louder as the excursion grows. A ramp whose midpoint sat nearer one end would put the
+    colour break off zero while still looking diverging, which is the failure the section spends a
+    paragraph forbidding.
+
+    **Measured as contrast against the card, not as lightness.** This gate asked for the middle stop
+    to be the *lightest* of the five, which is only the same question on a light surface. On Dark it
+    demanded the inversion it was meant to prevent — a pale neutral louder than a large excursion —
+    and passed the shared ramp that had exactly that defect (#19). It is the sequential gate's
+    lesson arriving a second time in the ramp next door: prominence is the invariant, and on a dark
+    card prominence runs the other way.
+    """
     for theme in ALL_THEMES:
-        negative, _, zero, _, positive = (
-            _luminance(colour) for colour in palette_for(theme).diverging
+        palette = palette_for(theme)
+        strong_low, low, zero, high, strong_high = (
+            contrast(colour, palette.card_fill) for colour in palette.diverging
         )
-        assert zero > negative and zero > positive, (
-            f"{theme.value}'s middle diverging stop is not the neutral one."
+        assert zero < low < strong_low, (
+            f"{theme.value}'s negative arm does not rise outward: "
+            f"{zero:.2f} → {low:.2f} → {strong_low:.2f}"
+        )
+        assert zero < high < strong_high, (
+            f"{theme.value}'s positive arm does not rise outward: "
+            f"{zero:.2f} → {high:.2f} → {strong_high:.2f}"
+        )
+
+
+@pytest.mark.parametrize("theme", ALL_THEMES, ids=lambda t: t.value)
+def test_every_diverging_stop_clears_the_contrast_floor(theme: Theme) -> None:
+    """§9.4.5's 3:1 floor for meaningful non-text, applied to all five stops on the card.
+
+    Unlike the sequential ramp these are **chart lines** — `TrendChart` draws each column's
+    departure from zero with a 1 px pen in one of these five colours — so the floor applies to
+    every one of them rather than to the ends. Nothing had ever measured them, and three of the
+    five were under it on Light while the ramp was shared (#19).
+    """
+    palette = palette_for(theme)
+    for index, colour in enumerate(palette.diverging):
+        ratio = contrast(colour, palette.card_fill)
+        assert ratio >= 3.0, (
+            f"{theme.value} diverging stop {index} ({colour}) is {ratio:.2f}:1 on the card."
         )
 
 
@@ -382,7 +414,9 @@ def test_no_data_ramp_step_is_a_surface(theme: Theme) -> None:
 
     The 3:1 floor is deliberately **not** asserted for the sequential ramp. §9.4.5 applies it to
     chart lines; these are marker *fills* whose pale end is the point — a low C/N reading is meant
-    to recede — and the marker's outline is what carries it against the surface (§9.10.2)."""
+    to recede — and the marker's outline is what carries it against the surface (§9.10.2). The
+    diverging ramp *is* floored, by `test_every_diverging_stop_clears_the_contrast_floor`, because
+    those five are drawn as 1 px lines rather than as fills."""
     palette = palette_for(theme)
     surfaces = {
         palette.page_background.upper(),
@@ -400,9 +434,11 @@ def test_no_data_ramp_step_is_a_surface(theme: Theme) -> None:
 def test_the_data_ramps_match_the_specification() -> None:
     """§9.4.4 gives both ramps as literals and gives **one** column rather than one per theme.
 
-    The diverging ramp is shared verbatim: its middle stop is the neutral one against either
-    surface. The sequential ramp is not — see the token file for the measurement — but the *values*
-    are still the specification's, which is what this asserts."""
+    **Neither ramp is shared any more.** The sequential one was derived per surface first (#9); the
+    diverging one followed for the same reason (#19), once it was measured rather than assumed. The
+    Light sequential column is still the specification's values, which is what this asserts of it;
+    the other three columns are derivations, pinned here so a re-derivation nobody reviewed
+    fails."""
     assert palette_for(Theme.LIGHT).sequential == (
         "#DFF1F3",
         "#A8DDE3",
@@ -428,14 +464,25 @@ def test_the_data_ramps_match_the_specification() -> None:
         reversed(palette_for(Theme.LIGHT).sequential)
     ), "Dark is back to the reversal, which mirrors the spec ramp's unevenness onto the weak end"
 
-    for theme in (Theme.LIGHT, Theme.DARK):
-        assert palette_for(theme).diverging == (
-            "#08474D",
-            "#3FB8C4",
-            "#DDE4E5",
-            "#F0A882",
-            "#B23A00",
-        )
+    # Both diverging columns are **derived** — `build/palette/diverging.py`, figures in
+    # `docs/palette-figures.md`. Pinned exactly, for the same reason the Dark sequential ramp is.
+    assert palette_for(Theme.LIGHT).diverging == (
+        "#1D5D64",
+        "#2A7D85",
+        "#8B9293",
+        "#C24D19",
+        "#93370F",
+    )
+    assert palette_for(Theme.DARK).diverging == (
+        "#90DEE7",
+        "#75B6BD",
+        "#818788",
+        "#EB976A",
+        "#F3C9B4",
+    )
+    assert palette_for(Theme.LIGHT).diverging != palette_for(Theme.DARK).diverging, (
+        "The diverging ramp is shared again, which inverts its ordering on Dark"
+    )
 
 
 def test_the_series_ramp_matches_the_derivation() -> None:
