@@ -238,10 +238,11 @@ worthless afterwards.
 ### The gates
 
 Twelve `Test-*.ps1` gates upstream. Eight have a counterpart here, one is correctly not applicable
-(D3, no high-contrast theme), and **three enforce nothing here**: document cross-references, the
-focus visual's contrast, and page teardown
-([#41](https://github.com/TGoodhew/smartclock-monitor/issues/41)). One more — guide coverage —
-exists but only on an unpushed branch. The full mapping, in both directions, is in
+(D3, no high-contrast theme), and three enforced nothing here — document cross-references, the
+focus visual's contrast, and page teardown — and
+[#41](https://github.com/TGoodhew/smartclock-monitor/issues/41) closed all three: two as gates, the
+third as an assertion that the rule does not apply under Qt. One more, guide coverage, exists but
+only on an unpushed branch. The full mapping, in both directions, is in
 [`ci-gate-map.md`](ci-gate-map.md).
 
 ### The requirements table

@@ -22,16 +22,20 @@ it reads as coverage.*
 | `Test-SeriesSeparation.ps1` | §9.4.4 / A11Y-12: chart series stay distinguishable under CVD | **`build/palette/validate.py`**, run as its own CI job — it reproduces the published ΔE₀₀ figures under deutan and protan simulation. Not a pytest, and correctly so: the derivation and its check are carried from WinZ3805A verbatim |
 | `Test-HighContrastLegibility.ps1` | A11Y-8 / §9.2: nothing illegible in the high-contrast theme | **Not applicable.** D3 — there is no high-contrast theme; Windows resolves those tokens to the user's system colours and Linux has no equivalent contract. `docs/divergences.md` |
 | `Test-GuideCoverage.ps1` | Every option the user can act on is named in the guide | **Nothing on `main`.** A counterpart exists as `tests/test_guide.py` on the unpushed branch `docs/guide-for-this-port`, together with the guide it checks |
-| `Test-DocumentReferences.ps1` | Every cross-reference a document makes resolves | **Nothing.** The repository has ten documents that reference each other and the code |
-| `Test-FocusVisualCoverage.ps1` | A11Y-2 / §9.12: the focus visual clears 3:1 on any surface | **Nothing.** `themes/qss.py` draws `:focus` on buttons, line edits, tool buttons and combo boxes, and no test measures any of them |
-| `Test-PageTeardown.ps1` | A page that subscribes must let go when navigated away | **Nothing.** Whether the rule even applies under Qt is the first question — it was written against WinUI navigation |
+| `Test-DocumentReferences.ps1` | Every cross-reference a document makes resolves | `test_document_references.py` — markdown links resolve, and every test function a document names exists. Paths named in *prose* are deliberately not checked; the module says why |
+| `Test-FocusVisualCoverage.ps1` | A11Y-2 / §9.12: the focus visual clears 3:1 on any surface | `test_accessibility.py` — `test_the_focus_visual_clears_three_to_one_on_every_surface_it_lands_on` measures the stroke against all five surfaces in both themes (4.85–8.12:1), and `test_no_focusable_control_is_filled_with_the_focus_colour` checks §9.12's accent-filled case structurally |
+| `Test-PageTeardown.ps1` | A page that subscribes must let go when navigated away | **Not applicable, and pinned as such.** `test_page_lifecycle.py` asserts the two facts that make it moot: pages are built once into a `QStackedWidget` and shown by index, and every `.connect()` in `pages.py` is to a signal the page owns. Either changing would make WinUI's rule live here |
 
 ## What this leaves open
 
-Three rows say *nothing*, and they are tracked as
-[#41](https://github.com/TGoodhew/smartclock-monitor/issues/41) rather than left in a table nobody
-re-reads. The guide row is not a missing gate so much as a missing merge — the work exists on
-`docs/guide-for-this-port` and has never been pushed.
+**One row.** `Test-GuideCoverage.ps1`'s counterpart exists as `tests/test_guide.py` on the local
+branch `docs/guide-for-this-port`, together with the guide it checks, and has never been pushed.
+That is a merge rather than a piece of work — and it is the guide the application opens on `F1`,
+which v1.0.0 shipped without.
+
+The other three were closed by [#41](https://github.com/TGoodhew/smartclock-monitor/issues/41).
+Two became gates; the third became an assertion that the rule does not apply, which is the only
+form of "not applicable" that stays true on its own.
 
 ## The other direction
 
