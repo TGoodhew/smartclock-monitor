@@ -71,6 +71,75 @@ SWEEP: dict[str, str] = {
 # ---- The session -------------------------------------------------------------------------------
 
 
+async def test_an_identity_missed_at_connect_is_asked_for_again() -> None:
+    """#29's gate, and it fails without the re-probe.
+
+    A transient at open was permanent for this one field and temporary for every other: the status
+    screen is re-read every poll, so a garbled answer costs one cycle, while the identity was read
+    once in `open` and never again. Seen on real hardware — the receiver locked and tracked six
+    satellites while the window called it "an unidentified receiver" for the whole session.
+
+    The mechanism is `spend_startup_glitch`: the first command after the port opens draws `E-362>`
+    on this hardware, and two commands are spent absorbing it. When two is not enough, `*IDN?` is
+    next in line.
+    """
+    session, transport = build(
+        {"*CLS": "", ":SYST:STAT?": read_fixture("captured/locked-to-gps.txt")}
+    )
+    await session.open(probe=PROBE)
+
+    # Read into a local rather than asserted on the attribute: mypy keeps the narrowing and calls
+    # everything after the later "is not None" unreachable.
+    at_connect = session.identity
+    assert at_connect is None, "the fake never answered *IDN?, so the connect cannot have"
+    conservative = session.profile.model
+    assert conservative is ReceiverModel.UNKNOWN, "§8.6 falls back to the conservative one"
+
+    # The receiver starts answering, as it would once past its own startup glitch.
+    transport.script("*IDN?", IDENTITY)
+    filled = await session.refresh_identity()
+
+    assert filled is True, "the re-probe reported nothing changed"
+    identity = session.identity
+    assert identity is not None
+    assert identity.receiver is ReceiverModel.Z3805A
+    adopted = session.profile.model
+    assert adopted is ReceiverModel.Z3805A, "§8.6's profile follows the identity"
+
+    assert await session.refresh_identity() is False, (
+        "a session that already knows its identity must not re-announce it on every poll"
+    )
+    await session.close()
+
+
+async def test_the_poll_loop_is_what_asks_again() -> None:
+    """The re-probe has to be reached by something that runs repeatedly, or it is just a method.
+
+    Wired to the *slow* tier: the identity does not change while a receiver is plugged in, so
+    asking on every fast sweep would spend a command a second on a question already answered.
+    """
+    screen = read_fixture("captured/locked-to-gps.txt")
+    session, transport = build({"*CLS": "", ":SYST:STAT?": screen, **SWEEP})
+    await session.open(probe=PROBE)
+    at_connect = session.identity
+    assert at_connect is None
+
+    told: list[None] = []
+    service = poller(session)
+    service.on_identity = lambda: told.append(None)
+
+    transport.script("*IDN?", IDENTITY)
+    await service.poll_full()
+
+    identity = session.identity
+    assert identity is not None, "a full poll did not retry the identity"
+    assert len(told) == 1, "the surfaces that name the receiver were never told"
+
+    await service.poll_full()
+    assert len(told) == 1, "it announced the same identity twice"
+    await session.close()
+
+
 async def test_connecting_absorbs_the_banner_and_learns_the_model() -> None:
     """The banner names the model and firmware before a command is sent, and §8.6 needs the model
     to decide which commands exist."""

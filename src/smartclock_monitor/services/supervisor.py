@@ -200,6 +200,9 @@ class Supervisor:
         """
         service = PollingService(session=session, driver=self.driver, clock=self.clock)
         service.on_reading = self.on_reading
+        # A late identity has to reach the surfaces that name the receiver, and they were filled in
+        # when the session opened — which is precisely the moment it was not yet known (#29).
+        service.on_identity = lambda: self._adopt(session)
 
         polling = asyncio.ensure_future(service.run())
         # Woken by the event as well as by the interval, so a *Connect* press is acted on at once
