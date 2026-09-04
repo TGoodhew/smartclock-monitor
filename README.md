@@ -243,6 +243,13 @@ its own command or with nothing, so adding a receiver does not touch a page —
 `tests/test_layering.py` enforces that no view reaches the command catalog. The NMEA driver is the
 worked example, and `tools/nmea_simulator.py` will drive one without hardware.
 
+## Third-party components
+
+[`THIRD-PARTY-NOTICES.md`](THIRD-PARTY-NOTICES.md) lists what this project redistributes and under
+what terms, per channel — a checkout, the wheel and the PyInstaller bundle carry different things
+and so carry different obligations. Two are **not** discharged yet and belong to packaging (#27):
+Qt and PySide6 ship no licence text of their own, and neither does pyserial.
+
 ## Licence
 
 MIT, as WinZ3805A is. See [LICENSE](LICENSE).
