@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling", "hatch-vcs"]
+requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
@@ -71,14 +71,16 @@ smartclock-monitor = "smartclock_monitor.__main__:main"
 Homepage = "https://github.com/TGoodhew/smartclock-monitor"
 "Windows sibling" = "https://github.com/TGoodhew/WinZ3805A"
 
+# A.B.C.D, matching WinZ3805A's four-part manifest version (#36). `hatch_version.py` derives it
+# from the release tag and the number of check-ins past it; the module's docstring says why the
+# shape changed from #33's `1.0.0.dev99+g482bde009`, which was correct and was not what was asked
+# for.
+#
+# `code` rather than `vcs`: setuptools-scm takes a custom scheme only as a Python callable, and
+# `raw-options` is TOML. Deriving it ourselves is a dozen lines of git and removes a dependency.
 [tool.hatch.version]
-source = "vcs"
-
-# Without a tag to count from — a shallow CI checkout, or a source tarball with no .git — the
-# scheme has no answer. Say so in the version itself rather than failing the build: an
-# installation reporting 0.0.0 is a legible symptom, and `tests/test_versioning.py` fails on the
-# cause (a shallow checkout) so it is caught where it happens rather than months later.
-raw-options = { fallback_version = "0.0.0" }
+source = "code"
+path = "hatch_version.py"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/smartclock_device", "src/smartclock_monitor"]
