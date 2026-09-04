@@ -183,7 +183,44 @@ bundled typefaces, the guide and the captured screens `--demo` replays are read 
 in the wrong font, with a help key that opens an apology, and a demo that shows nothing for ever.
 The spec ships all three and `--doctor` reports the fonts, so a bundle missing them says so.
 
-Flatpak and an AppImage are the intended Linux distribution (D2); neither is built yet.
+### The AppImage
+
+```bash
+pip install -e ".[package]"
+./build/make-appimage.sh
+./dist/smartclock-monitor-*.AppImage --doctor
+```
+
+One file, no install, any glibc desktop. **Build it on the oldest distribution you intend to
+support** — an AppImage carries everything but glibc, so the build machine's glibc is the floor for
+every machine that runs it.
+
+**AppImage rather than Flatpak, and serial access is the whole reason** (#27). Flatpak has no
+fine-grained serial permission: reaching `/dev/ttyUSB0` needs `--device=all`, which grants every
+device on the machine and reads as a broad permission in GNOME Software. An AppImage is not
+sandboxed, so it inherits the user's own access — the access a checkout already has, and the access
+this application has always needed. The cost is that it cannot ship a udev rule, so `--doctor`
+keeps carrying the `dialout` advice and the `brltty` warning.
+
+### The desktop identity
+
+`packaging/` holds the three files every Linux target needs, all named for the application id
+`io.github.tgoodhew.SmartClockMonitor`:
+
+| | |
+|---|---|
+| `.desktop` | the launcher entry |
+| `.metainfo.xml` | AppStream, which is what GNOME Software and Flathub read |
+| `.svg` | the icon, §9.10.2's medallion |
+
+The application calls `setDesktopFileName` with the same id, which is how a Wayland compositor
+pairs the window with its launcher — without it the window shows a generic icon while its own entry
+sits unused beside it. D2 left this owing: MSIX supplied an identity through
+`Package.Current.DisplayName`, and dropping the Store dropped the source without replacing it.
+
+`tests/test_packaging.py` runs `desktop-file-validate` and `appstreamcli` where they are installed,
+because those know rules a hand-written check does not — and a file that satisfies our check and
+fails Flathub's is the wrong kind of green.
 
 ## Cutting a release
 

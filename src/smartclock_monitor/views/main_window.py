@@ -77,6 +77,18 @@ COMPACT_MINIMUM = (380, 144)
 
 APPLICATION_NAME = "SmartClock Monitor"
 
+#: The desktop's name for this application, in one place for the same reason the display name is.
+#:
+#: **Reverse-DNS, and it is not decoration.** A `.desktop` entry, an AppStream component and a
+#: Flatpak are all keyed by it, and under Wayland it is how the compositor pairs a window with its
+#: launcher — which is why the window had no icon in the shell before it was set. §6.3 forbids
+#: hard-coding the *name* because a rename made in nine places gets made in eight; an identifier
+#: that must match three files exactly has the same problem and less forgiveness.
+#:
+#: D2 also left this owing: MSIX supplied an identity through `Package.Current.DisplayName`, and
+#: dropping the Store dropped the source without replacing it.
+APPLICATION_ID = "io.github.tgoodhew.SmartClockMonitor"
+
 #: The em dash a missing value renders as (§11.1). Never a zero, which would claim a reading.
 DASH = "—"
 

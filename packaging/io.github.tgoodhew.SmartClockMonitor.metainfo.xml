@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.tgoodhew.SmartClockMonitor</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT</project_license>
+
+  <name>SmartClock Monitor</name>
+  <summary>Monitor a GPS-disciplined oscillator over RS-232</summary>
+
+  <description>
+    <p>
+      SmartClock Monitor watches and controls HP/Symmetricom SmartClock GPS-disciplined
+      oscillators — the Z3805A and its siblings, the Z3801A, 58503A/B, 59551A and Z3816A — over a
+      serial port. These units are widely used in home and small laboratories as a 10 MHz frequency
+      and 1 PPS time reference.
+    </p>
+    <p>
+      One window answers the two questions a glance is asking: what state the receiver is in, and
+      how well it is behaving. A details window carries the satellites, position, timing, status
+      registers, diagnostics and holdover, with the trend history kept across restarts.
+    </p>
+    <p>
+      Commands the receiver accepts that can render it unusable are not offered, not listed and not
+      reachable: the command set is an allowlist rather than a filtered catalogue.
+    </p>
+    <p>It runs without a receiver attached, replaying captured status screens, so it can be tried before it is trusted.</p>
+  </description>
+
+  <launchable type="desktop-id">io.github.tgoodhew.SmartClockMonitor.desktop</launchable>
+
+  <url type="homepage">https://github.com/TGoodhew/smartclock-monitor</url>
+  <url type="bugtracker">https://github.com/TGoodhew/smartclock-monitor/issues</url>
+  <url type="help">https://github.com/TGoodhew/smartclock-monitor/blob/main/docs/how-to-use.md</url>
+
+  <developer id="io.github.tgoodhew">
+    <name>Tony Goodhew</name>
+  </developer>
+
+  <content_rating type="oars-1.1"/>
+
+  <categories>
+    <category>Science</category>
+    <category>Electronics</category>
+  </categories>
+
+  <keywords>
+    <keyword>GPSDO</keyword>
+    <keyword>GPS</keyword>
+    <keyword>SCPI</keyword>
+    <keyword>frequency standard</keyword>
+    <keyword>timing</keyword>
+  </keywords>
+
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+
+  <recommends>
+    <!-- The main window's own floor, measured: 415 px wide by 285 tall (docs/divergences.md). -->
+    <display_length compare="ge">420</display_length>
+  </recommends>
+
+  <releases>
+    <release version="1.0.0" date="2026-09-03">
+      <description>
+        <p>
+          First release. The port is complete through phase 8 of its plan and has been verified
+          against a live Z3805A.
+        </p>
+      </description>
+    </release>
+  </releases>
+</component>
