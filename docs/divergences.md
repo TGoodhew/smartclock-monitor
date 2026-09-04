@@ -228,6 +228,67 @@ Listed because sameness here is load-bearing, not incidental.
 
 ---
 
+## What the #22 audit found
+
+Run 3 Sep 2026, across three axes: the application, the repository's documentation, and the CI
+gates. Its output is this section, [`ci-gate-map.md`](ci-gate-map.md), and the issues named below —
+**not a list in a closed issue**, which is the form an audit takes when it is worth doing once and
+worthless afterwards.
+
+### The gates
+
+Twelve `Test-*.ps1` gates upstream. Eight have a counterpart here, one is correctly not applicable
+(D3, no high-contrast theme), and **three enforce nothing here**: document cross-references, the
+focus visual's contrast, and page teardown
+([#41](https://github.com/TGoodhew/smartclock-monitor/issues/41)). One more — guide coverage —
+exists but only on an unpushed branch. The full mapping, in both directions, is in
+[`ci-gate-map.md`](ci-gate-map.md).
+
+### The requirements table
+
+`tests/test_requirements_coverage.py` came from #14 and walked **P0 only** — it stopped at the
+`### P1` heading. The tier below was unwatched, and of fourteen P1 rows exactly two were named by a
+test, while most of the features are built, tested and shipped. So "no test names it" carried no
+information at P1, and the four rows D5 removed were indistinguishable from four nobody had reached.
+
+The gate now walks P1 as well. Each row is either named by the test that covers it, or listed in
+`NOT_SHIPPED` with the decision that removed it — and a third test refuses an exemption that cites
+no document. A test asserting a feature is *absent* counts as covering it, which is what gates a
+divergence rather than contradicting one.
+
+`P1-12` gained an actual assertion in the process: A11Y-11 wants a non-spatial alternate to the sky
+plot, this port pairs the plot with a table, and nothing had ever checked that the table was there.
+
+### The documentation
+
+Present upstream and absent here, with what each is worth:
+
+| | |
+|---|---|
+| `THIRD-PARTY-NOTICES.md` | **A licence obligation, not a preference.** This port bundles two typefaces and pulls five dependencies where the original ships three references. [#40](https://github.com/TGoodhew/smartclock-monitor/issues/40) |
+| `docs/tutorial-nmea-driver.md` | Exists only in the repository that does **not** ship an NMEA driver. This one does |
+| `docs/manual-qa.md` | `test_requirements_coverage.py` keeps a `MANUAL` dict of criteria needing a person, a desktop or hardware. That list is the script this document would be |
+| `docs/lady-heather-comparison.md`, `docs/privacy.md`, `docs/index.md`, `docs/_config.yml` | Positioning and the GitHub Pages site. Judged upstream-only unless this port publishes a site |
+| `docs/store-listing.md` | Correctly absent — D2, no Microsoft Store |
+| `docs/review/` | 320 files of per-change review notes. Not a document to port |
+
+Present here and not upstream — `divergences.md`, `driver-contract.md`, `platform-decisions.md`,
+`provenance.md`, `palette-figures.md`, `kickoff-prompt.md`, `ci-gate-map.md` — all deliberate, and
+all of them exist because this port owes an answer the inherited documents do not give.
+
+### The application
+
+No functional gap found. Every P1 feature §13 lists is either built here or recorded above as a
+decision, and §10's pages are all present — Time, Satellites, Position, Timing, Status registers,
+Diagnostics, Holdover, Console, Settings. The layout differences are the ones already recorded in
+this document and in `provenance.md`; the behavioural ones are D2 through D5.
+
+That is a narrower claim than it sounds. It says every requirement is accounted for, not that every
+one is correctly implemented — #20, #21, #29 and #30 were all found by *using* the application on
+real hardware in the same week, and none of them would have been caught by reading §13.
+
+---
+
 ## What is not decided by this document
 
 The Microsoft Store (G5) is not a goal here and remains a live goal of WinZ3805A, which ships it

@@ -1,4 +1,4 @@
-"""§10.5's Manage dialog, the exclusion list, and the elevation mask editor."""
+"""§10.5's Manage dialog, the exclusion list, and the elevation mask editor (P1-3)."""
 
 from __future__ import annotations
 

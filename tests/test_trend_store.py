@@ -1,4 +1,4 @@
-"""The persisted trend store.
+"""The persisted trend store (P1-2).
 
 Every test here pins the clock. The store's retention, its windows and its power-up lookback are
 all clock-dependent, and a suite that used the real one would pass in August and start failing

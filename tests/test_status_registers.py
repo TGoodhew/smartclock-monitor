@@ -1,4 +1,4 @@
-"""The §10.10 status registers: the bit tables, and decoding a reading into rows.
+"""The §10.10 status registers (P1-4): the bit tables, and decoding a reading into rows.
 
 The tables answer OQ-1 out of the 58503A/59551A guide's Command Reference 5-36 to 5-39. What is
 tested here is not that the guide is right — nothing here can establish that — but that the table

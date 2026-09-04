@@ -1,4 +1,5 @@
-"""``:DIAG:TEST:RES?`` and ``:DIAG:TEST? <keyword>``, and how far their answers can be read (#53).
+"""P1-5's self-test: ``:DIAG:TEST:RES?`` and ``:DIAG:TEST? <keyword>``, and how far
+their answers can be read (#53).
 
 Only ``0`` is a pass. Everything else is a test-specific code the manuals do not decode, so this
 reports the number and declines to interpret it — and reports ``None`` rather than a failure when

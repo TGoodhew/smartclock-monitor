@@ -31,7 +31,7 @@ from PySide6.QtWidgets import (
 
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.preferences import Preferences
-from smartclock_monitor.themes.tokens import Theme
+from smartclock_monitor.themes.tokens import Theme, palette_for
 from smartclock_monitor.views.details_window import DetailsWindow
 from smartclock_monitor.views.main_window import MainWindow
 
@@ -263,6 +263,21 @@ def test_the_sanctioned_list_is_not_stale() -> None:
         source = root / relative
         assert source.exists(), f"{relative} is sanctioned and does not exist"
         assert "colour_for" in source.read_text(encoding="utf-8"), relative
+
+
+def test_the_sky_plot_is_paired_with_a_table_carrying_the_same_data() -> None:
+    """A11Y-11 / P1-12: the plot is spatial, so it needs a non-spatial alternate.
+
+    §9.6.1 calls the tracked/not-tracked tables *"the compliant path"* and A11Y-11 their acceptance
+    criterion. This port has one table where WinZ3805A has two (recorded in `provenance.md`), which
+    does not change the criterion: the same data has to be reachable without reading a picture.
+    """
+    from smartclock_monitor.views.pages import SatellitesPage
+
+    page = SatellitesPage(palette_for(Theme.DARK))
+    assert page._plot is not None, "the spatial view"
+    assert page._table is not None, "the non-spatial alternate A11Y-11 requires"
+    assert page._table.columnCount() >= 4, "PRN, elevation, azimuth and signal at least"
 
 
 def test_no_two_markers_overlap_at_the_plot_s_minimum_size() -> None:
