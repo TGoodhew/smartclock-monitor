@@ -14,6 +14,7 @@ nobody sees.
 from __future__ import annotations
 
 import os
+import re
 
 import pytest
 
@@ -31,7 +32,8 @@ from PySide6.QtWidgets import (
 
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.preferences import Preferences
-from smartclock_monitor.themes.tokens import Theme, palette_for
+from smartclock_monitor.themes.qss import stylesheet
+from smartclock_monitor.themes.tokens import ALL_THEMES, Theme, palette_for
 from smartclock_monitor.views.details_window import DetailsWindow
 from smartclock_monitor.views.main_window import MainWindow
 
@@ -263,6 +265,109 @@ def test_the_sanctioned_list_is_not_stale() -> None:
         source = root / relative
         assert source.exists(), f"{relative} is sanctioned and does not exist"
         assert "colour_for" in source.read_text(encoding="utf-8"), relative
+
+
+def _contrast(foreground: str, background: str) -> float:
+    """WCAG relative-luminance contrast. The same maths as `test_design_tokens.py`'s, written out
+    again rather than imported: a test module importing another test module is a dependency the
+    next reader does not expect, and this is nine lines."""
+
+    def luminance(colour: str) -> float:
+        parts = [int(colour[index : index + 2], 16) / 255 for index in (1, 3, 5)]
+        linear = [p / 12.92 if p <= 0.04045 else ((p + 0.055) / 1.055) ** 2.4 for p in parts]
+        return 0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
+
+    lighter, darker = sorted((luminance(foreground), luminance(background)), reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+def test_the_focus_visual_clears_three_to_one_on_every_surface_it_lands_on() -> None:
+    """A11Y-2 / §9.12, which had no gate here at all (#41).
+
+    `themes/qss.py` draws `:focus` as a 2 px border on buttons, line edits, spin boxes, plain and
+    rich text edits, tool buttons and combo boxes — eight widget classes — and nothing measured any
+    of them.
+
+    **Single-stroke, where §9.12 describes a two-tone assembly.** That criterion is written against
+    the ring Fluent draws, and says *"for each adjacent surface, at least one stroke must clear
+    3:1"*. One stroke reduces that to: the stroke clears 3:1 against every surface it can land on.
+    It is a simplification of the requirement, not a relaxation — the assembly exists because
+    Fluent's ring sits on the end user's accent colour, which this port does not use.
+
+    Measured against the surfaces a focusable control is drawn on. **Not against every background
+    the stylesheet sets**, which a first version did and which flagged the accent progress-bar fill
+    — a colour no focus ring is ever drawn against. The accent-filled hazard §9.12 names is checked
+    directly instead, by the test below.
+    """
+    surfaces = ("page_background", "layer_fill", "card_fill", "card_fill_secondary", "overlay_fill")
+
+    for theme in ALL_THEMES:
+        palette = palette_for(theme)
+        sheet = stylesheet(palette)
+
+        focus_colours = {
+            match.group(1).lower()
+            for match in re.finditer(r":focus\s*\{[^}]*?(#[0-9a-fA-F]{6})[^}]*?\}", sheet)
+        }
+        assert focus_colours, f"{theme.value} has no :focus rule with a colour in it"
+
+        for focus in focus_colours:
+            for name in surfaces:
+                ratio = _contrast(focus, getattr(palette, name))
+                assert ratio >= 3.0, (
+                    f"{theme.value}: the focus visual {focus} is {ratio:.2f}:1 on {name} "
+                    f"({getattr(palette, name)})"
+                )
+
+
+def test_no_focusable_control_is_filled_with_the_focus_colour() -> None:
+    """§9.12's *"including on accent-filled buttons"*, checked as the structural question it is.
+
+    A focus ring drawn in the accent, on a control filled with the accent, is a ring nobody can
+    see — and no contrast measurement against a token table would find it, because both colours are
+    legitimately in the table. What makes it a defect is the two meeting on one control.
+
+    Today nothing focusable is accent-filled: the accent fills a progress-bar chunk and selected
+    menu and list rows, none of which take a focus border. This fails the moment that stops being
+    true.
+    """
+    for theme in ALL_THEMES:
+        palette = palette_for(theme)
+        accent = palette.accent.lower()
+
+        # **Parsed into blocks, not matched across the whole sheet.** A first version used one
+        # non-greedy pattern for "a selector, then a body setting the accent", and because both
+        # halves were non-greedy it matched starting anywhere and captured fragments rather than
+        # selectors — so it compared nonsense against nonsense and passed while an accent-filled
+        # button sat right there. Blocks are unambiguous.
+        blocks = re.findall(r"([^{}]+)\{([^}]*)\}", stylesheet(palette))
+        assert len(blocks) > 20, f"{theme.value}: parsed {len(blocks)} rules — has QSS moved?"
+
+        def classes(selector: str) -> set[str]:
+            return {
+                part.strip().split("::")[0].split(":")[0].strip()
+                for part in selector.split(",")
+                if part.strip()
+            }
+
+        focusable: set[str] = set()
+        filled_with_accent: set[str] = set()
+        for selector, body in blocks:
+            if ":focus" in selector:
+                focusable |= classes(selector)
+            # `(?<![-\w])` so `selection-background-color` does not read as `background-color`.
+            # A text field whose *selection* highlight is the accent is not an accent-filled
+            # control, and treating it as one flagged four widgets that are drawn on a card.
+            if re.search(rf"(?<![-\w])background-color:\s*{accent}\b", body, re.I):
+                filled_with_accent |= classes(selector)
+
+        assert focusable, f"{theme.value}: no focusable selector found"
+
+        overlap = sorted(focusable & filled_with_accent)
+        assert not overlap, (
+            f"{theme.value}: {overlap} are filled with the accent and take a focus border drawn in "
+            f"it — the focus visual would be invisible on them"
+        )
 
 
 def test_the_sky_plot_is_paired_with_a_table_carrying_the_same_data() -> None:
