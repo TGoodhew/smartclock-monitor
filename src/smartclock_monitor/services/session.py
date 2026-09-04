@@ -245,6 +245,52 @@ class DeviceSession:
         self._state = ConnectionState.CONNECTED
         self._consecutive_failures = 0
 
+    async def refresh_identity(self) -> bool:
+        """Ask ``*IDN?`` again when the identity is still unknown.
+
+        Returns whether **this call** filled it in — not whether it is known, which would be true
+        on every poll of a session that identified normally and would re-announce a receiver whose
+        name had not changed once a second.
+
+        **A transient at open was permanent for this one field and temporary for every other**
+        (#29). The status screen is re-read on every poll, so a garbled first answer costs one
+        cycle; the identity was read once in :meth:`open` and never again, so the same garble cost
+        the whole session — an empty §10.4 *Receiver* card, "an unidentified receiver" in the
+        status bar, and :data:`CONSERVATIVE` standing in for §8.6's profile. On a 59551A that last
+        one silently withdraws every optional capability the model has.
+
+        The mechanism is documented two files away: :meth:`spend_startup_glitch` exists because
+        the first command after the port opens draws ``E-362>`` on this hardware, and it spends
+        two commands to absorb that. When two is not enough, ``*IDN?`` is the next in line and
+        there was nothing to ask again.
+
+        **Cheap, because it only runs while the answer is missing.** A session that identified at
+        open never sends this, so the ordinary case costs one attribute test per poll.
+        """
+        if self._identity is not None:
+            return False
+        if self._state is not ConnectionState.CONNECTED or self._listener is not None:
+            # A talker is claimed by what it says and is never written to (§12), and a link that
+            # is not up has nothing to ask.
+            return False
+
+        identity = await self._probe_identity()
+        if identity is None or not identity.succeeded:
+            return False
+
+        # Read from the parse rather than back off `self._identity`: the early return above
+        # narrows that attribute to None for the rest of the method, and mypy then calls
+        # everything after a second test of it unreachable.
+        parsed = DeviceIdentity.parse(identity.first_line)
+        self._identity_text = (identity.first_line or "").strip() or None
+        self._adopt_identity(parsed)
+        if parsed is None:
+            return False
+
+        # The driver was chosen without an identity to go on, so choose again now there is one.
+        self._select_driver()
+        return True
+
     async def close(self) -> None:
         await self._stop_listening()
         await self._transport.close()

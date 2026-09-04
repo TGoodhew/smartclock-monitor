@@ -75,6 +75,11 @@ class PollingService:
     #: Called with each new reading, on the event loop.
     on_reading: Callable[[Reading], None] | None = None
 
+    #: Called the first time a late identity arrives, so the surfaces that name the receiver can be
+    #: filled in. Never called for a session that identified at connect — `refresh_identity` only
+    #: reports True after it has changed something.
+    on_identity: Callable[[], None] | None = None
+
     _status: ReceiverStatus | None = field(default=None, init=False)
     _suppressed_in_state: str | None = field(default=None, init=False)
     _last: Reading | None = field(default=None, init=False)
@@ -109,7 +114,15 @@ class PollingService:
                 await self.poll_fast()
 
     async def poll_full(self) -> None:
-        """Read the full status and publish it."""
+        """Read the full status and publish it.
+
+        The identity is retried here first, on the slow tier, when the connect never got one
+        (#29). It costs one attribute test on a session that identified normally, which is all of
+        them but the ones this exists for.
+        """
+        if await self.session.refresh_identity() and self.on_identity is not None:
+            self.on_identity()
+
         plan = self.driver.plan
         result = await self.session.execute(plan.full.mnemonic)
         if isinstance(result, Refusal) or not result.succeeded:
