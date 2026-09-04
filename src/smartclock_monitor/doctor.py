@@ -18,10 +18,12 @@ the installation where PySide6 itself is the broken thing.
 
 from __future__ import annotations
 
+import json
 import os
 import pathlib
 import platform
 import shutil
+import subprocess
 import sys
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -74,61 +76,123 @@ def _pyside() -> Finding:
     return Finding("PySide6", True, f"{PySide6.__version__}")
 
 
-def _qt_platform() -> Finding:
+#: One child process that starts Qt and registers the fonts, and reports what happened.
+#:
+#: **Both checks share it because a QApplication can only exist once**, and because the interesting
+#: failure kills whichever process attempts it.
+_PROBE: Final = """
+import json, sys
+from PySide6.QtWidgets import QApplication
+
+application = QApplication([sys.argv[0]])
+from smartclock_monitor.themes import fonts
+
+print("PROBE " + json.dumps({"platform": application.platformName(), "fonts": list(fonts.load())}))
+"""
+
+
+@dataclass(frozen=True, slots=True)
+class _GuiProbe:
+    """What a child process found out about starting a GUI here."""
+
+    platform_name: str | None
+    fonts: tuple[str, ...]
+    detail: str
+
+    @property
+    def started(self) -> bool:
+        return self.platform_name is not None
+
+
+def _probe_gui() -> _GuiProbe:
+    """Ask a child process whether Qt can start, because asking in this one is unsurvivable.
+
+    **Qt does not raise when it cannot load a platform plugin. It calls ``qFatal()``, which calls
+    ``abort()``.** That never becomes a Python exception, so the ``except Exception`` this replaced
+    could not see it: the process died mid-check and `--doctor` printed nothing at all — on exactly
+    the machine it exists to diagnose, which is the one where Qt will not start (#46).
+
+    In a child, that abort is an exit status. The parent reads it, reports it, and goes on to the
+    checks after it — a machine missing one library still learns about its serial ports, its group
+    membership and everything else.
+
+    ``QT_QPA_PLATFORM=offscreen`` would also stop the abort and is **not** the fix: it answers a
+    different question from "can this application open a window here", and answers it yes on a
+    machine where the honest answer is no.
+    """
+    try:
+        finished = subprocess.run(
+            [sys.executable, "-c", _PROBE],
+            capture_output=True,
+            text=True,
+            check=False,
+            timeout=60,
+        )
+    except (OSError, subprocess.SubprocessError) as error:  # pragma: no cover - depends on machine
+        return _GuiProbe(None, (), f"could not run the probe ({type(error).__name__}: {error})")
+
+    for line in finished.stdout.splitlines():
+        if line.startswith("PROBE "):
+            answer = json.loads(line[len("PROBE ") :])
+            return _GuiProbe(answer["platform"], tuple(answer["fonts"]), "")
+
+    # Qt's own complaint is the useful half of stderr, and it names the missing library.
+    noise = [line for line in finished.stderr.splitlines() if line.strip()]
+    said = next((line for line in noise if "qt.qpa" in line.lower()), noise[-1] if noise else "")
+    died = f"the probe exited {finished.returncode}"
+    return _GuiProbe(None, (), f"{died}: {said}" if said else died)
+
+
+def _qt_platform(probe: _GuiProbe) -> Finding:
     """Whether Qt can actually start a GUI, which is a different question from importing it.
 
     This is the one that catches a headless server and a container without the EGL libraries, and
     it is the failure that otherwise arrives as ``qt.qpa.plugin: Could not load the Qt platform
-    plugin "xcb"`` and an abort.
+    plugin "xcb"`` and an abort — which is precisely what it used to do here rather than report.
     """
     try:
-        from PySide6.QtWidgets import QApplication
+        import PySide6  # noqa: F401
     except ImportError:
         return Finding("Qt platform", False, "PySide6 is not importable", "See above.")
 
-    if QApplication.instance() is not None:
-        return Finding("Qt platform", True, "already running")
+    if probe.started:
+        return Finding("Qt platform", True, f"{probe.platform_name!r}")
 
+    return Finding(
+        "Qt platform",
+        False,
+        f"cannot start a GUI — {probe.detail}",
+        "On Linux: sudo apt install libegl1 libgl1 libxkbcommon0 libxcb-cursor0 — and a display. "
+        "Over SSH, either forward one or run on the machine's own desktop. "
+        "QT_QPA_PLATFORM=offscreen runs headless, which is a different thing from working.",
+    )
+
+
+def _fonts(probe: _GuiProbe) -> Finding:
+    """§9.5's two faces, registered by the same child that started Qt.
+
+    Registering them needs a QApplication, so this cannot be answered where the check above failed
+    — and saying so is better than the invented failure the old code produced, which reported the
+    fonts as missing whenever the display was.
+    """
     try:
-        application = QApplication([sys.argv[0]])
-    except Exception as error:  # pragma: no cover - depends on the machine
-        return Finding(
-            "Qt platform",
-            False,
-            f"cannot open a display ({type(error).__name__}: {error})",
-            "On Linux: sudo apt install libegl1 libgl1 libxkbcommon0 — and a display, or "
-            "QT_QPA_PLATFORM=offscreen to run headless.",
-        )
-    # **Left running for the checks below.** Shutting it down here reported the fonts as having
-    # nowhere to register — a failure invented by the doctor rather than found by it, which is the
-    # one kind of finding that would make the whole report untrustworthy.
-    return Finding("Qt platform", True, f"{application.platformName()!r}")
-
-
-def _fonts() -> Finding:
-    try:
-        from smartclock_monitor.themes import fonts
+        from smartclock_monitor.themes import fonts  # noqa: F401
     except ImportError as error:
         return Finding("Bundled fonts", False, f"cannot import ({error})", "")
 
-    try:
-        from PySide6.QtWidgets import QApplication
-    except ImportError:
-        return Finding("Bundled fonts", False, "PySide6 is not importable", "See above.")
+    if not probe.started:
+        return Finding(
+            "Bundled fonts",
+            False,
+            "not checked — Qt could not start, and registering a face needs a QApplication",
+            "Fix the Qt platform above and run this again.",
+        )
 
-    if QApplication.instance() is None:
-        # The platform check ordinarily leaves one running; this covers being called on its own.
-        try:
-            QApplication([sys.argv[0]])
-        except Exception:  # pragma: no cover - depends on the machine
-            return Finding("Bundled fonts", False, "no display to register them with", "")
-
-    families = fonts.load()
-    ok = len(families) >= 2
+    ok = len(probe.fonts) >= 2
     return Finding(
         "Bundled fonts",
         ok,
-        ", ".join(families) if families else "none registered",
+        ", ".join(probe.fonts) if probe.fonts else "none registered",
         "" if ok else "The application still runs; §9.5's faces fall back to the desktop's.",
     )
 
@@ -320,8 +384,11 @@ def checks() -> Iterator[Finding]:
     """Run every check, in the order a first run meets them."""
     yield _python()
     yield _pyside()
-    yield _qt_platform()
-    yield _fonts()
+
+    # One child process answers both, and survives the abort that used to end the report.
+    probe = _probe_gui()
+    yield _qt_platform(probe)
+    yield _fonts(probe)
     yield _pyserial()
     yield _ports()
     yield _usb_serial_hardware()

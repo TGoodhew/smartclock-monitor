@@ -8,6 +8,8 @@ broken in an interesting way.
 from __future__ import annotations
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -77,16 +79,49 @@ def test_the_dialout_check_asks_about_this_session_not_the_file() -> None:
 
 def test_it_finds_the_bundled_faces() -> None:
     """Ties the doctor to what D4 settled: if the faces stop being bundled, this says so on every
-    machine rather than only on one without them installed."""
-    from PySide6.QtWidgets import QApplication
+    machine rather than only on one without them installed.
 
-    if QApplication.instance() is None:
-        QApplication([])
-
-    finding = doctor._fonts()
+    The probe is supplied rather than run: #46 moved the GUI checks into a child process, and this
+    test is about what the doctor *says* about a set of faces, not about whether this machine can
+    start Qt.
+    """
+    finding = doctor._fonts(doctor._GuiProbe("offscreen", ("Noto Sans", "Cascadia Mono"), ""))
 
     assert finding.ok, finding.detail
     assert "Cascadia Mono" in finding.detail
+
+
+def test_the_report_survives_a_qt_that_cannot_start() -> None:
+    """#46: `--doctor` aborted instead of reporting, on exactly the machine it exists to diagnose.
+
+    Qt does not raise when it cannot load a platform plugin — it calls `qFatal()`, which calls
+    `abort()` — so the `except Exception` that used to guard this could never see it, and the
+    process died mid-check having printed nothing. The whole report was lost to one missing
+    library.
+
+    Driven by pointing the child at a platform plugin that does not exist, which is the same
+    failure by a different cause.
+    """
+    finished = subprocess.run(
+        [sys.executable, "-m", "smartclock_monitor", "--doctor"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+        env={**os.environ, "QT_QPA_PLATFORM": "no-such-platform-plugin"},
+    )
+
+    assert finished.returncode in (0, 1), (
+        f"the doctor exited {finished.returncode} — a negative or 134 status is the abort #46 was "
+        f"about, and means the report was never printed"
+    )
+    assert "Qt platform" in finished.stdout, finished.stdout[-500:]
+
+    # The point of the fix: the checks *after* the one that failed still ran.
+    for expected in ("pyserial", "Serial ports", "dialout"):
+        assert expected in finished.stdout, (
+            f"{expected!r} is missing — the report stopped at the Qt check again"
+        )
 
 
 # ---- The adapter that is present and has no port -------------------------------------------------
