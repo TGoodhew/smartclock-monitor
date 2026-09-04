@@ -143,3 +143,36 @@ def test_every_page_has_a_picture_named_after_it() -> None:
         expected = IMAGES / f"page-{slug(page.title)}.png"
         assert expected.is_file(), f"No picture for the {page.title} page at {expected.name}."
     window.close()
+
+
+# ---- The pictures stay comparable ----------------------------------------------------------------
+
+
+def test_the_capture_tool_pins_the_version_it_shows() -> None:
+    """#49: the pictures must change when the interface does, and not otherwise.
+
+    `capture_guide_images.py` pins the clock, the fixtures and the port list so that a diff in
+    `docs/images/how-to-use/` means the interface moved. #23 then put the release into the status
+    bar, and since #36 that number counts commits — so five of the twenty images changed whenever
+    anybody reinstalled, and a directory of binary churn is a directory nobody reviews.
+
+    Checked as a property of the tool rather than by running it twice: two runs render forty
+    windows, and a suite people wait for is a suite people skip.
+    """
+    tool = (Path(__file__).resolve().parent.parent / "tools" / "capture_guide_images.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "SHOWN_VERSION" in tool, "the version in the status bar is not pinned"
+    assert "version_label" in tool, (
+        "nothing replaces the label the status bar reads, so the installed version leaks into "
+        "the pictures"
+    )
+
+    import re as _re
+
+    pinned = _re.search(r'SHOWN_VERSION:\s*Final\s*=\s*"([^"]+)"', tool)
+    assert pinned, "SHOWN_VERSION is not a literal any more"
+    assert _re.fullmatch(r"v\d+\.\d+\.\d+", pinned.group(1)), (
+        f"{pinned.group(1)!r} is not a fixed release — a moving one is what #49 was about"
+    )
