@@ -199,8 +199,22 @@ is tagged:
 Both the status bar and the guide's foot read it through `importlib.metadata`, so a screenshot
 identifies the build it came from. `hatch_version.py` derives it; nothing is written down.
 
-Annotated (`-a`) rather than lightweight: `git describe`, and so `hatch-vcs`, prefers them, and the
-message is where the reason for the release lives.
+Annotated (`-a`) rather than lightweight: `git describe`, and so `hatch_version.py`, prefers them,
+and the message is where the reason for the release lives.
+
+**The tag must be `vA.B.C` — three plain numbers and nothing else.** `D` is derived from the commit
+count and is never tagged. Anything else fails the build rather than being coerced:
+
+```
+$ git tag -a v1.0.1-rc1 -m "…" && pip install -e .
+MalformedReleaseTagError: the release tag 'v1.0.1-rc1' is not three numbers (A.B.C) …
+'v1.0.1-rc1' would build as '1.0.1.0', which collides with a release it is not.
+```
+
+That is deliberate. Keeping whichever components were digits turned `v1.0.0-rc1` into `1.0.0` —
+colliding with the release it precedes — and `v1.2.3beta` into `1.2.0`, which sorts *below* the
+`1.2.3` it was a beta of. Both looked like versions. A failed build when the tag is cut is a
+fixable mistake; a quietly wrong version lasts as long as the tag does.
 
 Two things to know:
 

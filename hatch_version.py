@@ -16,6 +16,9 @@ number it was built at, which is what makes ``importlib.metadata`` — and so th
 The counting is only well defined on linear history, which ``CLAUDE.md``'s rebase-merge rule keeps
 true of ``main``.
 
+**A release tag must be exactly ``vA.B.C``, three plain numbers.** Anything else stops the build
+rather than being coerced into something that looks right — see :class:`MalformedReleaseTagError`.
+
 **A source distribution keeps the number it was cut with.** This module answers :data:`FALLBACK`
 where there is no git to ask — an unpacked sdist has none — but hatchling reads the version from
 the sdist's ``PKG-INFO`` rather than re-deriving it, so ``sdist -> wheel`` carries the real version
@@ -24,6 +27,7 @@ through. That is what lets a distribution build the package without a clone, whi
 
 from __future__ import annotations
 
+import re
 import subprocess
 from pathlib import Path
 from typing import Final
@@ -38,7 +42,18 @@ FALLBACK: Final = "0.0.0.0"
 
 #: Only tags that look like releases. A stray annotated tag would otherwise become the base of
 #: every version after it.
-_MATCH: Final = "v[0-9]*"
+#:
+#: A glob cannot express "and nothing after", so this narrows the field and :data:`_RELEASE` is
+#: what actually decides.
+_MATCH: Final = "v[0-9]*.[0-9]*.[0-9]*"
+
+#: What a release tag must be, once its leading ``v`` is off: **exactly three numbers**.
+#:
+#: Anything else is rejected rather than coerced. The coercion was worse than it looked — filtering
+#: to the components that were digits turned ``v1.0.0-rc1`` into ``1.0.0``, which collides with the
+#: release it precedes, and ``v1.2.3beta`` into ``1.2.0``, which sorts *below* the ``1.2.3`` it was
+#: a beta of. Both produced a plausible number and lost the thing that distinguished it.
+_RELEASE: Final = re.compile(r"\d+\.\d+\.\d+")
 
 
 def _git(*arguments: str) -> str | None:
@@ -75,12 +90,28 @@ def _release_and_distance() -> tuple[str, int] | None:
     return tag.lstrip("v"), int(distance)
 
 
+class MalformedReleaseTagError(ValueError):
+    """A release tag that is not three plain numbers.
+
+    Raised rather than worked around, and it stops the build. A version is how somebody reporting a
+    problem says which code they were running, so a tag this module cannot read exactly is worth a
+    failed build at the moment it is created — which is a fixable mistake — rather than a number
+    that is quietly wrong for as long as the tag exists.
+    """
+
+
 def _four_parts(release: str, distance: int) -> str:
-    """``A.B.C`` from the tag, padded if it is shorter, with ``D`` appended."""
-    numbers = [part for part in release.split(".") if part.isdigit()][:3]
-    while len(numbers) < 3:
-        numbers.append("0")
-    return ".".join([*numbers, str(distance)])
+    """``A.B.C`` from the tag with ``D`` appended, or raise if the tag is not three numbers."""
+    if not _RELEASE.fullmatch(release):
+        raise MalformedReleaseTagError(
+            f"the release tag 'v{release}' is not three numbers (A.B.C). The fourth part is "
+            f"derived from the number of commits since the tag and is never tagged, and a "
+            f"pre-release suffix cannot be represented — 'v{release}' would build as "
+            f"'{'.'.join(re.findall(r'[0-9]+', release)[:3])}.{distance}', which collides with a "
+            f"release it is not. Delete the tag and cut it as vA.B.C."
+        )
+
+    return f"{release}.{distance}"
 
 
 def _derive() -> str:
