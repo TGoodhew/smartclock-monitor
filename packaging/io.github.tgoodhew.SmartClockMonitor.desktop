@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.5
+Name=SmartClock Monitor
+GenericName=GPS-disciplined oscillator monitor
+Comment=Monitor and control an HP/Symmetricom SmartClock GPS-disciplined oscillator over RS-232
+Exec=smartclock-monitor
+Icon=io.github.tgoodhew.SmartClockMonitor
+Terminal=false
+Categories=Science;Electronics;
+Keywords=GPSDO;GPS;Z3805A;Z3801A;58503A;59551A;Z3816A;SCPI;frequency;oscillator;timing;
+StartupNotify=true
+StartupWMClass=smartclock-monitor

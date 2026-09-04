@@ -50,6 +50,7 @@ from smartclock_monitor.services.trend_store import TrendStore, TrendStoreError
 from smartclock_monitor.themes import fonts
 from smartclock_monitor.themes.tokens import Theme
 from smartclock_monitor.views.connection_dialog import ConnectionChoice
+from smartclock_monitor.views.help_window import version
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -162,10 +163,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     import qasync
     from PySide6.QtWidgets import QApplication
 
-    from smartclock_monitor.views.main_window import APPLICATION_NAME, MainWindow
+    from smartclock_monitor.views.main_window import (
+        APPLICATION_ID,
+        APPLICATION_NAME,
+        MainWindow,
+    )
 
     application = QApplication(sys.argv[:1])
     application.setApplicationName(APPLICATION_NAME)
+
+    # **How the desktop finds the launcher this window came from.** Under Wayland a window carries
+    # no class the compositor can match against a `.desktop` file, so without this the application
+    # shows a generic icon in the shell and its own entry sits unused beside it. On X11 it also
+    # sets WM_CLASS, which is what `StartupWMClass` in the entry pairs with.
+    application.setDesktopFileName(APPLICATION_ID)
+    application.setApplicationVersion(version())
 
     # **Before the first window.** A widget measured before its font exists is measured in the
     # default one, and every layout minimum computed from that is wrong — which is the defect this
