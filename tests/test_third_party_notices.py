@@ -13,6 +13,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 NOTICES = ROOT / "THIRD-PARTY-NOTICES.md"
+SPEC = ROOT / "build" / "smartclock-monitor.spec"
+CARRIED = ROOT / "licenses"
+
+#: Runtime dependencies that ship a licence inside their own distribution. The bundle collects it
+#: with `copy_metadata`, which PyInstaller does **not** do by itself.
+COLLECTED = ("qasync", "pyserial-asyncio", "markdown-it-py", "mdurl")
+
+#: Runtime dependencies that ship no licence text anywhere, so this repository carries it.
+#: `PySide6` covers Qt and shiboken6, which are licensed together.
+VENDORED = {"PySide6": "LGPL-3.0.txt", "pyserial": "pyserial-LICENSE.txt"}
 
 #: Shipped as files in the source tree rather than resolved by pip, and the reason this file
 #: matters before anything is packaged: the OFL requires its text to travel with the font.
@@ -74,3 +84,55 @@ def test_the_licence_files_are_beside_the_fonts_they_cover() -> None:
 
     assert faces, "no typefaces found — has the directory moved?"
     assert len(licences) >= 2, f"only {licences} beside {faces}"
+
+
+# ---- The texts themselves, not just their names --------------------------------------------------
+#
+# The first version of this module asserted that every dependency was *named* in the notices, and
+# that passed while the bundle carried the code of four of them and the terms of none. Naming a
+# licence is not shipping it. These check that a text is actually reachable.
+
+
+def test_every_carried_licence_text_is_present_and_looks_like_one() -> None:
+    """Qt, PySide6 and pyserial ship no licence file, so this repository carries theirs."""
+    for dependency, filename in VENDORED.items():
+        path = CARRIED / filename
+        assert path.is_file(), f"{dependency} has no licence text at {path}"
+        assert len(path.read_text(encoding="utf-8")) > 1000, f"{path} is too short to be a licence"
+
+    # LGPL-3.0 is not complete on its own: it incorporates GPL-3.0 by reference in its first
+    # paragraph, so carrying one without the other carries an incomplete grant.
+    # Whitespace-normalised: the licence is hard-wrapped at 70 columns and splits the phrase
+    # across a newline, so a literal search for it fails on a file that plainly contains it.
+    lgpl = " ".join((CARRIED / "LGPL-3.0.txt").read_text(encoding="utf-8").split())
+    assert "version 3 of the GNU General Public License" in lgpl
+    assert (CARRIED / "GPL-3.0.txt").is_file(), "LGPL-3.0 references GPL-3.0 and it is not here"
+
+
+def test_the_bundle_collects_the_licences_its_dependencies_do_ship() -> None:
+    """**PyInstaller does not collect a dependency's `.dist-info` unless asked.**
+
+    That is what `copy_metadata` is for, and the spec asked only for this project's own — so the
+    bundle carried four dependencies' code and none of their terms, while this very file said it
+    picked them up. Asserted against the spec because building a bundle needs a toolchain kept out
+    of the dev extra, and the defect is the missing declaration.
+    """
+    spec = SPEC.read_text(encoding="utf-8")
+
+    for dependency in COLLECTED:
+        assert f'copy_metadata("{dependency}")' in spec, (
+            f"the bundle would carry {dependency} without the licence it ships"
+        )
+    assert '(str(ROOT / "licenses"), "licenses")' in spec, (
+        "the vendored licence texts do not reach the bundle"
+    )
+    assert '(str(ROOT / "THIRD-PARTY-NOTICES.md"), ".")' in spec
+
+
+def test_the_notices_say_carried_software_keeps_its_own_terms() -> None:
+    """The point a notices file exists to make, and the one most easily left implicit: being
+    carried inside this project's wheel or bundle changes nothing about a component's licence."""
+    text = NOTICES.read_text(encoding="utf-8")
+
+    assert "terms of its original provider" in text
+    assert "MIT licence in `LICENSE` covers the code written for this project" in text

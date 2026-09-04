@@ -93,6 +93,11 @@ packages = ["src/smartclock_device", "src/smartclock_monitor"]
 # The wheel carries both typefaces, so it redistributes something and the notices go with it.
 "THIRD-PARTY-NOTICES.md" = "smartclock_monitor/resources/THIRD-PARTY-NOTICES.md"
 
+# The texts the notices file points at, so its references resolve from an installed copy rather
+# than only from a checkout. The wheel does not redistribute Qt or pyserial — the bundle does —
+# but a notices file whose citations lead nowhere is worth less than one that carries them.
+"licenses" = "smartclock_monitor/resources/licenses"
+
 # The captured screens --demo replays. Without them an installed copy starts and never shows a
 # reading, which looks exactly like a receiver that has not answered yet — and --demo is the first
 # thing the README tells a new user to run. Copied byte-for-byte; they are device output and

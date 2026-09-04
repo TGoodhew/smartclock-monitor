@@ -1,7 +1,19 @@
 # Third-party notices
 
 smartclock-monitor is distributed under the MIT licence (see `LICENSE`). It depends on, and in some
-channels redistributes, the components below, each under its own terms.
+channels redistributes, the components below.
+
+> **Every component listed here remains the property of its own authors and is licensed to you
+> under the terms of its original provider, not under this project's.** Nothing in this file, and
+> nothing about being carried inside a smartclock-monitor wheel or bundle, changes, relaxes or
+> replaces those terms. Where a component's licence and this project's disagree, the component's
+> governs that component. The MIT licence in `LICENSE` covers the code written for this project
+> and nothing else.
+>
+> Each licence text is reproduced or carried alongside the software it covers, and the rights it
+> grants — including any right to the corresponding source, or to relink against your own build of
+> a library — are granted by that provider and are exercised against them, not against this
+> project.
 
 **Scope: what actually ships, per channel.** The three differ, and the obligations differ with them.
 
@@ -36,18 +48,15 @@ texts are already shipped beside the files they cover, which is what the OFL ask
 
 ---
 
-## Two obligations that are not met yet, and are #27's to close
+## What is met, and what is still #27's to close
 
-**Qt and PySide6 ship no licence text.** Checked against the installed packages: there is no file
-with `licen` in its name anywhere under `PySide6/`, and the distributions list none. So a
-PyInstaller bundle today redistributes several hundred megabytes of LGPL-3.0 code **without the
-licence that permits it**. Whoever builds a distributable has to place the LGPL-3.0 text in it; a
-notices file that only names the licence does not discharge that.
+**~~Qt, PySide6 and pyserial ship no licence text.~~ Carried here instead.** Checked against the
+installed packages: there is no file with `licen` in its name anywhere under `PySide6/`, and
+neither its distributions nor pyserial's list one. Rather than leave a bundle redistributing
+several hundred megabytes of LGPL-3.0 code without the licence permitting it, the texts are in
+[`licenses/`](licenses/) and ship with every artefact. **This part is now met.**
 
-**pyserial ships no licence file either**, and its BSD-3-Clause terms require the copyright notice
-and disclaimer to accompany a binary redistribution. Same conclusion, smaller scale.
-
-**The LGPL also asks for more than a text.** Distributing Qt in a bundle carries a relinking
+**What is still open is the LGPL's other requirement, and it asks for more than a text.** Distributing Qt in a bundle carries a relinking
 obligation — the recipient must be able to replace the Qt libraries with their own build. A
 PyInstaller directory happens to satisfy this reasonably well, because the `.so` files sit beside
 the executable and can be swapped, and that is worth stating in the packaging rather than assumed.
@@ -63,9 +72,23 @@ and a source release. It becomes real with the first binary.
 The SIL Open Font License 1.1 covering both fonts is reproduced in full beside them, in
 [`src/smartclock_monitor/themes/fonts/`](src/smartclock_monitor/themes/fonts/).
 
-`qasync`, `pyserial-asyncio`, `markdown-it-py` and `mdurl` each carry their licence inside their
-installed distribution, so a bundle built from a working environment picks them up. `pyserial`,
-PySide6 and Qt do not — see above.
+`qasync`, `pyserial-asyncio`, `markdown-it-py` and `mdurl` each carry a licence inside their
+installed distribution, and the PyInstaller spec now collects it for each of them with
+`copy_metadata`.
+
+<!-- Corrected. This paragraph said a bundle "picks them up" from a working environment. It does
+     not: PyInstaller collects a distribution's .dist-info only when asked, which is what
+     copy_metadata is for, and the spec asked only for smartclock-monitor's own. The four licences
+     were named in this file and shipped in nothing. -->
+
+**Qt, PySide6 and pyserial ship no licence text at all**, so theirs are carried in this repository
+under [`licenses/`](licenses/) and go into the wheel and the bundle:
+
+| File | Covers | Source |
+|---|---|---|
+| `licenses/LGPL-3.0.txt` | Qt, PySide6, shiboken6 | gnu.org |
+| `licenses/GPL-3.0.txt` | the above — LGPL-3.0 incorporates GPL-3.0 by reference and is not complete without it | gnu.org |
+| `licenses/pyserial-LICENSE.txt` | pyserial | the pyserial repository, with its `(C) 2001-2020 Chris Liechti` notice intact |
 
 ## Keeping this file true
 
