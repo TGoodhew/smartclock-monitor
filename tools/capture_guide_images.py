@@ -68,6 +68,7 @@ from smartclock_monitor.services.commands import Then  # noqa: E402
 from smartclock_monitor.services.polling import Reading  # noqa: E402
 from smartclock_monitor.services.preferences import Preferences  # noqa: E402
 from smartclock_monitor.themes.tokens import Theme, palette_for  # noqa: E402
+from smartclock_monitor.views import main_window as main_window_module  # noqa: E402
 from smartclock_monitor.views.connection_dialog import ConnectionDialog  # noqa: E402
 from smartclock_monitor.views.details_window import DetailsWindow  # noqa: E402
 from smartclock_monitor.views.main_window import MainWindow  # noqa: E402
@@ -103,6 +104,18 @@ IDENTITY_ANSWER: Final = "SYMMETRICOM,Z3805A,3625A02931,1.01.03-A"
 
 #: The clock every picture is stamped from. Fixed, so the images do not change every day.
 WHEN: Final = datetime(2026, 8, 27, 20, 52, 20, tzinfo=UTC)
+
+#: The release the pictures show. **Pinned like the clock, and for the same reason** (#49).
+#:
+#: §9.7.5's status bar carries the version, which since #36 is `A.B.C.D` with `D` counting commits
+#: — so without this, five of the twenty images change whenever anybody reinstalls, and a diff in
+#: this directory stops meaning "the interface moved". A version in a screenshot dates the picture,
+#: which is not what these pictures are for.
+SHOWN_VERSION: Final = "v1.0.0"
+
+# Replaced rather than passed in: `set_connection_text` prefixes every message, so pinning it at
+# the source covers every window this tool builds without each call site having to remember.
+main_window_module.version_label = lambda: SHOWN_VERSION
 
 #: What the connection dialog lists. Fixed for the same reason, and a USB adapter rather than a
 #: motherboard port because that is what a receiver is almost always on.
