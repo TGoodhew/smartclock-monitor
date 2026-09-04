@@ -1,4 +1,4 @@
-"""The trend charts, and the Timing page that owns them.
+"""The trend charts (P1-1), and the Timing page that owns them.
 
 Assertions are against ``TrendChart.plot()`` rather than against rendered pixels. The questions
 worth asking of a chart — does the axis contain the data, did the excursion survive the reduction,

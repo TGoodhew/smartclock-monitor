@@ -1,4 +1,4 @@
-"""§8.5's experimental queries, and §10.9's two omitted cards."""
+"""§8.5's experimental queries (P1-8), and §10.9's two omitted cards."""
 
 from __future__ import annotations
 

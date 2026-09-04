@@ -1,4 +1,4 @@
-"""§10.11's Advanced Console, §10.13's Settings, and the preferences behind them.
+"""§10.11's Advanced Console (P1-7), §10.13's Settings, and the preferences behind them.
 
 The claim worth testing hardest is §10.13's: **opting in changes what is reachable, never what is
 permitted.** The console is a picker over the same §8.1 allowlist every other page uses, so enabling

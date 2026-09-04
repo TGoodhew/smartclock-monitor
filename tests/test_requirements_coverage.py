@@ -62,6 +62,29 @@ PARTIAL: dict[str, str] = {
 }
 
 
+#: P1 rows this port does **not** ship, and the decision that settled each.
+#:
+#: §13 is WinZ3805A's table and it is inherited byte-exact, so it lists features D5 removed. An
+#: unshipped requirement is not an unmet one when the decision is written down — but it has to be
+#: written down *here*, beside the tier that would otherwise demand a test, or "no test names it"
+#: and "we decided not to build it" are indistinguishable.
+#:
+#: Every entry cites the document that decided it. `docs/divergences.md` is the authority.
+NOT_SHIPPED: dict[str, str] = {
+    "P1-9": "D5 — no notification area, so no holdover/lock-loss notification. divergences.md.",
+    "P1-10": "D5 — no system tray icon. divergences.md.",
+    "P1-11": (
+        "Not offered — the system accent opt-in has nothing to read on Linux, and the brand accent "
+        "is always used. divergences.md."
+    ),
+    "P1-13": "D5 — no taskbar overlay badge. divergences.md.",
+    "P1-14": (
+        "D5 — close-to-tray and start-minimised both rested on a tray icon to come back to, and "
+        "§10.3.1's own argument then settles the close: the window closes and polling stops."
+    ),
+}
+
+
 def p0_identifiers() -> list[str]:
     """Every P0 in §13's table, in the order the specification lists them.
 
@@ -75,14 +98,22 @@ def p0_identifiers() -> list[str]:
     return list(dict.fromkeys(re.findall(r"\|\s*~?~?(P0-\d+)~?~?\s*\|", section)))
 
 
-def named_by_tests() -> dict[str, set[str]]:
-    """Which test files name each P0."""
+def p1_identifiers() -> list[str]:
+    """Every P1 in §13's table. Read from the specification, for the same reason as the P0s."""
+    text = SPECIFICATION.read_text(encoding="latin-1")
+    section = text[text.index("### P1") :]
+    section = section[: section.index("### P2")]
+    return list(dict.fromkeys(re.findall(r"\|\s*~?~?(P1-\d+)~?~?\s*\|", section)))
+
+
+def named_by_tests(tier: str = "P0") -> dict[str, set[str]]:
+    """Which test files name each requirement in a tier."""
     found: dict[str, set[str]] = {}
     for path in sorted(TESTS.glob("test_*.py")):
         if path.name == Path(__file__).name:
             continue
         source = path.read_text(encoding="utf-8")
-        for code in re.findall(r"\bP0-\d+\b", source):
+        for code in re.findall(rf"\b{tier}-\d+\b", source):
             found.setdefault(code, set()).add(path.name)
     return found
 
@@ -132,3 +163,55 @@ def test_the_partial_list_names_only_gated_criteria() -> None:
     stray = sorted(code for code in PARTIAL if code not in named)
 
     assert not stray, f"{stray} are listed as partly covered but no test names them"
+
+
+# ---- P1, added by the #22 audit ------------------------------------------------------------------
+#
+# The P0 half above came from #14 and stops at `### P1`. The audit found the tier below it
+# unwatched: of fourteen P1 rows, two were named by a test — while most of the features are built,
+# tested and shipped. So "no test names it" carried no information at P1, and the four rows D5
+# removed were indistinguishable from four nobody had got to.
+
+
+def test_the_p1_table_is_found_and_is_the_size_it_should_be() -> None:
+    """Guard the guard, as the P0 half does: a parse returning nothing makes the rest vacuous."""
+    identifiers = p1_identifiers()
+
+    assert len(identifiers) == 14, f"parsed {len(identifiers)} P1 rows: {identifiers}"
+    assert identifiers[0] == "P1-1"
+    assert identifiers[-1] == "P1-14"
+
+
+def test_every_p1_is_accounted_for() -> None:
+    """Every P1 is either named by a test or recorded as not shipped, with the decision.
+
+    Weaker than the P0 rule by design: a P0 that no test names is a hole, while a P1 that no test
+    names may simply be a feature this port decided against. What is not acceptable is the two
+    being indistinguishable.
+    """
+    named = named_by_tests("P1")
+    unaccounted = [
+        code for code in p1_identifiers() if code not in named and code not in NOT_SHIPPED
+    ]
+
+    assert not unaccounted, (
+        "These P1 criteria are named by no test and are not recorded as unshipped:\n  "
+        + "\n  ".join(unaccounted)
+        + "\n\nName the identifier in the docstring of the test that gates it, or add it to "
+        "NOT_SHIPPED with the decision that removed it."
+    )
+
+
+def test_the_unshipped_list_names_a_decision_for_every_row() -> None:
+    """An exemption is only worth having if it says who decided and where it is written down.
+
+    **Not "no test names it".** A test that asserts a feature is *absent* is exactly what should
+    gate a divergence — `test_closing.py` names P1-9 while asserting there is no notification —
+    so being both exempted and named is right rather than contradictory. What the list must not
+    contain is a bare identifier with no reason beside it.
+    """
+    for code, reason in NOT_SHIPPED.items():
+        assert len(reason) > 40, f"{code} is exempted without a reason worth reading"
+        assert "divergences.md" in reason or "§" in reason, (
+            f"{code}'s exemption cites no document — say which decision removed it"
+        )
