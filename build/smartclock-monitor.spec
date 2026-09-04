@@ -34,6 +34,11 @@ datas = [
     *copy_metadata("smartclock-monitor"),
     *collect_data_files("smartclock_monitor.themes.fonts", include_py_files=False),
     (str(ROOT / "docs" / "how-to-use.md"), "smartclock_monitor/resources"),
+    # The bundle is the one channel that redistributes Qt, PySide6 and every dependency rather than
+    # declaring them, so it is the channel the notices exist for. A bundle that carried the code and
+    # not the notices would be the licence problem THIRD-PARTY-NOTICES.md was written to prevent.
+    (str(ROOT / "THIRD-PARTY-NOTICES.md"), "."),
+    (str(ROOT / "LICENSE"), "."),
     # --demo replays these. Left out, the bundle starts and shows nothing for ever, which reads as
     # a receiver that has not answered rather than as a missing file.
     (str(ROOT / "tests" / "fixtures"), "smartclock_monitor/resources/fixtures"),

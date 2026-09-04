@@ -109,9 +109,16 @@ def test_the_fourth_part_counts_check_ins_since_the_release() -> None:
         return
 
     release, distance = found
-    assert metadata.version("smartclock-monitor").endswith(f".{distance}"), (
-        "the installed version's last part is not the distance from the tag — reinstall, or the "
-        "scheme has drifted from what hatch_version.py derives"
+
+    # **Derived here, not read from the installed metadata.** An editable install writes its
+    # version once and does not re-derive it, so comparing it against today's commit count fails
+    # on the first commit after an install — which is every working tree, most of the time. The
+    # first version of this test did exactly that and would have cried wolf locally while passing
+    # in CI, which installs fresh on every run. What is worth asserting is that the derivation
+    # agrees with git, and that is answerable without an install at all.
+    assert hatch_version.__version__.endswith(f".{distance}"), (
+        f"{hatch_version.__version__} does not end in the {distance} commits git reports since "
+        f"v{release}"
     )
     assert hatch_version._four_parts(release, distance).count(".") == 3
 

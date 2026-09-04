@@ -90,6 +90,9 @@ packages = ["src/smartclock_device", "src/smartclock_monitor"]
 [tool.hatch.build.targets.wheel.force-include]
 "docs/how-to-use.md" = "smartclock_monitor/resources/how-to-use.md"
 
+# The wheel carries both typefaces, so it redistributes something and the notices go with it.
+"THIRD-PARTY-NOTICES.md" = "smartclock_monitor/resources/THIRD-PARTY-NOTICES.md"
+
 # The captured screens --demo replays. Without them an installed copy starts and never shows a
 # reading, which looks exactly like a receiver that has not answered yet — and --demo is the first
 # thing the README tells a new user to run. Copied byte-for-byte; they are device output and
