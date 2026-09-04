@@ -26,6 +26,7 @@ import shutil
 import subprocess
 import sys
 from collections.abc import Iterator
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Final
 
@@ -395,8 +396,34 @@ def checks() -> Iterator[Finding]:
     yield _dialout()
 
 
+def _speak_utf8() -> None:
+    """Say what encoding this report is written in, rather than inheriting one (#48).
+
+    **On Windows a piped stdout defaults to the ANSI code page**, `cp1252` on CI, which cannot
+    encode the `→` every remedy is prefixed with. So the doctor crashed at the first *failing*
+    check — a clean report contains no arrow — which is the same shape as #46: the tool that
+    explains a broken machine breaking exactly when it has something to explain.
+
+    Not seen sooner because nothing ran `--doctor` through a pipe until #46's gate did, and an
+    interactive Windows console is often already UTF-8.
+
+    `errors="replace"` rather than a bare reconfigure: a terminal that genuinely cannot render the
+    character should show a substitute, not end the report. Restricting the output to ASCII was the
+    alternative, and that is a §9.5 typography decision made by a console limitation.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:  # pragma: no cover - a stream that is not a TextIOWrapper
+            continue
+        # Suppressed: a stream that will not be reconfigured is not a reason to refuse to report,
+        # which is the whole point of the change.
+        with suppress(OSError, ValueError):
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 def report() -> int:
     """Print the findings. Returns a process exit status: 0 when nothing is broken."""
+    _speak_utf8()
     where = f"{platform.system()} {platform.release()}"
     if _is_wsl():
         where += " (WSL)"
