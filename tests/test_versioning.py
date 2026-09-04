@@ -7,12 +7,24 @@ repository state — and the two ways that quietly stops being true are what thi
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import tomllib
 from importlib import metadata
 from pathlib import Path
+from types import ModuleType
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _version_module() -> ModuleType:
+    """Load `hatch_version.py` by path — the project root is not on the test path (src layout),
+    and the build backend loads it by path too."""
+    spec = importlib.util.spec_from_file_location("hatch_version", ROOT / "hatch_version.py")
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def _pyproject() -> dict[str, object]:
@@ -36,9 +48,11 @@ def test_the_version_is_derived_rather_than_written_down() -> None:
     )
     assert "version" not in project, f"a literal version is back: {project.get('version')!r}"
 
-    build = _pyproject()["build-system"]
-    assert isinstance(build, dict)
-    assert "hatch-vcs" in build.get("requires", []), "nothing derives the version any more"
+    hatch = _pyproject()["tool"]
+    assert isinstance(hatch, dict)
+    version = hatch["hatch"]["version"]
+    assert version["source"] == "code", "nothing derives the version any more"
+    assert version["path"] == "hatch_version.py"
 
 
 def test_ci_checks_out_enough_history_to_derive_a_version() -> None:
@@ -60,6 +74,44 @@ def test_ci_checks_out_enough_history_to_derive_a_version() -> None:
             "a CI checkout is shallow, so hatch-vcs would derive 0.0.0 for it and say nothing:\n"
             f"{step.strip()[:200]}"
         )
+
+
+def test_the_version_is_four_numeric_parts() -> None:
+    """#36: `A.B.C.D`, matching WinZ3805A's manifest, with `D` counting check-ins since the tag.
+
+    #33 derived the version but produced a PEP 440 developmental release with the commit in a
+    local segment — `1.0.0.dev99+g482bde009`. Correct, and not the shape asked for. This asserts
+    the shape rather than a number, because the number is derived and pinning one here would put
+    the literal back in a test instead of in `pyproject.toml`.
+    """
+    version = metadata.version("smartclock-monitor")
+
+    assert re.fullmatch(r"\d+\.\d+\.\d+\.\d+", version), (
+        f"{version!r} is not A.B.C.D — a scheme change has reverted to a default"
+    )
+    assert "dev" not in version, "a developmental release is not a four-part version"
+    assert "+" not in version, "the local segment carries the commit hash #36 asked to remove"
+
+
+def test_the_fourth_part_counts_check_ins_since_the_release() -> None:
+    """`D` is the distance from the tag, so it moves on every commit and resets on a release.
+
+    Asserted against git rather than against a number: the point is that the two agree, and a test
+    carrying the expected distance would need editing on every commit — which is the class of
+    chore this whole scheme exists to remove.
+    """
+    hatch_version = _version_module()
+
+    found = hatch_version._release_and_distance()
+    if found is None:  # a checkout with no tags fetched; the gate below covers CI
+        return
+
+    release, distance = found
+    assert metadata.version("smartclock-monitor").endswith(f".{distance}"), (
+        "the installed version's last part is not the distance from the tag — reinstall, or the "
+        "scheme has drifted from what hatch_version.py derives"
+    )
+    assert hatch_version._four_parts(release, distance).count(".") == 3
 
 
 def test_the_installed_version_is_readable_and_not_the_old_literal() -> None:

@@ -186,9 +186,18 @@ git tag -a v0.2.0 -m "What changed"
 git push origin v0.2.0
 ```
 
-Between tags a build reports something like `0.2.1.dev7+g3ad956e` — the next version, the distance,
-and the commit — and at a tag it reports the tag. Both the status bar and the guide's foot read it
-through `importlib.metadata`, so a screenshot identifies the build it came from.
+The version is `A.B.C.D`, matching WinZ3805A's four-part manifest version. `A.B.C` is the tag and
+**`D` counts the check-ins since it**, so it moves on every commit and resets when the next release
+is tagged:
+
+| | |
+|---|---|
+| at `v1.0.0` | `1.0.0.0` |
+| seven commits later | `1.0.0.7` |
+| once `v1.1.0` is tagged | `1.1.0.0` |
+
+Both the status bar and the guide's foot read it through `importlib.metadata`, so a screenshot
+identifies the build it came from. `hatch_version.py` derives it; nothing is written down.
 
 Annotated (`-a`) rather than lightweight: `git describe`, and so `hatch-vcs`, prefers them, and the
 message is where the reason for the release lives.
@@ -198,9 +207,11 @@ Two things to know:
 - **An editable install reports the version from when it was last installed.** `pip install -e .`
   writes the metadata once; it does not re-derive on every run. Reinstall after tagging if the
   number matters to what you are doing.
-- **A checkout without tags cannot derive anything** and falls back to `0.0.0`. CI checks out with
-  `fetch-depth: 0` for that reason, and `tests/test_versioning.py` fails if that ever stops being
-  true — otherwise every artefact would carry the same wrong number and nothing would say so.
+- **A checkout without tags cannot derive anything** and falls back to `0.0.0.0`. CI checks out
+  with `fetch-depth: 0` for that reason, and `tests/test_versioning.py` fails if that ever stops
+  being true — otherwise every artefact would carry the same wrong number and nothing would say so.
+- **A source distribution is fine without git.** hatchling reads the version from the sdist's
+  `PKG-INFO` rather than re-deriving it, so `sdist` → `wheel` carries the number it was cut with.
 
 ## Adding another receiver
 
