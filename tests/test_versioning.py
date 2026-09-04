@@ -14,6 +14,8 @@ from importlib import metadata
 from pathlib import Path
 from types import ModuleType
 
+import pytest
+
 ROOT = Path(__file__).resolve().parent.parent
 
 
@@ -112,6 +114,24 @@ def test_the_fourth_part_counts_check_ins_since_the_release() -> None:
         "scheme has drifted from what hatch_version.py derives"
     )
     assert hatch_version._four_parts(release, distance).count(".") == 3
+
+
+def test_a_tag_that_is_not_three_numbers_stops_the_build() -> None:
+    """Tags are `vA.B.C` and nothing else; `D` is derived and is never tagged.
+
+    **Rejected rather than coerced**, because the coercion produced plausible wrong numbers. An
+    earlier version kept whichever components were digits, which turned `v1.0.0-rc1` into `1.0.0`
+    — colliding with the release it precedes — and `v1.2.3beta` into `1.2.0`, which sorts *below*
+    the `1.2.3` it was a beta of. Both looked like versions. A failed build at the moment the tag
+    is cut is a fixable mistake; a version that is quietly wrong lasts as long as the tag.
+    """
+    hatch_version = _version_module()
+
+    assert hatch_version._four_parts("1.0.0", 7) == "1.0.0.7"
+
+    for bad in ("1.0", "1", "1.0.0-rc1", "1.2.3beta", "1.0.0.9", "1.0.x"):
+        with pytest.raises(hatch_version.MalformedReleaseTagError, match=re.escape(bad)):
+            hatch_version._four_parts(bad, 3)
 
 
 def test_the_installed_version_is_readable_and_not_the_old_literal() -> None:
