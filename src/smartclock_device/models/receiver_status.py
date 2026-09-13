@@ -317,6 +317,21 @@ class ReceiverStatus:
     #: Which datum :attr:`GeoPosition.height_metres` is measured against.
     height_datum: HeightDatum = HeightDatum.UNKNOWN
 
+    #: The accumulated GPS − UTC offset in seconds, or ``None`` where the family cannot say.
+    #:
+    #: §10.14 renders the time scale because UTC and GPS differ by exactly this. **No standard NMEA
+    #: sentence carries it** — a talker can only answer it if asked, which is the reading D8 traded
+    #: a structural guarantee for. Measured on this bench as **18**, from two u-blox modules a
+    #: firmware generation apart, agreeing in the same second.
+    gps_utc_offset_seconds: int | None = None
+
+    #: Whether that offset is the firmware's built-in default rather than decoded from satellites.
+    #:
+    #: u-blox marks the default with a ``D`` suffix. A default is a **guess the receiver is
+    #: making**, and a user of a timing application should be told which they have — so this is
+    #: carried rather than flattened into the number.
+    gps_utc_is_default: bool = False
+
     #: What kind of fix this is — standalone, differential, RTK — as distinct from whether there
     #: is one (#62).
     fix_quality: FixQuality = FixQuality.UNKNOWN

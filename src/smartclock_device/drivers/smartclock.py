@@ -154,6 +154,9 @@ class SmartClockDriver(QueryResponseDefaults):
             # is a different question from what kind of position fix produced it. There is no
             # standalone-versus-differential field on it at all.
             ReceiverReading.FIX_QUALITY,
+            # It reports the offset through its own leap-second query (LEAP_SECOND), not through a
+            # talker's poll. Declining the poll-shaped reading keeps the two from being confused.
+            ReceiverReading.GPS_UTC_OFFSET,
         }
     )
 

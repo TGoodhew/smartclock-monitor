@@ -324,3 +324,32 @@ def test_the_display_zone_is_a_preference_not_a_device_setting() -> None:
     """§10.14.1's question 3. One preference, two places to set it — a duplicated control, not
     duplicated state."""
     assert set(DisplayZone) == {DisplayZone.LOCAL, DisplayZone.UTC}
+
+
+def test_a_talker_s_polled_offset_fills_the_row_a_smartclock_answers_itself() -> None:
+    """§10.14, and the reading D8 traded a structural guarantee for (#62).
+
+    No standard NMEA sentence carries GPS − UTC, so until the send path existed this row was a dash
+    for ever on the talker family. The figure is 18 because that is what both bench modules
+    answered, a firmware generation apart, in the same second.
+    """
+    page = TimePage()
+    page.show_reading(reading(gps_utc_offset_seconds=18))
+
+    assert page.leap_fields.value_of("GPS − UTC") == "+18 s accumulated"
+
+
+def test_a_firmware_default_is_labelled_rather_than_shown_as_a_measurement() -> None:
+    """A default is a guess the receiver is making about a value this page renders as fact."""
+    page = TimePage()
+    page.show_reading(reading(gps_utc_offset_seconds=18, gps_utc_is_default=True))
+
+    assert "firmware default" in page.leap_fields.value_of("GPS − UTC")
+
+
+def test_a_family_with_neither_still_shows_a_dash(application: QApplication) -> None:
+    del application
+    page = TimePage()
+    page.show_reading(reading())
+
+    assert page.leap_fields.value_of("GPS − UTC") == DASH
