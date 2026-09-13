@@ -195,7 +195,14 @@ sittings, and the states they record — power-up, acquisition, holdover, recove
 only while the receiver is being moved or restarted. They cost a sitting to obtain and
 cannot be regenerated on demand.
 
-One state is still missing: a failing health monitor. If a future sitting captures it, **it
+One state is still missing and is now recorded as **not capturable**: a failing health monitor.
+The line reads `[ OK ]` because the receiver is healthy, and nothing short of the hardware actually
+failing will change that — every other state in the corpus was reached by *doing* something, and
+this one has no such action behind it. **We cannot simulate dying hardware**, and a synthetic
+eleventh screen filed beside ten that are device output would quietly falsify the one claim this
+directory makes about itself.
+
+If a receiver ever does start failing its own self-test, that is the moment to capture — and **it
 belongs in both repositories.** `captured/capture-log.md` is the shared record; keep it that
 way rather than letting each repository grow its own.
 
