@@ -91,3 +91,103 @@ class CommandGroup(Enum):
 
     #: §10.10's mask setters, one per register field.
     REGISTER_SETTERS = "status register setters"
+
+
+class Reading(Enum):
+    """A reading the interface shows, which a family may have no way of ever supplying (#60).
+
+    **The read-side counterpart of :class:`Capability`.** That one answers *"what may I send"*, and
+    §9.11's rule for a command a family lacks — disabled and explained, never hidden — has worked
+    since §12's #304. Nothing answered *"what may I ever know"*, so a field the family cannot carry
+    rendered as an em dash — which §11.1 defines as a field that **did not parse** and §9.11 as one
+    that has **not arrived yet**. Structural absence and a slow read were drawn identically, and a
+    user could not tell *"this receiver will never tell you"* from *"this has not come in"*.
+
+    §11 settles what to do about it, in wording added to the specification on 13 Sep 2026: a
+    reading a family can never supply is **declined outright rather than dashed**, *"because the em
+    dash means not yet and using it for never promises something that will not arrive"*.
+
+    **An entry here is a question a page asks, not a field of the status model.** Several fields
+    answer to one entry — :attr:`ONE_PPS_INTERVAL` covers the reading, its trend, the Allan
+    deviation and the drift fit, because a family that cannot measure the interval cannot produce
+    any of them — which keeps this to what the interface actually annotates.
+
+    **It runs both ways.** A talker has no disciplined oscillator; a status screen has no dilution
+    of precision. Neither family is the default.
+    """
+
+    # -- What a disciplined oscillator has and a talker has not -----------------------------------
+
+    #: §10.4's time figure of merit — a quality number for the receiver's own time.
+    TFOM = "the time figure of merit"
+
+    #: §10.4's frequency figure of merit.
+    FFOM = "the frequency figure of merit"
+
+    #: §10.7's 1 PPS time interval against GPS, **and everything derived from it**: the trend, the
+    #: Allan deviation and §10.7.1's drift fit. A family that cannot measure the interval cannot
+    #: produce any of them.
+    ONE_PPS_INTERVAL = "the 1 PPS time interval"
+
+    #: §10.4's oscillator electronic frequency control, and its trend.
+    OSCILLATOR_CONTROL = "the oscillator's frequency control"
+
+    #: §10.8's holdover in every form — whether the receiver is in it, for how long, the predicted
+    #: and present uncertainty, and the threshold.
+    #:
+    #: A receiver with no disciplined oscillator does not merely fail to report holdover: it has no
+    #: oscillator to hold over, so *"not in holdover"* is a claim rather than a reading.
+    HOLDOVER = "holdover"
+
+    #: §10.7's antenna cable delay, as the receiver currently has it.
+    ANTENNA_DELAY = "the antenna delay"
+
+    #: §10.4's output validity.
+    OUTPUT_VALIDITY = "whether the outputs are valid"
+
+    #: §10.4's serial number and firmware revision.
+    #:
+    #: Model and manufacturer are **not** here: a driver always supplies those, even where it has
+    #: invented them from what it overheard.
+    DEVICE_IDENTITY = "the serial number and firmware revision"
+
+    #: §10.14's accumulated GPS − UTC offset and any announced leap second.
+    LEAP_SECOND = "the leap-second state"
+
+    #: §10.11's time-code output format.
+    TIME_CODE_FORMAT = "the time-code format"
+
+    #: §10.9's total powered hours.
+    POWER_ON_HOURS = "hours since manufacture"
+
+    #: §10.4 and §10.9's health monitor, and its per-subsystem items.
+    HEALTH_MONITOR = "the health monitor"
+
+    #: §10.10's status registers and their masks.
+    STATUS_REGISTERS = "the status registers"
+
+    #: §10.9's stored diagnostic log.
+    DIAGNOSTIC_LOG = "the diagnostic log"
+
+    #: §10.9's error queue.
+    ERROR_QUEUE = "the error queue"
+
+    #: A whole status screen parsed in one read, which is what §11.1's parse-health line reports on.
+    #:
+    #: A broadcast talker has no status screen at all, so reporting that the last one *"parsed
+    #: completely"* is not a good outcome — it is a statement about something that did not happen.
+    STATUS_SCREEN = "a parsed status screen"
+
+    #: §10.5's elevation mask, as applied.
+    #:
+    #: Separate from the command that sets it: a family could report a mask it will not let anyone
+    #: change, and §9.11 wants those annotated differently.
+    ELEVATION_MASK = "the elevation mask"
+
+    #: §10.6's position hold — surveyed, held or unknown, and any survey in progress.
+    POSITION_HOLD = "whether the position is surveyed or held"
+
+
+#: Every reading. Named so a gate can walk them without the enum being iterated at a call site,
+#: where iterating would be the scatter of conditionals the driver seam exists to prevent.
+ALL_READINGS: tuple[Reading, ...] = tuple(Reading)
