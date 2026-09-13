@@ -421,6 +421,64 @@ defect rather than a silent one, and the logging in gate 3 is the only evidence 
 
 ---
 
+## D9 — Accessibility is not a goal of this project
+
+**Status: Settled** (13 Sep 2026, [#94](https://github.com/TGoodhew/smartclock-monitor/issues/94)).
+**The six §9.12 criteria that need a person are deferred indefinitely. The seven that are gated
+stay gated.**
+
+This is the largest deliberate divergence from the specification in this document, and it is
+recorded at length for that reason. §9.12 is thirteen verifiable criteria, §13 makes several of
+them P0, and D2 already removed the Store certification that made them a shipping gate upstream.
+
+### What is deferred
+
+The six that cannot be checked by a test, only by a person on a real desktop: screen-reader reading
+order, keyboard-only completion of a task rather than reachability of a widget, the sky plot under
+a colour-vision simulation, 200 % display scaling, reduced-motion, and whether a stuck user finds
+their answer in the `F1` help.
+
+Each needs a session on the VMware VM with Orca and a real compositor, and none of them can be
+regressed against — there is nothing to run on a push.
+
+### What is not deferred, and is not being removed
+
+Seven criteria are **already built and gated**, and they remain so. They are shipped code and
+passing tests rather than outstanding work:
+
+| | Gated by |
+|---|---|
+| Contrast floors in both themes at 4.5:1, on the tightest surface | `test_design_tokens.py` |
+| Pointer targets at §9.6.3's floor, with §9.10.2's recorded 24 px exception | `test_accessibility.py` |
+| Severity as colour **plus shape plus text**, with no unsanctioned renderer | `test_accessibility.py`, `test_design_tokens.py` |
+| Focus visuals on every interactive control | the gate added in #41 |
+| Every control without visible text carrying a name or a tooltip | `test_accessibility.py` |
+| Token parity — every token defined in every theme | `test_design_tokens.py` |
+| No two sky-plot markers overlapping at the plot's minimum size | `test_accessibility.py` |
+
+**Deleting these would be work in service of having less.** They cost nothing to run, they were
+written once, and several of them caught real defects on the way in — the tertiary text colour that
+measured 4.39:1 on the one surface nobody checks, and the 32 px marker that took its neighbour's
+clicks silently.
+
+### Why this is a deferral rather than a rejection
+
+The distinction matters to anyone reading the code. A reader who finds `test_accessibility.py` and
+this decision together should not conclude the tests are vestigial: the *automatable* half of §9.12
+is met and enforced. What is not done is the half that needs a human session, and what is not
+promised is that a screen-reader user can complete a task in this application.
+
+**The honest summary is "seven of thirteen, and the other six are not being attempted"** — not
+"inaccessible", which the list above contradicts, and not "accessible", which nothing here has
+established.
+
+### What would reverse it
+
+Somebody wanting to use this application with a screen reader. The gated half means that would
+start from a better place than nothing, which is the main practical argument for keeping it.
+
+---
+
 ## Part 7's mechanical consequences
 
 These follow from the platform rather than from a judgement, and are recorded so nobody
@@ -462,6 +520,7 @@ was someone trying to use the application.
 | D6 | Relationship — §8.4 sync | **Settled** (safety half) | — | Not reversible. See above. |
 | D7 | Third family — **UCCM ported, labelled untested** | **Settled** | [#63](https://github.com/TGoodhew/smartclock-monitor/issues/63) | Cheap: the labels come off as sittings confirm members. |
 | D8 | Broadcast transmit — **taken, under three gates** | **Settled** | [#64](https://github.com/TGoodhew/smartclock-monitor/issues/64) | Expensive: a structural guarantee was traded for a rule, and it cannot be traded back without removing the send path. |
+| D9 | Accessibility — **seven criteria gated, six deferred** | **Settled** | [#94](https://github.com/TGoodhew/smartclock-monitor/issues/94) | Cheap to reverse in principle; the gated half means it would not start from nothing. |
 
 **Every provisional row was chosen to be cheap to reverse**, which is the only honest way to take a
 decision on someone else's behalf — and all five were reviewed on 1 Sep 2026. Two were reversed

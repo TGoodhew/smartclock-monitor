@@ -14,6 +14,7 @@ its reasoning in [`platform-decisions.md`](platform-decisions.md) and its argume
 
 | | WinZ3805A | Here | |
 |---|---|---|---|
+| **§9.12's accessibility criteria** | Thirteen, all met | **Seven gated, six not attempted** | *Reduction* — D9 |
 | **High contrast** | Resolves to your Windows system colours | **Not shipped** | *Reduction* — D3 |
 | **Lock-loss alert (P1-9)** | Desktop notification | **Not shipped** | *Reduction* — D5 |
 | **Close to notification area** | Hides, keeps polling | Closes, stops polling | *Reduction* — D5 |
@@ -32,6 +33,27 @@ its reasoning in [`platform-decisions.md`](platform-decisions.md) and its argume
 | **Compact mode, in and out** | Double-click the medallion, or `Ctrl+Shift+M` | `Ctrl+Shift+M` and `Esc` only | *Reduction* — see below |
 | **The user's guide** | One document | **Forked** — same receiver half, rewritten window half | Different — see below |
 | **Multiple receivers (P2-1)** | Not built | Not built | Same |
+
+---
+
+## Seven of §9.12's thirteen criteria, and the other six not attempted
+
+D9. Accessibility is not a goal of this project, and saying that precisely matters more than saying
+it briefly.
+
+**What is gated, and enforced on every push:** contrast floors in both themes on the tightest
+surface; pointer targets at §9.6.3's floor; severity as colour *plus shape plus text* with no
+renderer permitted to resolve one to a colour alone; focus visuals; a name or a tooltip on every
+control without visible text; token parity across themes; and no two sky-plot markers overlapping
+at the plot's minimum size.
+
+**What is not attempted:** screen-reader reading order, keyboard-only completion of a *task*,
+colour-vision simulation, 200 % scaling, reduced-motion, and whether a stuck user finds their
+answer in the `F1` help. All six need a person on a real desktop and none can be regressed against.
+
+**So the honest summary is neither "accessible" nor "inaccessible".** The automatable half is met
+and enforced; the half that needs a human session is not being done, and no promise is made that a
+screen-reader user can complete a task here.
 
 ---
 
