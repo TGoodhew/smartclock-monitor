@@ -25,6 +25,8 @@ qt = pytest.importorskip("PySide6.QtWidgets", reason="Qt is not available on thi
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from conftest import NOW  # noqa: E402
+from smartclock_device.clock import FixedClock  # noqa: E402
+from smartclock_device.drivers.smartclock import SmartClockDriver  # noqa: E402
 from smartclock_device.models.device_identity import DeviceIdentity  # noqa: E402
 from smartclock_device.models.receiver_status import (  # noqa: E402
     OutputValidity,
@@ -32,7 +34,10 @@ from smartclock_device.models.receiver_status import (  # noqa: E402
     SignalStrengthKind,
     SmartClockMode,
 )
+from smartclock_device.transport.fake import FakeTransport  # noqa: E402
+from smartclock_monitor.services.logging import ChangeLog  # noqa: E402
 from smartclock_monitor.services.polling import Reading  # noqa: E402
+from smartclock_monitor.services.session import DeviceSession  # noqa: E402
 from smartclock_monitor.themes.severity import SEVERITY_SHAPES, Severity  # noqa: E402
 from smartclock_monitor.themes.tokens import ALL_THEMES, Theme, palette_for  # noqa: E402
 from smartclock_monitor.widgets.medallion import (  # noqa: E402
@@ -427,3 +432,103 @@ def test_a_reconnect_replaces_the_identity_rather_than_leaving_the_last_one(
     exported = {row[2] for row in overview.csv_rows()}
     assert "Z3805A" not in exported
     assert DASH in exported
+
+
+# ---- #61: a new link must not inherit the last one's readings ---------------------------------
+
+
+def test_a_reading_that_knows_nothing_renders_every_readout_as_a_dash(
+    application: QApplication,
+) -> None:
+    """The blank state, drawn through the ordinary render path rather than a second one."""
+    del application
+    from smartclock_monitor.views.main_window import DASH, MainWindow
+
+    window = MainWindow(Theme.DARK)
+    window.show_reading(
+        Reading(
+            status=status(SmartClockMode.LOCKED, outputs=OutputValidity.VALID),
+            tracked_count=8,
+            efc_percent=12.5,
+        )
+    )
+    assert window.readouts["efc"].value_text != DASH, "the fixture did not fill anything"
+
+    window.show_reading(Reading.nothing_known(NOW))
+
+    assert [r.value_text for r in window.readouts.values()] == [DASH] * len(window.readouts)
+    assert DASH in window.medallion.accessibleName(), (
+        "the medallion still names a satellite count from the link that ended"
+    )
+
+
+def test_announcing_a_session_wipes_the_previous_link_s_readings(
+    application: QApplication,
+) -> None:
+    """#61, and the defect that is *silently* wrong rather than visibly missing.
+
+    Connect to a second receiver and, until its first sweep lands, every readout still holds the
+    first one's values — under the new one's name. Nothing on screen distinguishes that from a
+    correct reading, which is why this is gated on the production callback rather than on a
+    window method a test could call and the application never does.
+    """
+    del application
+    from smartclock_monitor.__main__ import _announce
+    from smartclock_monitor.views.main_window import DASH, MainWindow
+
+    window = MainWindow(Theme.DARK)
+    window.show_reading(
+        Reading(
+            status=status(SmartClockMode.LOCKED, outputs=OutputValidity.VALID),
+            tracked_count=8,
+            efc_percent=12.5,
+        )
+    )
+    assert window.readouts["efc"].value_text != DASH
+
+    announce = _announce(window, ChangeLog(), FixedClock(NOW), lambda: False)
+    announce(_a_session())
+
+    assert window.readouts["efc"].value_text == DASH, (
+        "the second receiver inherited the first one's EFC"
+    )
+    assert window.readouts["tfom"].value_text == DASH
+
+
+def test_the_gate_catches_a_connect_that_forgets_to_wipe(application: QApplication) -> None:
+    """`CLAUDE.md`: a rule that matches nothing enforces nothing.
+
+    The violation is the code as it stood before #61 — announce a session and fill in the
+    identity, without blanking first. If the assertion above cannot tell that apart from the
+    fixed version, it is not a gate.
+    """
+    del application
+    from smartclock_monitor.views.main_window import DASH, MainWindow
+
+    window = MainWindow(Theme.DARK)
+    window.show_reading(
+        Reading(
+            status=status(SmartClockMode.LOCKED, outputs=OutputValidity.VALID),
+            efc_percent=12.5,
+        )
+    )
+
+    # The old behaviour: rewire the window for the new session and leave the readings alone.
+    window.set_identity(None, None)
+
+    assert window.readouts["efc"].value_text != DASH, (
+        "a connect that never blanks now leaves dashes anyway — this test no longer gates anything"
+    )
+
+
+def _a_session() -> DeviceSession:
+    """A real session over a fake transport, unopened.
+
+    Real rather than a stub because `_announce` takes a `DeviceSession` and `mypy --strict` is
+    what makes §11.1's "every consumer handles None" checkable — a stub that satisfies the call
+    by being untyped would opt this test out of the thing the strictness is for. Never opened:
+    the callback only reads `identity`, `identity_text` and `description`, and a session that
+    has not connected answers all three.
+    """
+    clock = FixedClock(NOW)
+    return DeviceSession(FakeTransport({}), SmartClockDriver(clock=clock), clock)
