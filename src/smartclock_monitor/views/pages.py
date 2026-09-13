@@ -47,7 +47,7 @@ from smartclock_device.commands.position_argument import (
     SECONDS,
     PositionArgument,
 )
-from smartclock_device.drivers.capability import Capability
+from smartclock_device.drivers.capability import Capability, ReceiverReading
 from smartclock_device.models import antenna_cable, coordinates
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.position import GeoPosition
@@ -167,6 +167,52 @@ class Page(QWidget):
 
     #: What the navigation list calls it.
     title = "Page"
+
+    #: The label carrying :meth:`set_unavailable`'s sentence, built on first use.
+    _unavailable: QLabel | None = None
+
+    #: The readings without which this page has **nothing** to say (§11, #60).
+    #:
+    #: Empty means the page always has content — Satellites and Position are filled by any family
+    #: that can see the sky, and Settings is the application's own. A non-empty tuple is an *any*
+    #: rather than an *all*: the page is worth opening if the family supplies one of them, which is
+    #: why Time is not listed here even though a talker has no leap-second state. It still shows
+    #: the time.
+    needs: tuple[ReceiverReading, ...] = ()
+
+    #: One sentence for when the connected family supplies none of :attr:`needs`.
+    #:
+    #: §11: *"selecting it lands on a page naming the family"* — so this says which receiver cannot,
+    #: not merely that something cannot. "This page is unavailable" is the sentence that makes a
+    #: user wonder whether the application is broken.
+    def unavailable_because(self, family: str) -> str:
+        readings = ", ".join(reading.value for reading in self.needs)
+        return f"{family} does not report {readings}, so this page has nothing to show."
+
+    def set_unavailable(self, why: str | None) -> None:
+        """Show the sentence instead of the page's own content, or clear it.
+
+        **The content is hidden rather than left behind it.** A page still drawing a status
+        screen's fields under a banner saying the family has no status screen would be saying two
+        contradictory things at once, and the fields would be the last receiver's.
+        """
+        if why is None and self._unavailable is None:
+            return
+
+        if self._unavailable is None:
+            self._unavailable = QLabel(self)
+            self._unavailable.setWordWrap(True)
+            self._unavailable.setProperty("role", "body")
+            self._unavailable.setAccessibleName("This page is not available for this receiver")
+            layout = self.layout()
+            if layout is not None:
+                layout.addWidget(self._unavailable)
+
+        self._unavailable.setText(why or "")
+        self._unavailable.setVisible(why is not None)
+        for child in self.findChildren(QWidget, options=Qt.FindChildOption.FindDirectChildrenOnly):
+            if child is not self._unavailable:
+                child.setVisible(why is None)
 
     def __init__(self, palette: Palette = LIGHT, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -1142,6 +1188,8 @@ NOW_FALLBACK: Final = datetime.min.replace(tzinfo=UTC)
 
 class TimingPage(Page):
     """§10.7 and §10.8: the figures of merit, the clock, and holdover."""
+
+    needs = (ReceiverReading.ONE_PPS_INTERVAL,)
 
     title = "Timing"
 

@@ -35,6 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import (
     OutputValidity,
@@ -206,6 +207,8 @@ class MainWindow(QMainWindow):
         self._identity: tuple[DeviceIdentity | None, str | None] = (None, None)
 
         self._details: DetailsWindow | None = None
+        #: The connected family, so a details window opened later starts in the right state.
+        self._driver: ReceiverDriver | None = None
         # Held here rather than in the details window because the details window is created on
         # demand and the store is opened at startup — and because a run whose store failed to open
         # must reach the page as None rather than as an absent attribute.
@@ -593,12 +596,24 @@ class MainWindow(QMainWindow):
             self._details.help_requested = self.open_help
             self._details.settings_changed = self._remember_preferences
             self._details.set_identity(*self._identity)
+            self._details.apply_driver(self._driver)
             if self._last_reading is not None:
                 self._details.show_reading(self._last_reading)
 
         self._details.show()
         self._details.raise_()
         self._details.activateWindow()
+
+    def set_driver(self, driver: ReceiverDriver | None) -> None:
+        """Tell the surfaces which family is connected, so §11's declines can be applied (#60).
+
+        Held rather than only forwarded: the details window is created lazily, so a receiver that
+        connected before it was ever opened would otherwise show every page as available until the
+        next connection.
+        """
+        self._driver = driver
+        if self._details is not None:
+            self._details.apply_driver(driver)
 
     @property
     def preferences(self) -> Preferences:

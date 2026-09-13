@@ -16,7 +16,7 @@ from smartclock_device.commands import catalog
 from smartclock_device.commands.blocked import is_blocked as _is_blocked
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import Cadence, PollPlan, QueryResponseDefaults
-from smartclock_device.drivers.capability import Capability, CommandGroup, Reading
+from smartclock_device.drivers.capability import Capability, CommandGroup, ReceiverReading
 from smartclock_device.models.device_identity import DeviceIdentity, ReceiverModel
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.parsing.scalars import (
@@ -127,8 +127,8 @@ class SmartClockDriver(QueryResponseDefaults):
         """
         return StatusScreenParser(self.clock).parse(transaction.text)
 
-    def reports(self, reading: Reading) -> bool:
-        """**Everything in :class:`Reading` today**, and that is a statement about the enum.
+    def reports(self, reading: ReceiverReading) -> bool:
+        """**Everything in :class:`ReceiverReading` today**, and that is a statement about the enum.
 
         Every entry there is a reading the status screen or a §8.1 query supplies, because this is
         the family the specification was written against. It is not a claim that a SmartClock knows

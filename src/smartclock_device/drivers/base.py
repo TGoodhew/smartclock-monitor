@@ -16,7 +16,7 @@ from enum import Enum
 from typing import Final, Protocol, runtime_checkable
 
 from smartclock_device.commands.scpi_command import ScpiCommand
-from smartclock_device.drivers.capability import Capability, CommandGroup, Reading
+from smartclock_device.drivers.capability import Capability, CommandGroup, ReceiverReading
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.transport.settings import SerialSettings
@@ -282,7 +282,7 @@ class ReceiverDriver(Protocol):
         """Fold the fast-tier answers into the status the full tier last produced."""
         ...
 
-    def reports(self, reading: Reading) -> bool:
+    def reports(self, reading: ReceiverReading) -> bool:
         """Whether this family can **ever** supply a reading (§11, #60).
 
         ``False`` is a structural claim, not a report on this poll: it means no firmware revision

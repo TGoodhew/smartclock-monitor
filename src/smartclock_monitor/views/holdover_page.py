@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from smartclock_device.drivers.capability import Capability
+from smartclock_device.drivers.capability import Capability, ReceiverReading
 from smartclock_device.models.receiver_status import SmartClockMode
 from smartclock_device.parsing.scalars import parse_decimal
 from smartclock_monitor.services.commands import CommandRunner
@@ -68,6 +68,8 @@ _PAGE_STEP = 60
 
 class HoldoverPage(Page):
     """§10.8."""
+
+    needs = (ReceiverReading.HOLDOVER,)
 
     title = "Holdover"
 

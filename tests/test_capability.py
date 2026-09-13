@@ -19,6 +19,7 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QPushButton
 
 from conftest import NOW
@@ -35,7 +36,7 @@ from smartclock_device.drivers.capability import (
     ALL_READINGS,
     Capability,
     CommandGroup,
-    Reading,
+    ReceiverReading,
 )
 from smartclock_device.drivers.nmea.driver import NmeaDriver
 from smartclock_device.drivers.smartclock import SmartClockDriver
@@ -43,6 +44,7 @@ from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.transport.settings import SerialSettings
 from smartclock_device.transport.transaction import Transaction
+from smartclock_monitor.themes.tokens import Theme
 from smartclock_monitor.views.capability import explain, gate
 from smartclock_monitor.views.holdover_page import HoldoverPage
 from smartclock_monitor.views.pages import PositionPage, SatellitesPage
@@ -70,9 +72,9 @@ class TalkerDriver(QueryResponseDefaults):
 
     #: Which readings it declines (#60). Empty by default for the same reason as `supported`: a
     #: test says what it is about, and a double that pre-declined things would hide it.
-    declines: frozenset[Reading] = field(default_factory=frozenset)
+    declines: frozenset[ReceiverReading] = field(default_factory=frozenset)
 
-    def reports(self, reading: Reading) -> bool:
+    def reports(self, reading: ReceiverReading) -> bool:
         return reading not in self.declines
 
     @property
@@ -318,12 +320,12 @@ def test_a_talker_declines_the_readings_its_docstring_always_claimed_it_lacked()
     talker = NmeaDriver(clock=FixedClock(NOW))
 
     for reading in (
-        Reading.TFOM,
-        Reading.FFOM,
-        Reading.ONE_PPS_INTERVAL,
-        Reading.OSCILLATOR_CONTROL,
-        Reading.HOLDOVER,
-        Reading.STATUS_SCREEN,
+        ReceiverReading.TFOM,
+        ReceiverReading.FFOM,
+        ReceiverReading.ONE_PPS_INTERVAL,
+        ReceiverReading.OSCILLATOR_CONTROL,
+        ReceiverReading.HOLDOVER,
+        ReceiverReading.STATUS_SCREEN,
     ):
         assert talker.reports(reading) is False, f"a talker cannot supply {reading.value}"
 
@@ -337,8 +339,8 @@ def test_a_talker_still_reports_what_it_actually_broadcasts() -> None:
     """
     talker = NmeaDriver(clock=FixedClock(NOW))
 
-    assert talker.reports(Reading.POSITION_HOLD) is False, "it has no survey or hold"
-    assert SmartClockDriver(clock=FixedClock(NOW)).reports(Reading.HOLDOVER) is True
+    assert talker.reports(ReceiverReading.POSITION_HOLD) is False, "it has no survey or hold"
+    assert SmartClockDriver(clock=FixedClock(NOW)).reports(ReceiverReading.HOLDOVER) is True
 
 
 def test_a_smartclock_declines_nothing_in_the_list_as_it_stands() -> None:
@@ -358,7 +360,96 @@ def test_a_smartclock_declines_nothing_in_the_list_as_it_stands() -> None:
 
 def test_the_gate_catches_a_family_that_declines_something_it_broadcasts() -> None:
     """`CLAUDE.md`: a rule that matches nothing enforces nothing."""
-    double = TalkerDriver(declines=frozenset({Reading.TFOM}))
+    double = TalkerDriver(declines=frozenset({ReceiverReading.TFOM}))
 
-    assert double.reports(Reading.TFOM) is False
-    assert double.reports(Reading.HOLDOVER) is True
+    assert double.reports(ReceiverReading.TFOM) is False
+    assert double.reports(ReceiverReading.HOLDOVER) is True
+
+
+# ---- #60's surfaces: dimmed, never disabled ----------------------------------------------------
+
+
+def test_a_talker_dims_the_pages_it_can_never_fill(application: QApplication) -> None:
+    """Timing, Holdover, Diagnostics and Status Registers have nothing without an oscillator."""
+    del application
+    from smartclock_monitor.views.details_window import DetailsWindow
+
+    window = DetailsWindow(Theme.DARK)
+    window.apply_driver(NmeaDriver(clock=FixedClock(NOW)))
+
+    dimmed = {
+        window.navigation.item(row).data(Qt.ItemDataRole.AccessibleTextRole)
+        for row in range(len(window.pages))
+        if "unavailable"
+        in str(window.navigation.item(row).data(Qt.ItemDataRole.AccessibleTextRole))
+    }
+
+    assert {name.split(",")[0] for name in dimmed} == {
+        "Timing",
+        "Holdover",
+        "Diagnostics",
+        "Status Registers",
+    }
+
+
+def test_no_destination_is_ever_disabled(application: QApplication) -> None:
+    """§11's reason, verbatim: *"a disabled item takes no pointer input and so cannot carry the
+    tooltip explaining itself"*.
+
+    `setEnabled(False)` is the obvious thing to reach for and is exactly what the amendment
+    forbids, which is why this is gated rather than left to review.
+    """
+    del application
+    from smartclock_monitor.views.details_window import DetailsWindow
+
+    window = DetailsWindow(Theme.DARK)
+    window.apply_driver(NmeaDriver(clock=FixedClock(NOW)))
+
+    for row in range(window.navigation.count()):
+        item = window.navigation.item(row)
+        assert item.flags() & Qt.ItemFlag.ItemIsEnabled, (
+            f"row {row} was disabled; §11 says dimmed, so the tooltip can still be read"
+        )
+
+
+def test_a_dimmed_destination_says_which_family_cannot(application: QApplication) -> None:
+    """ "This page is unavailable" is the sentence that makes a user wonder if the app is broken."""
+    del application
+    from smartclock_monitor.views.details_window import DetailsWindow
+
+    window = DetailsWindow(Theme.DARK)
+    talker = NmeaDriver(clock=FixedClock(NOW))
+    window.apply_driver(talker)
+
+    row = next(r for r in range(len(window.pages)) if window.pages[r].title == "Holdover")
+    tip = window.navigation.item(row).toolTip()
+
+    assert talker.name in tip, "the tooltip must name the family, not just the limitation"
+    assert "holdover" in tip
+
+
+def test_a_smartclock_dims_nothing(application: QApplication) -> None:
+    """The family the specification was written against fills every page it has."""
+    del application
+    from smartclock_monitor.views.details_window import DetailsWindow
+
+    window = DetailsWindow(Theme.DARK)
+    window.apply_driver(SmartClockDriver(clock=FixedClock(NOW)))
+
+    for row in range(len(window.pages)):
+        name = str(window.navigation.item(row).data(Qt.ItemDataRole.AccessibleTextRole))
+        assert "unavailable" not in name, f"{name} was dimmed for the family that defines it"
+
+
+def test_disconnecting_restores_every_destination(application: QApplication) -> None:
+    """Leaving pages dimmed from the last receiver is the stale-state defect #61 exists to stop."""
+    del application
+    from smartclock_monitor.views.details_window import DetailsWindow
+
+    window = DetailsWindow(Theme.DARK)
+    window.apply_driver(NmeaDriver(clock=FixedClock(NOW)))
+    window.apply_driver(None)
+
+    for row in range(len(window.pages)):
+        name = str(window.navigation.item(row).data(Qt.ItemDataRole.AccessibleTextRole))
+        assert "unavailable" not in name
