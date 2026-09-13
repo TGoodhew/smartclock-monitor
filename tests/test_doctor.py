@@ -203,3 +203,43 @@ def test_the_port_list_does_not_bury_the_adapter_in_stubs(monkeypatch: pytest.Mo
 
     assert "no USB adapter found" in without.detail
     assert "ttyS" not in without.detail
+
+
+def test_the_wsl_remedy_names_the_command_that_actually_needs_elevation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#67. `attach` is the one command in the procedure that does **not** need an elevated prompt.
+
+    The first version sent a stuck user to an administrator prompt for the wrong half and never
+    mentioned `bind` at all — so they ran `attach`, were told the device is not shared, and had
+    nothing to go on. `--doctor` exists to tell the truth about what a machine needs, and a remedy
+    that is confidently wrong is worse than none because it is the line they will act on.
+
+    Measured against usbipd-win 5.3.0: `bind` is elevated and once per device, `attach` is neither.
+    """
+    monkeypatch.setattr(doctor, "_is_wsl", lambda: True)
+    monkeypatch.setattr("serial.tools.list_ports.comports", lambda: [])
+
+    remedy = doctor._ports().remedy or ""
+
+    assert "bind" in remedy, "the command that needs elevation must be named"
+    assert "elevated" in remedy
+    assert remedy.index("bind") < remedy.index("attach"), "and it comes first, because it does"
+    assert "--wsl" in remedy, "attach needs the flag or it does nothing useful"
+
+
+def test_the_wsl_remedy_warns_about_the_two_things_that_waste_an_afternoon(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A BUSID names a physical socket, and attaching takes the port away from Windows.
+
+    The first is the commonest reason a device that "worked yesterday" stops appearing; the second
+    is why the Windows sibling and this port cannot hold the same receiver at once.
+    """
+    monkeypatch.setattr(doctor, "_is_wsl", lambda: True)
+    monkeypatch.setattr("serial.tools.list_ports.comports", lambda: [])
+
+    remedy = doctor._ports().remedy or ""
+
+    assert "socket" in remedy
+    assert "detach" in remedy

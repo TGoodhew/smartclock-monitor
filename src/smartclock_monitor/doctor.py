@@ -260,9 +260,17 @@ def _ports() -> Finding:
 
     remedy = "Nothing is plugged in, or the adapter needs its driver."
     if _is_wsl():
+        # **`attach` is the one command here that does not need elevation, and `bind` does.**
+        # The first version of this line sent a stuck user to an administrator prompt for the
+        # wrong half of the procedure and never mentioned the half that needs one — so they ran
+        # `attach`, were told the device is not shared, and had nothing to go on. A remedy that is
+        # confidently wrong is worse than none, because it is the line they will act on (#67).
         remedy = (
-            "Under WSL a USB adapter needs 'usbipd attach' from an elevated Windows prompt "
-            "before it appears at all."
+            "Under WSL the adapter has to be handed over from Windows. Run 'usbipd list' there to "
+            "find its BUSID, then 'usbipd bind --busid <id>' ONCE from an elevated prompt, and "
+            "'usbipd attach --wsl --busid <id>' from an ordinary one each time WSL restarts. "
+            "A BUSID names a physical socket, so moving the cable changes it and the bind does not "
+            "follow. Attaching also takes the port away from Windows until you 'usbipd detach'."
         )
     # Not a failure: --demo needs no port, and a machine with none is the ordinary case.
     return Finding("Serial ports", True, detail, remedy)
