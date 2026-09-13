@@ -1,4 +1,4 @@
-# WinZ3805A — Requirements Specification
+﻿# WinZ3805A — Requirements Specification
 
 **Version:** 1.0
 **Date:** 11 August 2026
@@ -141,9 +141,14 @@ C:\Users\Tony\source\WinZ3805A\
 ├── Directory.Build.props              Nullable + warnings-as-errors (§6.4), shared by every project
 ├── global.json                        Pins the .NET SDK
 ├── .github/workflows/ci.yml           Runs every build/ gate first, then builds and tests
-├── build/                             Test-*.ps1 — the eleven CI gates (§8.4, §9.12, §9.13);
-│   │                                  Capture-Fixtures.ps1 (the §11.1 harness); the sideload
-│   │                                  packager, Invoke-Wack.ps1, New-AppAssets.ps1;
+├── build/                             Test-*.ps1 — eighteen gates: fifteen over the source
+│   │                                  (§8.4, §9.12, §9.13), two over the documents and one over
+│   │                                  the pull request; Capture-Fixtures.ps1 (the §11.1 harness)
+│   │                                  with Capture-Talker.ps1, Capture-Uccm.ps1 and
+│   │                                  Watch-UccmTransitions.ps1 (#544) for the other two
+│   │                                  families, Capture-GuideImages.ps1, Watch-Soak.ps1;
+│   │                                  the sideload packager, New-SigningSecrets.ps1,
+│   │                                  New-ReleaseNotes.ps1, Invoke-Wack.ps1, New-AppAssets.ps1;
 │   │                                  fluent-stock-colours.txt (§9.4.1's measured stock values)
 │   ├── palette/                       The §9.4.4 palette derivation and its validator (#87)
 │   └── sideload/                      Installer script and README shipped with a sideload package
@@ -153,7 +158,10 @@ C:\Users\Tony\source\WinZ3805A\
 │   ├── adding-a-receiver.md           Driver author's guide (#287), with tutorial-nmea-driver.md (#310)
 │   ├── manual-qa.md                   The release checklist §6.4 and §9.12 point at
 │   ├── privacy.md, store-listing.md   Privacy policy and listing copy for the Store (OQ-6)
-│   ├── lady-heather-comparison.md, index.md, _config.yml   GitHub Pages site
+│   ├── lady-heather-comparison.md, nmea-against-lady-heather.md   Against the incumbent
+│   ├── porting-to-python-qt.md        The Linux port's work plan (smartclock-monitor)
+│   ├── index.md, _config.yml          GitHub Pages site
+│   ├── review/                        Frozen review artefacts; nothing here ships
 │   └── images/                        Screenshots the user's guide embeds
 ├── src/
 │   ├── WinZ3805A/                     WinUI 3 app, single-project MSIX
@@ -176,18 +184,24 @@ C:\Users\Tony\source\WinZ3805A\
 │       ├── Transport/                 SerialTransport, ITransport, LineProtocol, BroadcastListener
 │       ├── Commands/                  ScpiCommand, CommandCatalog, SafetyTier, BlockedCommands
 │       ├── Drivers/                   IReceiverDriver, LinkStyle, SmartClockDriver (#287)
-│       │   └── Nmea/                  NmeaDriver, NmeaSentence, NmeaStatusParser (#310)
+│       │   ├── Nmea/                  NmeaDriver, NmeaSentence, NmeaStatusParser, NmeaPoll (#310, #508)
+│       │   └── Uccm/                  UccmDriver, UccmCommands, UccmStatusParser, UccmTimeCode (#416)
 │       ├── Parsing/                   StatusScreenParser, ScalarParsers, DiagnosticLogParser
 │       └── Models/                    ReceiverStatus, Satellite, Position, ModelProfile
 ├── tests/
 │   └── WinZ3805A.Tests/               xUnit; folders mirror the source
-│       └── Fixtures/                  Captured .txt status screens (§11.1) with README.md
-│           └── captured/              The 27–28 Aug sitting, one file per state, and its log
+│       ├── Fixtures/                  Captured .txt status screens (§11.1) with README.md
+│       │   └── captured/              The 27–28 Aug sitting, one file per state, and its log
+│       ├── Nmea/Captures/             Captured talker cycles, replayed in CI (#420)
+│       └── Uccm/Captures/             Captured UCCM sittings, bytes verbatim (#416, #481, #534)
 └── tools/
-    └── NmeaSimulator/                 Console NMEA talker for driving the §7 seam without hardware (#310)
+    ├── NmeaSimulator/                 Console NMEA talker for driving the §7 seam without hardware (#310)
+    └── UccmSimulator/                 The UCCM shapes the driver was written against, before hardware (#416)
 ```
 
 *(Tree regenerated from the working copy on 29 Aug 2026, #316. The original named a `SettingsService` and a `HealthState` model, neither of which exists: settings are the `*Preferences` records persisted through `JsonPreferenceFile`, and health is carried on `ReceiverStatus` as its health items and `ClockAdvisory`.)*
+
+*(Regenerated again 13 Sep 2026. What had drifted since August is what the tree could not describe when it was written: **the UCCM driver and its simulator**, the **two capture directories** that hold the evidence for the families that are not the SmartClock, and the **gate count**, which said eleven and is eighteen — and no longer one kind of thing, since three of them read something other than the source. The gate list with what each guards is `CLAUDE.md`; this tree gives only the shape.)*
 
 The `Device` library must have zero dependency on `Microsoft.UI.*`. All parsing and safety classification lives there and is unit-tested against captured status-screen text files.
 
@@ -270,7 +284,7 @@ The device is plain RS-232 with no vendor driver SDK, no COM interop, and no P/I
 
 | Parameter | Default | Range |
 |---|---|---|
-| Baud | 9600 | 1200 / 2400 / 4800 / 9600 / 19200 / 38400 *(4800 and 38400 added 29 Aug 2026, #310: NMEA 0183's rate and its high-speed variant — the SmartClock family's four left the standard's own rate unofferable)* |
+| Baud | 9600 | 1200 / 2400 / 4800 / 9600 / 19200 / 38400 / 57600 *(4800 and 38400 added 29 Aug 2026, #310: NMEA 0183's rate and its high-speed variant — the SmartClock family's four left the standard's own rate unofferable; **57600 added 10 Sep 2026, #470**, measured on a Trimble UCCM-P, which `UccmDriver` had walked since #416 while the dialog could not be pointed at it by hand)* |
 | Data bits | 8 | 7 / 8 |
 | Parity | None | None / Even / Odd |
 | Stop bits | 1 | 1 / 2 |
@@ -279,7 +293,7 @@ The device is plain RS-232 with no vendor driver SDK, no COM interop, and no P/I
 
 *(added 29 Aug 2026 from the code, #316)* The DTR / RTS row is not a per-device parameter but the transport's unconditional policy: `Transport/SerialTransport.cs` asserts both lines on every open, before any driver has been selected, because the SmartClock's line driver will not transmit to a dead DTR on some cable assemblies. That is right for the SmartClock family and was found to be wrong for at least one other receiver — the BG7TBL unit went silent with DTR asserted (#309) — so #304 item 4 asks for the modem-line policy to become driver-supplied.
 
-Z3805A ships 9600-8-N-1. Sibling units differ — **the Z3801A leaves the factory at 19200-7-O-1** — so all parameters must be user-settable, and the connection dialog must offer an **Auto-detect** that walks the union of every registered driver's most likely combinations — ten today: the SmartClock family's eight, listed in order in §10.12, plus 4800-8-N-1 and 38400-8-N-1 for an NMEA talker (#310) — listening first at each, and sending `*IDN?` only when nothing claims what it hears, until a valid identity returns (corrected 29 Aug 2026, #316: this said *eight* and *sending `*IDN?`*, which described one family and no listen).
+Z3805A ships 9600-8-N-1. Sibling units differ — **the Z3801A leaves the factory at 19200-7-O-1** — so all parameters must be user-settable, and the connection dialog must offer an **Auto-detect** that walks the union of every registered driver's most likely combinations — eleven today: the SmartClock family's eight, listed in order in §10.12, plus 4800-8-N-1 and 38400-8-N-1 for an NMEA talker (#310) and 57600-8-N-1 for a UCCM (#416, measured #470) — listening first at each, and sending `*IDN?` only when nothing claims what it hears, until a valid identity returns (corrected 29 Aug 2026, #316: this said *eight* and *sending `*IDN?`*, which described one family and no listen).
 
 > **⚠ Corrected 28 Aug 2026 (#64).** This said the Z3801A is "commonly 19200-7-**E**-1", and so did §10.12's auto-detect order and Appendix B. The Z3801A user guide gives the factory default as **odd** parity, twice: *"Baud Rate: 19200 / Parity: Odd / Data Bits: 7/char / Stop Bits: 1"*, and again as *"19200 — 7 data bits, 1 start bit, 1 stop bit, odd parity"*. The even-parity spelling had no source.
 >
@@ -291,7 +305,19 @@ Z3805A ships 9600-8-N-1. Sibling units differ — **the Z3801A leaves the factor
 
 This is the fiddliest part of the implementation. Get it right before building any UI.
 
-> **Scope, stated 29 Aug 2026 (#310).** Everything in this section is the SmartClock family's link — a receiver that speaks only when spoken to, behind a prompt. It is one of two link styles the driver contract now names (§12, *Receiver readiness*): a **broadcast** family, such as an NMEA 0183 talker, has no prompt, no echo, no error queue and no commands; it is recognised by what it says during the synchronise step below — steps 1 and 2 of the connect sequence — and served from a listener. **It is never written to after recognition; one `*CLS`, sent by step 2 before recognition, is the only write such a family ever receives.** Nothing else in this section applies to it. *(This sentence is the canonical wording; §12's* Receiver readiness *defers to it — reconciled 29 Aug 2026, #316.)*
+> **Scope, stated 29 Aug 2026 (#310); the write rule amended 13 Sep 2026 (#543).** Everything in this section is the SmartClock family's link — a receiver that speaks only when spoken to, behind a prompt. It is one of two link styles the driver contract now names (§12, *Receiver readiness*): a **broadcast** family, such as an NMEA 0183 talker, has no prompt, no echo and no error queue; it is recognised by what it says during the synchronise step below — steps 1 and 2 of the connect sequence — and served from a listener. `*IDN?` is never sent to a family recognised that way, and one `*CLS`, sent by step 2 before recognition, is the only write that is not covered by the rule below. Nothing else in this section applies to it. *(This paragraph is the canonical wording; §12's* Receiver readiness *defers to it — reconciled 29 Aug 2026, #316.)*
+>
+> **The write rule.** A broadcast family may be written to **only** through `IReceiverDriver.OutgoingTextFor(mnemonic)`, which returns at most one piece of wire text for one **catalogued** poll-plan entry and **defaults to `null`**. Three conditions must all hold before anything goes out, and they are independent by design:
+>
+> 1. The mnemonic is an entry in that driver's §8.1 allowlist. For a query/response family the mnemonic *is* the wire text; for a broadcast family the entry is a key and `OutgoingTextFor` maps it to the bytes, so the allowlist property is that **no text can be sent for which there is no catalogue entry**.
+> 2. `OutgoingTextFor` returns non-null for it. The default is null, so a family that has not considered transmitting cannot acquire a send path by inheritance — returning text here is a claim about the family's character, not a detail.
+> 3. The returned text passes that driver's `IsBlocked` at the point of send. A driver whose two methods disagree is a programming error: the text is **not sent** and the disagreement is **logged** (§8.1).
+>
+> A receiver-specific precondition — *this* module will understand *this* sentence — is a fourth gate and belongs to whatever holds the evidence for it, not to the driver. The NMEA family's lives in the poller, because the evidence is a power-on banner the state store remembers across the cycles that do not repeat it, and a driver is a singleton that would otherwise carry one receiver's answer to the next.
+>
+> **Verification.** Each gate has its own test rather than being covered incidentally by an end-to-end one, because they fail independently: `OnlyThePollHasOutgoingText` and `TheTextTheDriverOffersIsNotRefusedByItsOwnRule` (`NmeaPollSendTests`) for gates 2 and 3, `EveryOtherProprietarySentenceIsRefused` and `ATruncatedOrPartialPollIsRefused` (`NmeaPollPolicyTests`) for what `IsBlocked` must keep refusing — a prefix rule that accepted a truncation would accept far more than one sentence — and `OnlyAReceiverThatSaidItIsUbloxIsAsked` for the fourth. `build/Test-NoBlockedCommands.ps1` is unaffected and stays the gate on §8.4.
+>
+> > **⚠ This replaces a stronger sentence, and the difference is the point.** The original read, in bold, that such a family *is never written to after recognition* and that the one `*CLS` is the only write it ever receives. That was true, and it was a **structural** guarantee rather than a policy: there was no send path anywhere in the application, so a u-blox `$PUBX,41` — which reconfigures a port and can leave a receiver unreachable at the settings it was found on — was excluded by there being nowhere to express it. #508 added a send path for one poll, which converted that guarantee into the three-gate rule above. **A rule enforced by code is weaker than a property enforced by absence**, and anyone relying on the old sentence should know it has been traded away deliberately and for what: `$PUBX,04` carries GPS − UTC, which no standard NMEA sentence carries, and a timing application that cannot say how far GPS has run ahead of UTC is missing something a user needs. What has *not* changed is that nothing is ever sent to configure a receiver: §8.4's categorical exclusion of set forms binds every family, and the NMEA driver's `IsBlocked` refuses every proprietary sentence but the one poll.
 
 > **⚠ Corrected 21 Aug 2026 (#78).** Everything below was rewritten against
 > `SYMMETRICOM,Z3805A,3625A02931,1.01.03-A` at 9600-8-N-1. The original text described a receiver
@@ -321,9 +347,26 @@ This is the fiddliest part of the implementation. Get it right before building a
   ```
 
   **The two forms space differently**: `scpi > ` has a space before the `>` and the error form does
-  not. The only reliable invariant is that a prompt ends with `>` followed by a space. Matching the
-  literal `scpi> ` that this section used to specify never terminates a transaction at all, so every
-  command runs to its full timeout.
+  not. Matching the literal `scpi> ` that this section used to specify never terminates a
+  transaction at all, so every command runs to its full timeout.
+
+  > **⚠ Corrected 10 Sep 2026 (#470).** This said *"the only reliable invariant is that a prompt
+  > ends with `>` followed by a space"*, and generalised one family to all of them. **The word is
+  > the driver's** (`Transport/PromptGrammar.cs`, `IReceiverDriver.Prompt`): a Trimble UCCM-P
+  > prompts `UCCM-P >` and the byte after the `>` is `C5`, the first byte of an unsolicited time
+  > code — no trailing space, and no line ending either. The grammar above remains exactly right for
+  > the SmartClock family, which is what this section is scoped to; it is the *only* prompt that was
+  > wrong.
+  >
+  > **It cost a connect.** With the word hard-coded, every transaction with a UCCM ran to its full
+  > timeout holding the answer it had already read, and auto-detect reported that no receiver had
+  > answered on the port. A prompt a receiver never sends costs nothing; a prompt it does send and
+  > the client does not know is indistinguishable from silence.
+  >
+  > A prompted family may also emit bytes nobody asked for, **immediately after the prompt and
+  > within a line**. A client must therefore look for the prompt at the *start* of what follows the
+  > last line ending rather than requiring it to be the whole of it, and must read an identity as
+  > the printable tail of its line rather than as the whole line.
 
   A command the receiver rejects answers with **the prompt and nothing else**. There is no error
   body on the wire; the reason must be fetched separately with `:SYST:ERR?`.
@@ -481,9 +524,13 @@ public sealed record ScpiCommand(
 
 > **⚠ Corrected 21 Aug 2026 (#85).** The record carries four more members than this section originally declared, and three are safety-relevant. `RequiresAcknowledgement` keeps §9.7.4’s four strong-variant commands in the catalog rather than as a hard-coded list in the dialog layer — a second home for a safety fact, in the layer least able to test it. `IsExperimental` keeps §8.5’s opt-in queries out of `CommandCatalog.Safe`, so they cannot reach a poll timer or the everyday command surface. The remaining two carry §9.7.4’s success text and §10.6’s composite value label.
 
-**Blocked commands are not present in the catalog at all.** They are not entries with a flag; they do not exist as data. The `SafetyTier.Blocked` value is assigned to no entry, and a test asserts that. The exclusion predicate is reachable as `CommandCatalog.IsBlocked(string)` and, through the driver seam, as `IReceiverDriver.IsBlocked`; it has **no production caller today**, because the Advanced Console shipped as a picker over the allowlist with no free-text path (#55, §10.11), so there is no typed string to validate and no attempt to log. It binds any typed path that §10.11 might later admit (corrected 29 Aug 2026, #316: this sentence described a validator that was never built). A blocked command must never appear in any list, picker, autocomplete, help text, or log the user can see.
+**Blocked commands are not present in the catalog at all.** They are not entries with a flag; they do not exist as data. The `SafetyTier.Blocked` value is assigned to no entry, and a test asserts that. The exclusion predicate is reachable as `CommandCatalog.IsBlocked(string)` and, through the driver seam, as `IReceiverDriver.IsBlocked`. A blocked command must never appear in any list, picker, autocomplete, help text, or log the user can see.
 
-> **Scope (added 29 Aug 2026 from the code, #316).** This section is the SmartClock family's catalog. A second family's catalog may be **reads-only** — the NMEA driver's is (`Drivers/Nmea/NmeaDriver.cs`), so its `IsBlocked` legitimately answers `false` for every header, there being nothing it can write — and a broadcast family's poll plan may carry `PollPlan.WholeCycle` (`*`) as a catalogued read, so that the session's point-of-send allowlist check and the console picker see the whole-cycle read as the read it is.
+> **⚠ Amended 13 Sep 2026 (#543): the exclusion predicate has a production caller now, and it logs.** This paragraph said it had **none**, on the reasoning that the Advanced Console shipped as a picker over the allowlist with no free-text path (#55, §10.11) — so there was no typed string to validate and no attempt to log — and that it stood ready to bind any typed path §10.11 might later admit (corrected 29 Aug 2026, #316: the sentence before that described a validator that was never built).
+>
+> **That is still true of *typed* text and is no longer true of the predicate.** §7.2's write rule puts every piece of wire text a broadcast driver offers through its own `IsBlocked` at the point of send: `DeviceSessionService` asks it, refuses the text when it answers yes, and logs the driver's self-contradiction at error level. The call is not defensive padding — §8.1's guarantee is that *every* command sent passes the allowlist, and a driver's `OutgoingTextFor` and `IsBlocked` disagreeing is precisely the programming error that guarantee exists to catch. It remains the case that **no production path feeds the predicate text a user typed**, because there is still nowhere to type.
+
+> **Scope (added 29 Aug 2026 from the code, #316; the NMEA sentence amended 13 Sep 2026, #543).** This section is the SmartClock family's catalog. A second family's catalog may be **reads-only**, and its `IsBlocked` may then legitimately answer `false` for every header, there being nothing it can write. **The NMEA driver was that case and has stopped being it** (`Drivers/Nmea/NmeaDriver.cs`): since #508 its catalog holds one entry that is sent rather than overheard, so its `IsBlocked` permits exactly that one sentence prefix and refuses every other proprietary sentence — `$PUBX,41` among them. The `false`-for-everything answer is correct only while a catalog really can write nothing, and a driver author must re-take that decision the moment an entry is added that transmits. A broadcast family's poll plan may also carry `PollPlan.WholeCycle` (`*`) as a catalogued read, so that the session's point-of-send allowlist check and the console picker see the whole-cycle read as the read it is.
 
 ### 8.2 Tier S — Safe (execute on click, no confirmation)
 
@@ -509,10 +556,11 @@ All queries plus non-disruptive actions.
 :PTIM:TIME:STR?
 :PTIM:TZON?
 :PTIM:LEAP:ACC?      :PTIM:LEAP:DATE?        :PTIM:LEAP:DUR?    :PTIM:LEAP:STAT?
-:LED:ALAR?           :LED:GPSL?              :LED:HOLD?
+:LED:ALAR?           :LED:GPSL?              :LED:HOLD?         :LED:ACT?
+:LED:ACTive <ON|OFF>
 :DIAG:ROSC:EFC:REL?  :DIAG:LIF:COUN?         :DIAG:QUER:RESP?
 :DIAG:LOG:COUN?      :DIAG:LOG:READ?         :DIAG:LOG:READ? <n>
-:DIAG:LOG:READ:ALL?  :DIAG:TEST:RES?
+:DIAG:LOG:READ:ALL?  :DIAG:TEST:RES?         :DIAG:IDEN:GPS?
 :STAT:OPER:COND?     :STAT:OPER:EVEN?        :STAT:OPER:ENAB?
 :STAT:OPER:NTR?      :STAT:OPER:PTR?
 :STAT:OPER:HARD:COND?    :STAT:OPER:HARD:EVEN?    :STAT:OPER:HARD:ENAB?
@@ -528,6 +576,8 @@ All queries plus non-disruptive actions.
 ```
 
 `:SYNC:HOLD:REC:INIT` and `:SYNC:HOLD:REC:LIM:IGN` are classed Safe: they move the unit *toward* lock, which is the desired state, and cannot damage anything.
+
+**`:LED:ACTive` is the third Safe non-query, and the only Safe command that takes a value** (added 7 Sep 2026, #440). It drives the front-panel Active lamp, **one of the two indicators under software control** (corrected 9 Sep 2026 — this sentence read "the one indicator", and `z3801.pdf`'s *Front Panel at a Glance* item 2 says otherwise: *"User-definable indicators labeled Enabled and Active"*. `:LED:ENABled` drives the second, confirmed on the bench by eye; what to do with it is #462), and it is documented — `z3801.pdf` Table 4-2, *"Sets or queries Active LED"* — so §8.4's permanent block on undocumented set forms does not reach it. It is Safe because it changes no receiver behaviour: no timing, no discipline, nothing that outlives the lamp, so a §8.3 confirmation would be asking permission to change nothing. **§9.11's other half follows from the same ruling** — a Safe setter gets no success toast, so the §10.9 control is a toggle whose own position is the feedback. Both spellings are confirmed on the bench: `1`/`0` and `ON`/`OFF`.
 
 ### 8.3 Tier C — Confirm (modal confirmation with explicit consequence text)
 
@@ -607,7 +657,7 @@ Plus, categorically:
 - **Any undocumented node in set form.** The Z3801A firmware string table contains parser keywords with no published documentation (`TCOefficient`, `PSTARTUP`, `DOUTput`, `RESTricted`, `OUTPut:PINS:PIN1..PIN8`, `SOURce`, `IREFerence`, `EGRESPONSE`, and others). Query forms of a small subset may be enabled per §8.5. **Set forms are permanently blocked with no override.**
 - `:SYSTem:LANGuage?` — query only, harmless, but omitted anyway so the `LANGuage` node never appears in any UI surface. Its value is not useful to the target users.
 
-The blocked list is **private to the `WinZ3805A.Device` assembly**, held in one file as regex patterns, and reachable from outside only as a predicate — `CommandCatalog.IsBlocked(string)`, and through the driver seam as `IReceiverDriver.IsBlocked` (`SmartClockDriver` re-exposes the same verdict) — which answers one bool about one candidate. Nothing can enumerate it, bind to it, or render it into a list. It has no production caller today: the Advanced Console shipped as a picker over the allowlist with no free-text path (#55), so there is no validator and no attempt to log; the predicate stands ready to bind any typed path §10.11 might later admit (corrected 29 Aug 2026, #316).
+The blocked list is **private to the `WinZ3805A.Device` assembly**, held in one file as regex patterns, and reachable from outside only as a predicate — `CommandCatalog.IsBlocked(string)`, and through the driver seam as `IReceiverDriver.IsBlocked` (`SmartClockDriver` re-exposes the same verdict) — which answers one bool about one candidate. Nothing can enumerate it, bind to it, or render it into a list. Its production caller is §7.1's point-of-send check on a broadcast driver's outgoing text, which refuses and logs (amended 13 Sep 2026, #543: this said it had no production caller, which was true until #508). **No production path feeds it text a user typed**, because the Advanced Console shipped as a picker over the allowlist with no free-text path (#55) — so the log-the-typed-attempt half of the original design was never built, and the predicate stands ready to bind any typed path §10.11 might later admit (corrected 29 Aug 2026, #316).
 
 > **⚠ Corrected 21 Aug 2026 (#85).** This paragraph previously named the list `CommandCatalog.BlockedPatterns` and then required, in the same sentence, that it "must not be enumerable through any public API that a view binds to". A public member of that name is enumerable by definition. **The requirement wins over the name.** `build/Test-NoBlockedCommands.ps1` enforces that the one file stays the only place these names occur.
 
@@ -1028,19 +1078,57 @@ Assign by index in a stable order (PRN ascending), never by hash — a satellite
 3. **A minimum hue gap.** Maximising the smallest colour difference, on its own, produces a ramp with two browns and two purples separated by lightness. That satisfies the arithmetic and fails a person asked which trace is which; categorical colours have to be *nameable*.
 4. **Clear of §9.4.3 by ≥10 ΔE₀₀** — the opening sentence of this section is a perceptual claim, not only a naming one, so it is measured. **The neutral series is exempt**: series 8 is grey and `WzNeutralBrush` is grey, and both mean *nothing is being asserted*.
 
-**Sequential** — signal strength (C/N or SS). Single-hue teal ramp anchored on the brand:
-`#DFF1F3` → `#A8DDE3` → `#6FC5CE` → `#3FB8C4` → `#189AA6` → `#0B6C74` → `#08474D`
+**Sequential** — signal strength (C/N or SS). Single-hue teal ramp anchored on the brand, **and a ramp per theme**:
+
+| Step | Light | Dark |
+|---|---|---|
+| 1 — weakest | `#DFF1F3` | `#216D74` |
+| 2 | `#A8DDE3` | `#2A828A` |
+| 3 | `#6FC5CE` | `#3398A1` |
+| 4 | `#3FB8C4` | `#48ADB7` |
+| 5 | `#189AA6` | `#70C1C9` |
+| 6 | `#0B6C74` | `#9BD3D9` |
+| 7 — strongest | `#08474D` | `#C5E6E9` |
 
 Its adjacent steps measure low under simulation (4.4 ΔE₀₀ protanopia) and that is correct rather than a defect: a sequential ramp is read by lightness, and the simulated ramp stays monotonic. Neighbouring steps of a ramp are meant to be similar.
 
-**Diverging** — 1 PPS time interval, zero-anchored (negative / zero / positive):
-`#08474D` ← `#3FB8C4` ← `#DDE4E5` → `#F0A882` → `#B23A00`
+> **⚠ The Dark column was derived 2 Sep 2026, closing #367.** This section gave the ramp as **one** column, unlike the categorical ramp above, and `Themes/Colors.xaml` faithfully defined the same seven values in Light and in Dark. **A sequential ramp is read by lightness, so which end recedes depends on the surface it is drawn on**, and one column cannot be right for two surfaces: used verbatim on the Dark card the encoding is exactly *inverted*. The strongest satellite drew `#08474D` at **1.36:1** and the weakest drew the brightest mark on the sky plot, on the theme that ships by default. Found while porting this section to the Python sibling, where the same values produced the same defect.
+>
+> **Reversing the seven values is not the fix**, though it cures the inversion. The specification ramp is not perceptually uniform — its six adjacent steps measure 10.7, 8.6, 5.1, 9.1, 17.1, 12.2 ΔE₀₀, a **3.33× spread** — and reversal cannot change that ratio, because max/min does not care about order. What it changes is *where the coarse steps land*: at the strong-signal end on Light, and at the weak end once reversed onto Dark, so the ramp would spend its resolution where the data matters least. Telling 45 dB-Hz from 50 is the job the ramp exists for.
+>
+> The Dark column is therefore derived rather than rearranged: hue held inside this ramp's own band — the Light column measures 208.0–209.2°, and the derivation lands on 208.0° — chroma following **the specification's own (L\*, C) curve** — which peaks mid-ramp and desaturates toward white, and is what makes the two columns read as one family — and L\* evenly spaced. It measures 1.20× for step evenness against the Light column's 3.33×, rises from 2.36:1 to 10.70:1 on the Dark card, and stays monotonic under simulated deuteranopia and protanopia.
+>
+> **It also separates the ramp from §9.4.3.** Step 4 of the Light column *is* `WzInfoBrush` in Dark — 0.0 ΔE₀₀ — so a mid-strength satellite drew exactly the info indicator. The derived column clears the nearest semantic colour by 3.2 ΔE₀₀, asserted in the derivation because 1–2 ΔE₀₀ is around the just-noticeable difference and "not mistakable" has to mean more than "not identical".
+>
+> **The Light column is unchanged, including its 1.13:1 weakest step on the Light card.** Receding *is* the encoding at the low end — a ramp whose weakest step met §9.4.5's 3:1 floor would not be a sequential ramp — and the sky-plot marker's 1 px stroke, not its fill, is what keeps a weak satellite findable. `Test-ContrastFloor.ps1` applies the 3:1 floor to the **strongest** step for that reason, and checks the rise itself in both themes.
+
+**Diverging** — 1 PPS time interval, zero-anchored (negative / zero / positive), **and a ramp per theme**:
+
+| Step | Light | Dark |
+|---|---|---|
+| Negative, strong | `#1D5D64` | `#90DEE7` |
+| Negative | `#2A7D85` | `#75B6BD` |
+| Zero | `#8B9293` | `#818788` |
+| Positive | `#C24D19` | `#EB976A` |
+| Positive, strong | `#93370F` | `#F3C9B4` |
 
 The neutral midpoint must map to exactly 0 ns, not to the data midpoint. A TI chart whose colour break drifts with the data is misleading.
 
+> **⚠ Both columns were derived 2 Sep 2026, closing #371.** This section gave the ramp as **one** row of five, as it had given the sequential ramp one column, and `Themes/Colors.xaml` repeated those five in Light and in Dark. It is the same defect as #367's and it was found by asking, immediately after that fix, whether any other ramp was one row for two surfaces. It was, and it was **also below the floor on the theme it was drawn for**.
+>
+> **`TrendChart` draws the 1 PPS chart's per-column min/max whisker with three of these five**, and a 1 px line is exactly the case §9.4.5's 3:1 exists for. In **Light** they measured `WzDivergingNegativeBrush` **2.29:1**, `WzDivergingZeroBrush` **1.24:1** and `WzDivergingPositiveBrush` **1.91:1** — the near-zero whisker, which is most of a healthy chart, was very nearly invisible. This is #177's defect in the one ramp `Test-ContrastFloor.ps1` was still not looking at.
+>
+> On **Dark** the ordering was inverted as well: the pale neutral was the boldest mark on the chart at 10.99:1 while a large excursion faded into the card at 1.36:1. **A diverging ramp puts its neutral near the surface and its extremes away from it**, so magnitude reads as prominence — and "away from the surface" means darker on Light and lighter on Dark.
+>
+> **`WzDivergingNegativeBrush` was also `WzInfoBrush` exactly in Dark, 0.0 ΔE₀₀** — the same collision the sequential ramp had at its step 4, in the same theme. Both derived columns now clear the nearest §9.4.3 colour by **5.3** (Light) and **5.6** (Dark).
+>
+> `build/palette/diverging.py` is the derivation and states what it solves for. Two things there are worth knowing before changing a value. Its objective is **"change as little as possible"** — the nearest legal ramp to the five values this section already had, rather than an optimisation of some property — because those five are a design somebody chose and what was wrong with them was the surface, not the taste. And each step out from zero is at least **1.5× the contrast** of the one before it, so "further from zero" is a step a reader can see rather than infer; that ladder binds in both themes, which is to say it is the design rather than a formality.
+>
+> **What the Light ramp loses is forced.** Its neutral was `#DDE4E5`, a near-white, and no near-white clears 3:1 on a near-white card, so the Light column is darker throughout and its neutral now reads as a grey line rather than as an absence. It is not an absence: it means the receiver was on both sides of zero within that bucket. §9.4.4's categorical palette made the same trade in #87 and said so.
+
 **The diverging ramp therefore applies only to an axis that contains zero**, which in practice means the 1 PPS chart alone. §10.7.1's oscillator-control chart is framed on its own data and does not reach zero, so there is nothing for the neutral midpoint to map to; anchoring it on the window mean instead would make the same colour break mean *"the receiver is on time"* on one chart and *"near where the oscillator has lately been"* on the other. That series takes a single stroke from the categorical palette above and carries **no colour-borne value at all** — its diagnostic content is entirely in the shape of the trace, which satisfies A11Y-12 by having nothing to encode.
 
-**Verification.** `build/Test-SeriesSeparation.ps1` gates CI on the categorical palette: all 28 pairs, both themes, three vision models, plus the hue-gap and semantic-clearance rules above. `build/palette/` holds the derivation, and `build/palette/validate.py` checks the colour maths against the figures published on #87 before anything trusts it.
+**Verification.** `build/Test-SeriesSeparation.ps1` gates CI on the categorical palette: all 28 pairs, both themes, three vision models, plus the hue-gap and semantic-clearance rules above. `build/Test-ContrastFloor.ps1` gates **both** other ramps, which until #367 and #371 no gate looked at: each must rise in prominence as it is read outward on its own theme's card — the sequential ramp from weakest to strongest, the diverging ramp from zero along both arms — and every step of the diverging ramp, the neutral included, takes §9.4.5's plain 3:1, while the sequential ramp takes it at its strongest step alone. `build/palette/` holds all three derivations — `derive.py` for the categorical ramp, `sequential.py` for the Dark sequential column, `diverging.py` for both diverging columns — and `build/palette/validate.py` checks the colour maths against the figures published on #87 and the ones in this section before anything trusts it.
 
 **HighContrast is not checked and cannot be.** Its series alternate between `SystemColorWindowTextColor` and `SystemColorHighlightColor` — the user's own two colours — so **eight traces cannot be separated by colour there at all.** A pass from the gate is not a statement that the chart is accessible. A second channel (dash pattern plus direct labelling) is required for HighContrast regardless of what this ramp contains — **stated as a rule in the categorical palette above** rather than tracked as an open issue, because it binds the next multi-series chart and nothing draws one today (#87 closed 29 Aug 2026).
 
@@ -1617,7 +1705,7 @@ Construction rules:
 | Settings-style rows | `SettingsCard`, `SettingsExpander` (WinUI Community Toolkit) — Timing, Holdover, Settings pages. **Built 30 Aug 2026 (#320) on the Settings page**; Timing and Holdover still do not use them, which is the divergence §9.10's note already records. See below |
 | Tables | `ListView` for selectable tables — the three satellite tables (`SatellitesPage.xaml`), with `WzDenseListItemStyle`, which §9.10.2's #307 row-height amendment depends on; `ItemsRepeater` for read-only lists (the Overview health items, the manage dialog's PRN grid). Corrected 29 Aug 2026 (#316) from "`ItemsRepeater` inside `ScrollViewer` with a sticky header row". **Not `DataGrid`** — the Community Toolkit `DataGrid` is heavier than needed and its default styling is hard to bring in line with these tokens for a ≤ 32-row table. |
 | Status messaging | `InfoBar`, `TeachingTip`, `ContentDialog` — selection rules in §9.11 |
-| Inputs | `NumberBox` (all numeric entry, `SpinButtonPlacementMode="Inline"` — **amended 30 Aug 2026 (#345) from `Compact`, which overlays its neighbour**: Compact draws its spin buttons as a popup *outside* the control when the field takes focus, so clicking the §10.8 duration limit put them across the gap and over the Apply button beside it. §9.7.4 requires the Apply button inline with the value it affects, so the two rules collide wherever they meet — and they meet at all twelve numeric fields in this application, including §10.6's side-by-side latitude, longitude and height. Inline keeps the buttons inside the control's own width, where nothing can be underneath them, `ValidationMode="Disabled"` — amended 29 Aug 2026 (#316) from `InvalidInputOverwritten`, to the code: `Controls/NumberFieldValidator.cs` records that `InvalidInputOverwritten` silently reverts an out-of-range entry to the last good value, which cannot coexist with §9.11's error text — there is nothing left to put a message under — so the bounds are enforced by refusing to *send*; **kept — confirmed by Tony 30 Aug 2026 (#320)**), `ComboBox`, `ToggleSwitch`, `Slider` (elevation mask only — **built 30 Aug 2026 (#320)**, the last row of the audit's list. §10.5's wireframe draws the box and the track on one line and that is worth keeping: the mask is an *angle*, and 10° against a 0–90 range is a fact a track shows and a number does not. **Two controls over one value, not two values** — the slider binds two-way to the `NumberBox`, so the validator, the Apply button's enabled state and the command all keep reading the one field they always did. Its bounds come from the same catalog entry the validator uses rather than being restated in XAML, and because a slider cannot physically leave its range the error text below it is for typed entry alone), `CheckBox` |
+| Inputs | `NumberBox` (all numeric entry, `SpinButtonPlacementMode="Inline"` — **amended 30 Aug 2026 (#345) from `Compact`, which overlays its neighbour**: Compact draws its spin buttons as a popup *outside* the control when the field takes focus, so clicking the §10.8 duration limit put them across the gap and over the Apply button beside it. §9.7.4 requires the Apply button inline with the value it affects, so the two rules collide wherever they meet — and they meet at all twelve numeric fields in this application, including §10.6's side-by-side latitude, longitude and height. Inline keeps the buttons inside the control's own width, where nothing can be underneath them, `ValidationMode="Disabled"` — amended 29 Aug 2026 (#316) from `InvalidInputOverwritten`, to the code: `Controls/NumberFieldValidator.cs` records that `InvalidInputOverwritten` silently reverts an out-of-range entry to the last good value, which cannot coexist with §9.11's error text — there is nothing left to put a message under — so the bounds are enforced by refusing to *send*; **kept — confirmed by Tony 30 Aug 2026 (#320)**), `ComboBox`, `ToggleSwitch`, `Slider` (elevation mask only — **built 30 Aug 2026 (#320)**, the last row of the audit's list. §10.5's wireframe draws the box and the track on one line and that is worth keeping: the mask is an *angle*, and 10° against a 0–90 range is a fact a track shows and a number does not. **Two controls over one value, not two values** — the `NumberBox` holds it and the slider mirrors it, so the validator, the Apply button's enabled state and the command all keep reading the one field they always did. **Amended 7 Sep 2026 (#436): the mirror is code, never a two-way `x:Bind`, and this row used to prescribe one.** An empty `NumberBox` holds `NaN` — that *is* its representation of no value, and §10.5 sets it deliberately, because a mask the receiver has not reported must not be shown as a number it never said — while `Slider` inherits `RangeBase`, whose `Value` setter throws on `NaN`. The binding initialised during `Loading`, before any code could put a number in, so **navigating to §10.5 terminated the application, for every receiver, from the day the slider was built until #434 removed it**. The value therefore passes through a coercion (`Controls/MaskSliderMath.cs`), which is a class rather than two lines in the view because arithmetic can be tested without a window and the defect it replaces could only be found by running the app and watching it die. **A parked slider is not a value**: an empty field rests the track at its minimum and that position is never written back, since a slider cannot display *nothing* and feeding its resting place back would turn "the receiver has not said" into "the mask is 0°" — #320's own lesson about §10.8's duration limit, applied to a second control. Its bounds come from the same catalog entry the validator uses rather than being restated in XAML, and because a slider cannot physically leave its range the error text below it is for typed entry alone), `CheckBox` |
 | Progress | `ProgressRing` (indeterminate), `ProgressBar` (survey percentage — determinate and meaningful) |
 | Commands | `Button`; `HyperlinkButton`, `DropDownButton`, `MenuFlyout`. `MenuFlyout` **built 30 Aug 2026 (#320)** with §9.7.4's right-click menus; `HyperlinkButton` and `DropDownButton` still do not appear |
 
@@ -1863,7 +1951,9 @@ Two behavioural principles remain here because they are functional rather than v
 
 - **Progressive disclosure.** Main window → Details window → task dialog. Nothing destructive is more than one confirmation away, and nothing catastrophic is reachable at all (§8).
 - **State, not events.** Every surface reflects last-known state with an explicit staleness indicator when polling has failed. Stale data is dimmed and timestamped, never blanked (§9.11).
-- **The pages are SmartClock-shaped, and a talker fills what it can.** When the connected family is a broadcast talker (§7.2's scope note, #310), every field it does not supply is `null` on the model and renders as `—` under §11.1's rule, and a write its reads-only catalog does not carry is refused at the point of send (§8.1); whether whole pages or cards should be hidden by family is #304's call (added 29 Aug 2026 from the code, #316).
+- **The pages are SmartClock-shaped, and a talker fills what it can.** When the connected family is a broadcast talker (§7.2's scope note, #310), a field it has not supplied *yet* is `null` on the model and renders as `—` under §11.1's rule, and a write its catalog does not carry is refused at the point of send (§8.1) (added 29 Aug 2026 from the code, #316).
+
+  **Amended 13 Sep 2026 (#543 audit): two of the three clauses above have been overtaken, in opposite directions.** *Hiding by family* was #304's open call and is now built: a destination the driver's `Reports(reading)` refuses is **dimmed rather than disabled** in the navigation pane — dimmed, because a disabled item takes no pointer input and so cannot carry the tooltip explaining itself — and selecting it lands on a page naming the family. A *reading* a family can never supply is declined outright rather than dashed (#435, #456), because the em dash means *not yet* and using it for *never* promises something that will not arrive. And *reads-only catalog* no longer describes the NMEA family: see §7.2's write rule.
 
 > **⚠ Supersedes the previous §10.1.** The earlier "design principles" list (Fluent not terminal; Mica backdrop; accessibility as a Store gate; colour never alone) has been removed. Every item is now specified concretely and testably in §9: Mica Alt and layering in §9.2, the colour-plus-shape severity rule in §9.4.3, and accessibility as thirteen verifiable criteria in §9.12. The one item with no direct successor — "the details view must not reproduce the 80×24 layout" — is now carried by G2 and by the component inventory in §9.10, which contains no fixed-pitch surface other than `WzMonoTextStyle` for device-literal text.
 
@@ -2296,14 +2386,17 @@ Validation before send: lat degrees 0–90, lon degrees 0–180, minutes 0–59,
 > beside the span because a deviation over 3,000 readings and one over 12 are not the same figure.
 > It falls back to the 60-sample ring where no trend store exists.
 
-Cable presets, delay per metre. The 58503A/B guide's cable table (p. 2-12) gives two cables, RG-213 and Belden 9913; LMR-400 is this section's substitution for a modern installation, at velocity factor 0.85, and the code offers all three plus Custom (`Models/AntennaCable.cs`; the Belden 9913 row was missing here and LMR-400 was attributed to the manual — corrected 29 Aug 2026, #316):
+Cable presets, delay per metre. The 58503A/B guide's cable table (p. 2-12) gives two cables, RG-213 and Belden 9913; LMR-400 is this section's substitution for a modern installation, at velocity factor 0.85, and the code offers all four plus Custom (`Models/AntennaCable.cs`; the Belden 9913 row was missing here and LMR-400 was attributed to the manual — corrected 29 Aug 2026, #316):
 
 | Cable | ns/m | Source |
 |---|---|---|
 | RG-213 / Belden 8267 | 5.05 | 58503A guide, 1.54 ns/ft |
 | Belden 9913 | 3.94 | 58503A guide, 1.2 ns/ft |
 | LMR-400 | 3.93 | §10.7, velocity factor 0.85 |
+| LMR-240 / KMR-240 | 3.97 | Times Microwave datasheet, 1.21 ns/ft |
 | Custom (enter velocity factor) | `3.3356 / VF` ns/m | — |
+
+> **⚠ LMR-240 added 2 Sep 2026 (#368), and it is a label rather than an accuracy fix.** It differs from LMR-400 by 0.04 ns/m — 0.8 ns over a 20 m run, nothing beside the 78 ns this calculator exists to stop people guessing at. What it buys is that a user with the thin cable picks **the name printed on the jacket** instead of judging which offered cable theirs is nearest to, which is the same reasoning that put LMR-400 here in Belden 9913's place. LMR-240 is what a run goes in when LMR-400 will not: 6.10 mm against 10.3, a 19 mm installation bend radius, so it turns through a window frame or a conduit. Its datasheet's two figures agree — 84% velocity of propagation gives 3.971 ns/m, and 1.21 ns/ft gives 3.970 — and the tests assert both routes. **KMR-240 shares the row rather than taking one**: it, CNT-240, RFC-240 and LLC240 are sold as equivalents to the same velocity factor, and that is the vendors' claim rather than something measured here — anyone who knows their own cable's factor has the Custom option.
 
 **The CSV export is not a button on the card.** It is the Details title bar's *Export* (`Ctrl+E`, §9.7.4), which asks the current page for its rows through `ICsvExportSource`; `TimingPage` implements it for the trend series. The wireframe's `[ Export CSV… ]` is kept as the intent and the title-bar command is how it is met — amended 29 Aug 2026 (#316); **kept — confirmed by Tony 30 Aug 2026 (#320)**.
 
@@ -2565,6 +2658,27 @@ warns. The card's own footnote, which reads `:DIAG:TEST:RES?` separately, showed
 **Corrected 30 Aug 2026:** #316 recorded that no such query existed in the catalog and this requirement was nearly struck on that basis. `:DIAG:LIF:COUN?` is in it, as *Power-on hours — reads the receiver's accumulated running time*, and the manual lists `:DIAGnostic:LIFetime:COUNt?`. What was wrong was this card's label: the receiver reports **hours**, not a count. The wireframe above is amended to match.
 
 Worth the card on an instrument whose oscillator ages with running time — §10.4's EFC trend shows the drift, and this is the figure that says how much life produced it.
+
+**A *Front panel* card carries a toggle for the Active lamp** (added 7 Sep 2026, #440). It is the manual half of the lamp feature: the escape hatch for a lamp left lit by an application that closed unexpectedly, and the only way to exercise `:LED:ACTive` without the Settings switch. Tier S, so no confirmation and — per §9.11 — no success bar; the toggle's own position is the feedback, and a write that fails puts it back. It answers in about a second, which the card's caption says, because a control that appears to hang is worse than a slow one that admits it.
+
+**The lamp is lit per session, and that is a measurement rather than a preference.** #440 asked for a link-*activity* indicator driven around each poll sweep. A `:LED:` write costs **999 ms** — measured on the bench Z3805A over ten runs, with the delay entirely before the first byte, because the receiver services the node on its own 1 Hz tick. It is not the wire and not the lamp: `*CLS` is also a write and costs 15 ms, and setting the lamp to the value it already has costs the same 999 ms. A per-sweep flash of read + on + restore is therefore 1,941 ms against a 1,000 ms cadence — **194 % of the whole poll budget**, or the wire time of sixty readings. Per session costs two writes, about two seconds, once. What it buys is weaker and honest: not *the application is talking* but **the application is connected to *this* unit**, which in front of a rack is the question being asked. Off by default, in Settings → Advanced, because it is the only thing the application changes on the receiver unasked.
+
+> **⚠ Superseded 9 Sep 2026 by #462 — the lamp is now flashed per command, on Tony's instruction.** The setting drives `:LED:ACTive` **on before each command and off once the reply is in**, which is what #440 originally asked for and what the paragraph above declined on cost. **Every number above still stands**: a `:LED:` write was re-measured the same day at 810 ms and 903 ms against ~30 ms for a query, so each command now carries about **1.8 s of lamp** and a poll sweep of several commands takes many seconds rather than one. That was put to Tony explicitly and he confirmed it twice — *"I understand it is slow — Just implement it anyway"* — so the cost is **accepted, not overlooked**, and this note exists so nobody later reads the arithmetic above and “fixes” the behaviour back. It remains **off by default** and the §10.9 caption states the slowdown in the user's own terms. The borrow rules are unchanged: the baseline is read at connect and put back at disconnect, the lamp's own `:LED:` commands are never flashed around, and a lamp that will not write never fails the command it wraps.
+
+**The receiver owns the lamp.** The baseline is read before the lamp is lit and put back verbatim on disconnect, so a user who left it on gets it back on. Nothing is retained between sessions or across a reconnect — a remembered value is wrong the moment a missed reply or a person changes it. **An unexpected disconnect leaves the lamp lit and that is accepted, not overlooked:** there is no wire left to restore over, and because nothing is retained the next connect adopts the lit lamp as the value to restore. The application cannot tell *the user wanted it on* from *we left it on*, which is exactly why the manual toggle above exists.
+
+**A third card, *GPS receiver*, reads `:DIAG:IDEN:GPS?`** (added 7 Sep 2026, #443). A SmartClock is a disciplining chassis wrapped around somebody else's GPS engine, and the two revise on separate schedules: the footer's revision is the instrument's, and this is the module's. The command is **documented** — Z3801A User's Guide, Table 4-2, `:DIAGnostic:IDENtification:GPSystem?`, "returns a sequence of quoted strings", described as "the model number, serial number, and revision of the internal GPS receiver" — so it is an ordinary tier A query in §8.2 and not one of §8.5's undocumented six. Read with *Refresh* beside the lifetime hours, never polled: the module inside cannot change while the instrument is powered.
+
+**Confirmed against the receiver on 7 Sep 2026 (#443), and the manual is wrong about it.** Asked of the bench Z3805A, serial 3625A02931, firmware `1.01.03-A`, with the error queue verified empty immediately before and after so the answer is attributable to this command alone:
+
+```
+:DIAG:IDEN:GPS?
+"--","SFTW P/N # 4850266","SOFTWARE VER # 005","--","--","MODEL # FURUNO GT-80","--","--","--","--"
+```
+
+Ten fields, seven of them `--`. The three that are populated **label themselves**, and the one the documentation was most specific about — the serial number — is among the empty ones. So the card assigns **no meaning to position**: it shows the populated fields in receiver order, in the receiver's own words, one to a line. A firmware that fills two more slots gains two more lines; one that reorders them loses nothing. This is the same rule §8.5 applies to `:DIAG:ROSC:EFC:ABSolute?`'s `+436061` — where nothing documents what a value means, nothing may assume it.
+
+**Confirming it was the requirement, and a negative would have been a result.** §8.5 is the standing evidence that a sibling model's manual does not predict this firmware's parser: five of its six Z3801A keywords answer `E-113` here. This one answered, and the asking is what made it a fact rather than a hypothesis.
 
 **The diagnostic log is bounded and scrolled, not grown** (#345). The receiver holds up to 222 entries and the card was as tall as all of them, so reaching the cards below it meant scrolling past a screen and a half of log — and the filter box and the Export and Clear buttons scrolled away with it, which are exactly the controls someone reading the log wants. It is a 360 px scrolling region, about fourteen entries: the log alternates *GPS lock started* and *Holdover started* as the receiver cycles, so fourteen is roughly six events — enough to see a pattern without the card owning the page. `MaxHeight` and not `Height`, so a receiver with four entries shows four rather than four and a wall of empty card. §9.11's skeleton is sized to match, because a placeholder of a different size makes the card jump as the answer lands.
 
@@ -3047,10 +3161,18 @@ something might later branch on.
 - Persist trends to a SQLite file under `LocalApplicationData` so restarts do not lose history. `Microsoft.Data.Sqlite` is packaged-app safe. **The reference was removed on 15 Aug 2026** and P1-2 (#50) restored it (`WinZ3805A.csproj`; tense corrected 29 Aug 2026, #316): it had been carrying 1.89 MB of native `e_sqlite3.dll` into every package for a feature no code path could reach, and `TrendStore` is that code path. Note the folder — not `ApplicationData.Current.LocalFolder`, for the reason given against §6.1's logging row.
 - **The survey writes its own history to the log** (P0-12, #12; added 29 Aug 2026 from the code, #316). `Services/SurveyLog.cs` subscribes to the store and `SurveyWatch` — pure, and tested against a replayed two-hour run — decides what is worth a line, at Information because that is the level the application ships at. A survey takes two hours and nobody watches it; before this, a run made with the Position page closed left no record of whether it advanced steadily or stalled for forty minutes at the two-thirds mark, which are very different outcomes.
 - **Multi-device readiness:** `DeviceSessionService` must be instantiable per device and resolved from a keyed DI registration, even though v1 creates exactly one. Do not use static state for connection or device identity.
-- **Receiver readiness (added 29 Aug 2026, #122; completed 29 Aug 2026, #287):** the device-specific knowledge sits behind `IReceiverDriver` — the command allowlist, §8.4's exclusions, §7.2's timeouts, §7.3's poll plan and cadence, the auto-detect sequence, and both parsers (the fast sweep's and the status response's). The application consumes all of it through the seam: no code outside the Device library reaches the SmartClock's static catalog, the poller sweeps the driver's plan, and every page resolves its commands through the connected device's driver. Drivers are registered in the composition root in priority order; the session probes `*IDN?` neutrally — the probe phase belongs to no driver — then selects the first registered driver whose `Recognises` claims the parsed identity, falling back to the first registered when none does (with a logged warning when more than one driver is registered — a single-driver build stays silent, the fallback being the driver that would have served it regardless), and re-selects on every connect because the receiver on the port can have been swapped while the link was down. Auto-detect walks the union of every registered driver's sequence in registration order, first appearance winning, so §10.12's walk was unchanged while one family was registered and can only ever be appended to — two are registered since #310, and the walk is ten (§10.12; noted 29 Aug 2026, #316). `SmartClockDriver` is the shipped implementation; a second, fictional family in the test project runs the contract tests and the real connect and poll paths, so the seam is exercised against something that is not the SmartClock. **`docs/adding-a-receiver.md` is the walkthrough** (the README links it).
-  **Amended 29 Aug 2026 (#310): a second real family, and two link styles.** `NmeaDriver` serves any NMEA 0183 GNSS talker, and a talker is the opposite shape to the SmartClock — it speaks unprompted and is never written to after recognition, the one `*CLS` before it being §7.2's synchronise step (§7.2's scope note is the canonical wording; reconciled 29 Aug 2026, #316) — so the contract gained three defaulted members and the session a second way of serving a driver. `LinkStyle Link` says whether a family answers questions (`QueryResponse`, the default and the SmartClock's) or talks (`Broadcast`). `Overhear(lines)` recognises a family by what the synchronise step heard before anything was asked — the session hands every driver those lines, the first to claim them is selected, and `*IDN?` is never sent to a receiver claimed that way. `ClassifyLine(line)` names the plan key a heard line belongs to, and `Transport/BroadcastListener` sorts a talker's lines into cycles delimited by the plan's first fast-tier entry and answers each key from the last complete cycle, reporting a talker that has gone quiet as a timeout so the reconnect logic applies unchanged; `PollPlan.WholeCycle` (`*`) is the full-status key that hands `Parse` the cycle entire. A broadcast family has no error queue and no tier C commands, so the `:SYST:ERR?` requirement binds query/response families only. The simulator that stands in for a talker lives under `tools/NmeaSimulator`, apart from the driver, so a driver author takes one folder and never sees it. **`docs/tutorial-nmea-driver.md` is the worked example**, finding by finding.
+- **Receiver readiness (added 29 Aug 2026, #122; completed 29 Aug 2026, #287):** the device-specific knowledge sits behind `IReceiverDriver` — the command allowlist, §8.4's exclusions, §7.2's timeouts, §7.3's poll plan and cadence, the auto-detect sequence, and both parsers (the fast sweep's and the status response's). The application consumes all of it through the seam: no code outside the Device library reaches the SmartClock's static catalog, the poller sweeps the driver's plan, and every page resolves its commands through the connected device's driver. Drivers are registered in the composition root in priority order; the session probes `*IDN?` neutrally — the probe phase belongs to no driver — then selects the first registered driver whose `Recognises` claims the parsed identity, falling back to the first registered when none does (with a logged warning when more than one driver is registered — a single-driver build stays silent, the fallback being the driver that would have served it regardless), and re-selects on every connect because the receiver on the port can have been swapped while the link was down. Auto-detect walks the union of every registered driver's sequence in registration order, first appearance winning, so §10.12's walk was unchanged while one family was registered and can only ever be appended to — **three are registered since #416, and the walk is eleven** (§7.1 owns the figure and lists the combinations; this paragraph said *two* and *ten*, which was right on 29 Aug 2026 and has been wrong since #416 — corrected 13 Sep 2026). `SmartClockDriver` is the shipped implementation; a second, fictional family in the test project runs the contract tests and the real connect and poll paths, so the seam is exercised against something that is not the SmartClock. **`docs/adding-a-receiver.md` is the walkthrough** (the README links it).
+  **Amended 29 Aug 2026 (#310): a second real family, and two link styles.** `NmeaDriver` serves any NMEA 0183 GNSS talker, and a talker is the opposite shape to the SmartClock — it speaks unprompted and was, until #508, never written to after recognition, the one `*CLS` before it being §7.2's synchronise step (§7.2's scope note is the canonical wording; reconciled 29 Aug 2026, #316; the write rule amended 13 Sep 2026, #543 — see below) — so the contract gained three defaulted members and the session a second way of serving a driver. `LinkStyle Link` says whether a family answers questions (`QueryResponse`, the default and the SmartClock's) or talks (`Broadcast`). `Overhear(lines)` recognises a family by what the synchronise step heard before anything was asked — the session hands every driver those lines, the first to claim them is selected, and `*IDN?` is never sent to a receiver claimed that way. `ClassifyLine(line)` names the plan key a heard line belongs to, and `Transport/BroadcastListener` sorts a talker's lines into cycles delimited by the plan's first fast-tier entry and answers each key from the last complete cycle, reporting a talker that has gone quiet as a timeout so the reconnect logic applies unchanged; `PollPlan.WholeCycle` (`*`) is the full-status key that hands `Parse` the cycle entire. A broadcast family has no error queue and no tier C commands, so the `:SYST:ERR?` requirement binds query/response families only. The simulator that stands in for a talker lives under `tools/NmeaSimulator`, apart from the driver, so a driver author takes one folder and never sees it. **`docs/tutorial-nmea-driver.md` is the worked example**, finding by finding.
 
-  > **⚠ The specification has not followed the code here, and that is a known gap rather than an oversight.** §7, §8 and §11 are written throughout in terms of one receiver family and name SmartClock behaviour as *the* behaviour — the 80×24 status screen in §11.1, the SCPI command tree in §8.1, the timeout classes in §7.2. All of it is correct for the Z3805A and none of it is stated as being *about* the Z3805A.
+  **Amended 12 Sep 2026 (#475): a plan says which readings its fast tier carries.** `PollPlan` gained a required `FastTierCarries`, because a null in `FastReadings` could mean either *"asked, and the receiver did not answer"* — on which the store blanks the reading, correctly, since a number the receiver has stopped standing behind must not stay on screen — or *"this family never asks here"*, on which blanking it destroys a good value the full screen had just supplied. `ReceiverStateStore.UpdateFast` now writes only the fields the plan claims, and `UpdateFull` supplies TFOM, FFOM, the 1 PPS interval and the tracked count for the fields it does not. The defect was a connected, locked Trimble UCCM-P showing `TFOM —`, `FFOM —` and no satellite count permanently while its `SYST:STAT?` screen carried all three every ten seconds and the parser read them correctly: its sweep is `[LockLed, TimeInterval, EfcRelative]`, so the screen stored each reading and the sweep nulled it a second later, ten times over — present in the state and unreachable by the display. There is no default for the new member, deliberately: the obvious one is every field, which is true of the SmartClock and is precisely the assumption that cost the UCCM driver three readings. **Not fixed here** — a reading taken from the full tier ages against the full cadence while §10.3 shows one page age taken from the fast one, so a split plan understates that reading's staleness; per-reading staleness is a §9.11 question and is left open.
+
+  **Amended 13 Sep 2026 (#543): a broadcast family may transmit, through one member and three gates.** The paragraph above said a talker "is never written to after recognition" and deferred to §7.2's scope note for the wording. #508 made that false, and **§7.2's write rule is now the canonical wording** — read it before this. The contract gained one member:
+
+  `string? OutgoingTextFor(string? mnemonic)` returns the wire text for one **catalogued** poll-plan entry, or `null`. It **defaults to `null`**, and that default carries the safety property: a family that has not considered transmitting cannot acquire a send path by inheriting one, so returning text is an explicit claim about that family's character. `Transport/BroadcastListener.PollAsync` is the write side — it sends the text and waits on **the reply's arrival rather than on a clock**, the completion being raised in the read loop inside the lock that records the line, so two lines cannot both satisfy one waiter. `DeviceSessionService` puts whatever the driver returned through that driver's own `IsBlocked` before sending it, refusing and logging a disagreement (§8.1).
+
+  **A receiver-specific precondition is not the driver's to hold.** `NmeaDriver` will offer `$PUBX,04` for its `UBX` entry on any talker; whether *this* talker understands it is decided by the poller from the `$GxTXT` banner the state store remembers (#515), because the driver is a singleton and one that remembered a banner itself would carry one receiver's answer to the next (#492). Two guards answering two questions — *is this driver willing to transmit at all* and *will this module understand it* — and either alone would be wrong.
+
+  > **⚠ The specification has not followed the code in §7, §8 and §11's prose either, and that is a known gap rather than an oversight.** §7, §8 and §11 are written throughout in terms of one receiver family and name SmartClock behaviour as *the* behaviour — the 80×24 status screen in §11.1, the SCPI command tree in §8.1, the timeout classes in §7.2. All of it is correct for the Z3805A and none of it is stated as being *about* the Z3805A.
   >
   > Generalising that prose is a large edit with no second receiver to check it against, and #122's own note says to raise the amendment rather than let code and document drift apart. **This is that raise.** Until it is done, read §7, §8 and §11 as describing the SmartClock driver specifically, and `IReceiverDriver` as the contract any other would have to meet.
   >
@@ -3209,6 +3331,14 @@ it lets the application assert an alarm the receiver is not reporting, which is 
 instrument's own front panel, where a lab user reads it without the application in front of them.
 §9.4.3 makes severity a claim about the receiver's state; this would make it a claim about the
 software's. **The three `:LED:*?` queries are catalogued and are the right half of this subsystem.**
+
+> **It is also not implemented on the bench Z3805A, measured 9 Sep 2026** — so on this receiver the
+> decision above is moot as well as right. Both spellings answer `-113,"Undefined header"` in query
+> form and `-108,"Parameter not allowed"` in set form, with the ALARM register unmoved and the error
+> queue cleared before each candidate so the error belongs to that command alone; `:LED:ENAB?` and
+> `:LED:ACT?` answered cleanly in the same run, which is the control that makes the result mean
+> something. **The reasoning is still the argument** — a firmware that grew the node tomorrow would
+> not change it — but this is now the `:PTIMe:PPS:EDGE` category too: settled by the hardware.
 
 **`:SENSe:DATA:` and `:SENSe:TSTamp<channel>:EDGE` — event time stamping (7 commands).**
 **Not implementable on this hardware.** The subsystem records the time of TTL edges arriving on
