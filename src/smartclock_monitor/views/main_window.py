@@ -15,7 +15,7 @@ detail — are set in the device face so that "what the machine said" stays visu
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from datetime import datetime
 from typing import ClassVar
 
@@ -213,6 +213,8 @@ class MainWindow(QMainWindow):
         self._driver: ReceiverDriver | None = None
         #: Whether the connected family can fill none of the four readouts (§11, #60).
         self._readouts_declined = False
+        #: Families in this build whose driver has never met a receiver (D7), for §10.12's dialog.
+        self._unverified: tuple[str, ...] = ()
         # Held here rather than in the details window because the details window is created on
         # demand and the store is opened at startup — and because a run whose store failed to open
         # must reach the page as None rather than as an absent attribute.
@@ -620,6 +622,15 @@ class MainWindow(QMainWindow):
         "efc": ReceiverReading.OSCILLATOR_CONTROL,
     }
 
+    def set_unverified_families(self, names: Sequence[str]) -> None:
+        """Which registered families have never been connected to (D7).
+
+        Set once at startup from the registry, because it is a fact about the **build** rather
+        than about the link — and §10.12's dialog has to say it *before* a receiver is chosen,
+        which is the only moment the user can act on it.
+        """
+        self._unverified = tuple(names)
+
     def set_receiver_key(self, key: str | None) -> None:
         """Tell the trend store whose readings it is filing and reading back (#71)."""
         if self._store is not None:
@@ -930,7 +941,9 @@ class MainWindow(QMainWindow):
 
     def choose_connection(self) -> ConnectionChoice | None:
         """§10.12's dialog. Returns what was chosen, or ``None`` if the user cancelled."""
-        dialog = ConnectionDialog(palette_for(self._theme), self, preselect=self._last_port)
+        dialog = ConnectionDialog(
+            palette_for(self._theme), self, preselect=self._last_port, unverified=self._unverified
+        )
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return None
 
