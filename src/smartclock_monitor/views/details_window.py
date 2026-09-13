@@ -316,6 +316,10 @@ class DetailsWindow(QMainWindow):
                 f"{page.title}, unavailable" if unavailable else page.title,
             )
             page.set_unavailable(page.unavailable_because(family) if unavailable else None)
+            # D7's label, on whichever page owns §10.4's identity card.
+            note = getattr(page, "set_driver", None)
+            if note is not None:
+                note(driver)
 
     def _open_help(self) -> None:
         if self.help_requested is not None:

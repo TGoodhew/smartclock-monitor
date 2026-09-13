@@ -47,6 +47,7 @@ from smartclock_device.commands.position_argument import (
     SECONDS,
     PositionArgument,
 )
+from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_device.drivers.capability import Capability, ReceiverReading
 from smartclock_device.models import antenna_cable, coordinates
 from smartclock_device.models.device_identity import DeviceIdentity
@@ -375,6 +376,16 @@ class OverviewPage(_FieldsExport, Page):
         # §10.4, #62: the banner a talker prints once at power-on and never again. Hidden until
         # one arrives rather than shown empty, because "no banner" and "we were not listening when
         # it was printed" are the same picture and neither is worth a row of dashes.
+        # D7's label. A driver written entirely from somebody else's captures is a different thing
+        # from one that has met the receiver it claims to drive, and the person in front of it is
+        # the only one who can decide what to do about that — so it is said here, on the card that
+        # names the receiver, rather than left in a docstring.
+        self._unverified = label("", "caption", self)
+        self._unverified.setWordWrap(True)
+        self._unverified.setProperty("severity", "caution")
+        self._unverified.setVisible(False)
+        holder_layout.addWidget(self._unverified)
+
         self._banner = label("", "caption", self)
         self._banner.setWordWrap(True)
         self._banner.setAccessibleName("Power-on banner")
@@ -390,6 +401,26 @@ class OverviewPage(_FieldsExport, Page):
         self._identity_raw.setVisible(False)
         holder_layout.addWidget(self._identity_raw)
         return holder
+
+    def set_driver(self, driver: ReceiverDriver | None) -> None:
+        """Say, on §10.4's own card, when the connected family has never met hardware (D7)."""
+        verified = True if driver is None else getattr(driver, "is_verified", True)
+        self._unverified.setText(
+            ""
+            if verified
+            else (
+                f"{driver.name if driver is not None else 'This family'} has never been connected "
+                "to by this application. Everything on these pages is read by a driver written "
+                "from captures taken elsewhere, and none of it has been checked against the "
+                "receiver in front of you."
+            )
+        )
+        self._unverified.setVisible(not verified)
+
+    @property
+    def unverified_note(self) -> QLabel:
+        """D7's label, for a test to read."""
+        return self._unverified
 
     @property
     def banner(self) -> QLabel:
