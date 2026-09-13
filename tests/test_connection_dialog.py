@@ -10,6 +10,12 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from PySide6.QtWidgets import QApplication
 
+from conftest import NOW
+from smartclock_device.clock import FixedClock
+from smartclock_device.drivers.nmea.driver import NmeaDriver
+from smartclock_device.drivers.registry import Registry
+from smartclock_device.drivers.smartclock import SmartClockDriver
+from smartclock_device.drivers.uccm import UccmDriver
 from smartclock_device.transport.settings import (
     AUTO_DETECT_SEQUENCE,
     SUPPORTED_BAUD_RATES,
@@ -238,3 +244,48 @@ def test_cancelling_hands_over_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert window.choose_connection() is None
     assert taken == []
+
+
+# ---- D7: a driver that has never met a receiver says so before you connect ----------------------
+
+
+def test_the_dialog_names_the_unverified_family(application: QApplication) -> None:
+    """D7's condition, at the moment a user can act on it.
+
+    §10.4's identity card says the same thing once a receiver is on the link. That is the wrong
+    moment for the only decision this affects — whether to trust what the next screen says — and
+    the person choosing the port is the one who can weigh it.
+    """
+    del application
+    dialog = ConnectionDialog(unverified=("Trimble UCCM-P",))
+
+    assert dialog.unverified_note.isVisible() or not dialog.isVisible()
+    text = dialog.unverified_note.text()
+    assert "Trimble UCCM-P" in text, "a general warning is one nobody can use"
+    assert "never been connected" in text
+
+
+def test_a_build_with_nothing_unverified_says_nothing(application: QApplication) -> None:
+    """A caution that is always there is one people stop reading."""
+    del application
+    dialog = ConnectionDialog()
+
+    assert dialog.unverified_note.text() == ""
+    assert dialog.unverified_note.isHidden()
+
+
+def test_the_list_comes_from_the_registry_rather_than_a_literal(application: QApplication) -> None:
+    """So a driver that starts claiming verification stops being named, without an edit here.
+
+    This is the same rule as everywhere else in this port: one place holds the fact, and a second
+    copy would go stale — the difference being that this one would go stale *reassuringly*.
+    """
+    del application
+    clock = FixedClock(NOW)
+    registry = Registry(
+        [SmartClockDriver(clock=clock), NmeaDriver(clock=clock), UccmDriver(clock=clock)]
+    )
+
+    unverified = [d.name for d in registry.drivers if not getattr(d, "is_verified", True)]
+
+    assert unverified == ["UCCM"], "the UCCM, and only the UCCM"

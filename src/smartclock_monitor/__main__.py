@@ -280,6 +280,11 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         on_status=window.set_connection_text,
     )
     supervisor_holder.append(supervisor)
+    # D7: which families in this build have never met a receiver. Taken from the registry rather
+    # than named here, so a driver that starts claiming verification says so without an edit.
+    window.set_unverified_families(
+        [d.name for d in registry.drivers if not getattr(d, "is_verified", True)]
+    )
     window.set_supervisor(supervisor)
 
     try:

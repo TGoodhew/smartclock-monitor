@@ -91,6 +91,7 @@ class ConnectionDialog(QDialog):
         parent: QWidget | None = None,
         list_ports: PortLister | None = None,
         preselect: str | None = None,
+        unverified: Sequence[str] = (),
     ) -> None:
         super().__init__(parent)
         self._list_ports = list_ports or _ports
@@ -99,6 +100,8 @@ class ConnectionDialog(QDialog):
         #: user who disconnects and reconnects was offered whichever port happened to sort first.
         self._preselect = preselect
         self._palette = palette
+        #: Families in this build whose driver has never met a receiver (D7).
+        self._unverified = tuple(unverified)
 
         self.setWindowTitle("Connect to receiver")
         self.setModal(True)
@@ -111,6 +114,7 @@ class ConnectionDialog(QDialog):
         layout.addWidget(self._build_port())
         layout.addWidget(self._build_mode())
         layout.addWidget(self._build_options())
+        layout.addWidget(self._build_unverified())
         layout.addWidget(self._build_progress())
         layout.addLayout(self._build_buttons())
 
@@ -183,6 +187,39 @@ class ConnectionDialog(QDialog):
         column.addWidget(self._reconnect)
         column.addWidget(self._on_launch)
         return holder
+
+    def _build_unverified(self) -> QWidget:
+        """D7's label, **where a user can act on it** — before they connect rather than after.
+
+        §10.4's identity card says the same thing once a receiver is on the link, which is the
+        wrong moment for the only decision this affects: whether to trust what the next screen
+        says. A driver written entirely from captures taken elsewhere may be about to serve the
+        receiver on the other end of this port, and the person choosing the port is the one who can
+        weigh that.
+
+        Named families rather than a general warning. "Some drivers are unverified" is a sentence
+        nobody can use; "the Trimble UCCM driver has never been connected to a receiver" tells a
+        user whether it applies to the thing they are plugging in.
+        """
+        note = QLabel("")
+        note.setWordWrap(True)
+        note.setProperty("severity", "caution")
+        note.setAccessibleName("Unverified drivers in this build")
+        if self._unverified:
+            named = ", ".join(self._unverified)
+            note.setText(
+                f"This build includes a driver for {named} that has never been connected to a "
+                "receiver. If that is what you are connecting to, treat every reading as "
+                "unchecked — it is read by code written from captures taken elsewhere."
+            )
+        note.setVisible(bool(self._unverified))
+        self._unverified_note = note
+        return note
+
+    @property
+    def unverified_note(self) -> QLabel:
+        """D7's label, for a test to read."""
+        return self._unverified_note
 
     def _build_progress(self) -> QWidget:
         holder = QWidget()
