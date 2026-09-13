@@ -26,7 +26,7 @@ from collections.abc import Callable, Sequence
 from contextlib import suppress
 from pathlib import Path
 
-from smartclock_device.clock import SystemClock
+from smartclock_device.clock import Clock, SystemClock
 from smartclock_device.drivers.nmea import NmeaDriver
 from smartclock_device.drivers.registry import Registry
 from smartclock_device.drivers.smartclock import SmartClockDriver
@@ -262,39 +262,17 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
             changes,
         )
 
-    def announce(session: DeviceSession | None) -> None:
-        """Rewire the window as sessions come and go.
-
-        The runner is cleared when the link drops, so the pages disable their controls rather than
-        offering buttons that would send into a closed port.
-        """
-        if session is None:
-            window.set_command_runner(None)
-            # Both halves are wanted: §10.4's card is emptied (this branch) and an intentional
-            # disconnect is not filed as a fault (#28, on main).
-            window.set_identity(None, None)
-            if supervisor.stopped_by_user:
-                changes.user_disconnected()
-            else:
-                changes.disconnected("the link went")
-            return
-        identity = session.identity
-        named = identity.model if identity is not None else "receiver"
-        window.set_connection_text(f"Connected to {named} — {session.description}")
-        changes.connected(session.description, identity.model if identity is not None else None)
-        window.set_command_runner(SessionCommands(session))
-        # P0-1: the identity has to reach a surface, not only the status bar and the log. §10.4's
-        # *Receiver* card is that surface, and until this line nothing filled it.
-        window.set_identity(identity, session.identity_text)
+    supervisor_holder: list[Supervisor] = []
 
     supervisor = Supervisor(
         connect=connect,
         driver=driver,
         clock=clock,
-        on_session=announce,
+        on_session=_announce(window, changes, clock, lambda: supervisor_holder[0].stopped_by_user),
         on_reading=_publish(window, store, changes),
         on_status=window.set_connection_text,
     )
+    supervisor_holder.append(supervisor)
     window.set_supervisor(supervisor)
 
     try:
@@ -396,6 +374,61 @@ def _open_store(
 
     window.set_trend_store(store)
     return store
+
+
+def _announce(
+    window: object,
+    changes: app_log.ChangeLog,
+    clock: Clock,
+    stopped_by_user: Callable[[], bool],
+) -> Callable[[DeviceSession | None], None]:
+    """Rewire the window as sessions come and go.
+
+    Module level, like :func:`_publish`, and for the reason this function exists to fix: the
+    blanking below was missing for as long as this was a closure inside ``_run``, where nothing
+    could reach it to check. A wiring no test can call is a wiring that has no gate.
+
+    ``stopped_by_user`` is a callable rather than the supervisor itself because the supervisor is
+    built with this callback in hand — asking it later is what breaks the cycle.
+    """
+    from smartclock_monitor.views.main_window import MainWindow
+
+    assert isinstance(window, MainWindow)
+
+    def announce(session: DeviceSession | None) -> None:
+        if session is None:
+            window.set_command_runner(None)
+            # Both halves are wanted: §10.4's card is emptied (this branch) and an intentional
+            # disconnect is not filed as a fault (#28, on main).
+            window.set_identity(None, None)
+            if stopped_by_user():
+                changes.user_disconnected()
+            else:
+                changes.disconnected("the link went")
+            return
+
+        # #61: the readings on screen belong to the link that just ended. Connect to a second
+        # receiver and, until its first sweep lands, every readout still holds the first one's
+        # values — under the new one's name, with nothing to tell the two apart. Every other gap
+        # this audit found is visibly missing; this one is silently wrong, so the slate is wiped
+        # the instant a session is announced rather than overwritten field by field as the
+        # answers arrive.
+        #
+        # It blanks on a same-receiver reconnect too, which is correct rather than merely
+        # tolerable: the link went, and what the receiver is doing now is exactly what nothing
+        # here knows. Marking a *held* reading stale is the other half, and is #61's later part.
+        window.show_reading(Reading.nothing_known(clock.utc_now()))
+
+        identity = session.identity
+        named = identity.model if identity is not None else "receiver"
+        window.set_connection_text(f"Connected to {named} — {session.description}")
+        changes.connected(session.description, identity.model if identity is not None else None)
+        window.set_command_runner(SessionCommands(session))
+        # P0-1: the identity has to reach a surface, not only the status bar and the log. §10.4's
+        # *Receiver* card is that surface, and until this line nothing filled it.
+        window.set_identity(identity, session.identity_text)
+
+    return announce
 
 
 def _publish(

@@ -63,6 +63,22 @@ class Reading:
     #: Whether §7.3.1 is currently suppressing the refusable reading.
     suppressed: bool = False
 
+    @classmethod
+    def nothing_known(cls, captured_at: datetime) -> Reading:
+        """A sweep that knows nothing — every field unfilled, so every surface renders §11.1's dash.
+
+        **Rendered through the ordinary path rather than by a second one.** A window that could
+        blank itself would have two ways to draw its unfilled state, and the one used once per
+        connection is the one that goes stale: it would keep drawing a readout that `show_reading`
+        had stopped drawing, and nothing would notice. Every consumer already handles ``None`` on
+        every field, because §11.1 requires it and ``mypy --strict`` checks it, so a Reading with
+        nothing in it draws the unfilled state for free.
+
+        Used when a session opens (#61). The readings on screen belong to the link that just
+        ended, and a new receiver must not inherit them.
+        """
+        return cls(status=ReceiverStatus(captured_at=captured_at), captured_at=captured_at)
+
 
 @dataclass
 class PollingService:
