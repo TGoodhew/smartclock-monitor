@@ -146,18 +146,25 @@ defects were found rather than where two repositories differ.
 
 ---
 
-## Three places the specification is now ahead of this port
+## Where the specification was ahead of this port, and where it still is
 
-Not divergences — **gaps**. The specification was re-pinned to WinZ3805A `d892779` on 13 Sep 2026,
-and three of its amendments describe behaviour that is built upstream and is not built here. They
-are listed with the rest so nobody reads §7.2, §10.12 or §11 against this code and concludes the
-code is right.
+Not divergences — **gaps**. The specification was re-pinned to WinZ3805A `d892779` on 13 Sep 2026
+and three of its amendments described behaviour built upstream and not here. Two have since been
+closed, and the table is kept with its history so nobody reads §7.2, §10.12 or §11 against this
+code and concludes the code is right.
 
-| § | The specification now says | Here | |
+| § | The specification says | Here | |
 |---|---|---|---|
-| **§7.2** | A broadcast family may be written to, through one member and three gates | No send path at all | *Undecided* — [#64](https://github.com/TGoodhew/smartclock-monitor/issues/64) |
+| **§11** | A reading a family can never supply is **declined outright**; a destination it cannot fill is **dimmed, not disabled** | Built | **Closed** — [#60](https://github.com/TGoodhew/smartclock-monitor/issues/60) |
+| **§7.2** | A broadcast family may be written to, through one member and three gates | **Accepted**, and being built | **Decided** — D8, [#64](https://github.com/TGoodhew/smartclock-monitor/issues/64) |
 | **§7.1 / §10.12** | Auto-detect walks **eleven** combinations | Walks **ten** | *Pending* — the eleventh is the UCCM's, D7 |
-| **§11** | A reading a family can never supply is **declined outright**; a destination it cannot fill is **dimmed, not disabled** | Everything renders `—` | *Pending* — [#60](https://github.com/TGoodhew/smartclock-monitor/issues/60) |
+
+**§7.2 is the one worth reading the decision for rather than the row.** A structural guarantee —
+there was no send path anywhere, so a port-reconfiguring sentence was excluded by there being
+nowhere to express one — has been traded for a rule enforced by three independent gates. D8 in
+[`platform-decisions.md`](platform-decisions.md) carries the argument on both sides, including the
+recommendation that was overruled, because a safety decision that loses its argument is one nobody
+can revisit.
 
 **§11's amendment settles a question this port had left open.** `views/capability.py` argues that an
 absent *control* is disabled and explained, never hidden, and #60 asked what the equivalent rule for
