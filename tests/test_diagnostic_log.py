@@ -15,7 +15,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from smartclock_device.parsing import diagnostic_log
+from smartclock_device.commands import catalog
+from smartclock_device.commands.blocked import is_blocked
+from smartclock_device.parsing import diagnostic_log, gps_engine
 
 # ---- One entry ----------------------------------------------------------------------------
 
@@ -270,3 +272,58 @@ def test_parse_all_raises_nothing_whatever_arrives(response: str) -> None:
     entries = diagnostic_log.parse_all(response)
 
     assert all(isinstance(entry.message, str) for entry in entries)
+
+
+# ---- #62: what GPS receiver is inside the instrument -------------------------------------------
+
+#: The bench Z3805A's answer, byte for byte, asked on 13 September 2026.
+#:
+#: Recorded here rather than paraphrased because the shape is the finding: ten fields, seven of
+#: them `--`, and the serial number the Z3801A User's Guide is most specific about is among the
+#: empty ones.
+BENCH_ANSWER = (
+    '"--","SFTW P/N # 4850266","SOFTWARE VER # 005","--","--",'
+    '"MODEL # FURUNO GT-80","--","--","--","--"'
+)
+
+
+def test_the_bench_answer_yields_its_three_populated_fields_in_order() -> None:
+    assert gps_engine.parse(BENCH_ANSWER) == (
+        "SFTW P/N # 4850266",
+        "SOFTWARE VER # 005",
+        "MODEL # FURUNO GT-80",
+    )
+
+
+def test_position_carries_no_meaning() -> None:
+    """The guide says *model, serial, revision* in that order. The hardware says otherwise.
+
+    A firmware that fills two more slots must gain two more lines rather than shift what the
+    existing ones mean, so the parser is pinned against a *reordered* answer as well as the real
+    one: the same three values in a different order come back in that different order, unchanged.
+    """
+    reordered = '"MODEL # FURUNO GT-80","--","SOFTWARE VER # 005","--","SFTW P/N # 4850266"'
+
+    assert gps_engine.parse(reordered) == (
+        "MODEL # FURUNO GT-80",
+        "SOFTWARE VER # 005",
+        "SFTW P/N # 4850266",
+    )
+
+
+@pytest.mark.parametrize("answer", ["", None, '"--","--","--"', "   ", ",,,"])
+def test_an_empty_or_unreadable_answer_is_an_empty_tuple(answer: str | None) -> None:
+    """§11.1: never raises. Empty rather than a tuple of dashes — there is no field *pending* here,
+    so the em dash would be the wrong symbol."""
+    assert gps_engine.parse(answer) == ()
+
+
+def test_the_query_is_catalogued_and_not_excluded() -> None:
+    """It is a §8.1 allowlist entry because it is documented — Z3801A guide, Table 4-2 — so it is
+    an ordinary tier A query rather than one of §8.5's undocumented six.
+
+    The bench proved both the short and the long spelling answer; the catalogue carries the short
+    one, which is what the receiver echoed back.
+    """
+    assert catalog.GPS_ENGINE_IDENTITY in catalog.ALL
+    assert not is_blocked(catalog.GPS_ENGINE_IDENTITY.mnemonic)
