@@ -23,7 +23,7 @@ its reasoning in [`platform-decisions.md`](platform-decisions.md) and its argume
 | **Device-literal typeface** | Cascadia Mono | Cascadia Mono | **Same** — D4 |
 | **Packaging** | MSIX, Microsoft Store | **AppImage**, built from PyInstaller | Different — D2, #27 |
 | **Platforms** | Windows | Linux, Windows, macOS | *Addition* |
-| **Receiver families** | SmartClock, NMEA 0183, UCCM | SmartClock, NMEA 0183, **UCCM (untested)** | Same set — D7 |
+| **Receiver families** | SmartClock, NMEA 0183, UCCM | SmartClock, NMEA 0183, **UCCM (permanently untested)** | Same set — D7 |
 | **How pages name commands** | SCPI mnemonics | `Capability` enum | Different — see below |
 | **System accent colour (P1-11)** | Opt-in | Not offered | Neutral — nothing to read |
 | **Sequential ramp on Dark** | One ramp, both themes | Derived per surface | *Fix* — see below |
@@ -226,8 +226,18 @@ Three specific things follow, and they are deliberate rather than unfinished:
   from a datasheet.
 - **Nothing about the UCCM is claimed in the guide** beyond that the family is recognised.
 
+**There is no bench in prospect, and that is now settled rather than merely true today.** The
+labels are not waiting on a sitting; they are what this driver is. `is_verified` returns `False`
+permanently, and both surfaces that read it — §10.12's connection dialog before you choose a port,
+and §10.4's identity card once you have — say so in words a user can act on.
+
+The driver is therefore **finished at what its captures support**. `DIAG:LOOP?` and `LED:GPSL?` are
+catalogued and unread: both have captured replies, and both were left there deliberately, because
+each would put a new field through shared code that exactly one permanently-unverified family could
+ever fill.
+
 D7 in [`platform-decisions.md`](platform-decisions.md) carries the full argument, including the
-option that was rejected. The labels come off member by member if a sitting ever confirms them.
+option that was rejected and the three consequences of there being no sitting.
 
 ---
 
