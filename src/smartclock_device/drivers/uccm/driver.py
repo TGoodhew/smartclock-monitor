@@ -139,8 +139,13 @@ COMMANDS: Final[tuple[ScpiCommand, ...]] = (
     GPS_LOCK_LAMP,
 )
 
-#: §7.3's two tiers. The full read is the screen; there is no scalar sweep in the corpus to model a
-#: fast tier on, so both tiers read the same thing until one is captured.
+#: §7.3's two tiers.
+#:
+#: **The SmartClock's figures, on a module that answers six times faster**, and nothing has measured
+#: whether they suit it — no capture records how long any of this family's commands take. Per-driver
+#: timeouts were the fix and are closed unbuilt (#96): inventing timeout classes for a receiver
+#: nobody can time is the guess D7 exists to prevent. Recorded here rather than left to be
+#: discovered.
 CADENCE: Final = Cadence(fast=timedelta(seconds=2), full=timedelta(seconds=10))
 
 #: §7.3's two tiers, now that there is something to put on the fast one.
@@ -209,6 +214,12 @@ class UccmDriver(QueryResponseDefaults):
         this to a user, because a driver written entirely from somebody else's captures is a
         different thing from one that has met the receiver it claims to drive, and only the person
         in front of it can decide what to do about that.
+
+        **This is permanent, not pending.** D7 was taken knowing no UCCM was reachable; it is now
+        settled that none is expected. So this is what the driver *is* rather than a state waiting
+        on a sitting — which is also why `DIAG:LOOP?` and `LED:GPSL?` are catalogued and unread.
+        Both have captured replies; reading either would add a field to shared code that only a
+        permanently-unverified family could fill.
         """
         return False
 

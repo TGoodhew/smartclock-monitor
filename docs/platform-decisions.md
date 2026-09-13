@@ -332,11 +332,30 @@ seen is left absent under §11.1's rule rather than guessed at. The two states u
 cannot tell apart are not to be told apart here either — reproducing a known limitation is correct,
 and quietly resolving it would be the guess this decision is trying to prevent.
 
-### What would change the answer
+### What would change the answer, and why it is not expected to
 
 A UCCM on a bench that this port can reach. At that point the labels come off the members the
 sitting confirms, one by one, and `docs/divergences.md` records which sitting did it. Nothing else
 changes — the driver does not need rewriting to become verified, only exercising.
+
+**Amended 13 Sep 2026: there is no such bench in prospect.** The decision was taken knowing no UCCM
+was *currently* reachable; it is now settled that none is expected. So `is_verified` returning
+`False` is not a temporary state waiting on a sitting — it is **what this driver is**, and it
+should be read that way by anyone deciding whether to trust it or to extend it.
+
+Three consequences follow, and they are the practical half of this amendment:
+
+- **The driver is finished at what the captures support.** `DIAG:LOOP?` is catalogued and its table
+  is not parsed; `LED:GPSL?` is catalogued and not surfaced. Both have captured replies and could
+  be read — and both were left, because each would add a field to shared code that exactly one
+  permanently-unverified family can fill.
+- **Per-driver timeouts are not coming** ([#96](https://github.com/TGoodhew/smartclock-monitor/issues/96),
+  closed). The UCCM polls on the SmartClock's cadence — a figure chosen for a 9600-baud link, on a
+  module that answers at 57600. Nothing is known to be wrong with it and nothing has measured it.
+- **The open question in `transitions-13sep2026` stays open.** `FREQ_DIFF` reads `-3.59E-07` when
+  the oscillator is cold — outside the ±2.00E-7 band the sibling discards on — and `+7.18E-10` once
+  locked. Whether that band is throwing away a true reading from an undisciplined oscillator cannot
+  be settled from here.
 
 ### What it costs to have taken it
 
@@ -518,7 +537,7 @@ was someone trying to use the application.
 | D4 | Typeface — **Noto Sans** + Cascadia Mono | **Settled** | [#4](https://github.com/TGoodhew/smartclock-monitor/issues/4) | — |
 | D5 | Tray and notifications — **not shipped** | **Settled** | [#6](https://github.com/TGoodhew/smartclock-monitor/issues/6) | — |
 | D6 | Relationship — §8.4 sync | **Settled** (safety half) | — | Not reversible. See above. |
-| D7 | Third family — **UCCM ported, labelled untested** | **Settled** | [#63](https://github.com/TGoodhew/smartclock-monitor/issues/63) | Cheap: the labels come off as sittings confirm members. |
+| D7 | Third family — **UCCM ported, permanently untested** | **Settled** | [#63](https://github.com/TGoodhew/smartclock-monitor/issues/63) | Cheap in principle; no bench is in prospect, so in practice it does not come off. |
 | D8 | Broadcast transmit — **taken, under three gates** | **Settled** | [#64](https://github.com/TGoodhew/smartclock-monitor/issues/64) | Expensive: a structural guarantee was traded for a rule, and it cannot be traded back without removing the send path. |
 | D9 | Accessibility — **seven criteria gated, six deferred** | **Settled** | [#94](https://github.com/TGoodhew/smartclock-monitor/issues/94) | Cheap to reverse in principle; the gated half means it would not start from nothing. |
 
