@@ -9,6 +9,7 @@ says so in as many words.
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path
 from typing import Final
 
@@ -26,6 +27,7 @@ from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.drivers.uccm import UccmDriver
 from smartclock_device.drivers.uccm.profile import UccmVariant, UccmVendor
 from smartclock_device.models.device_identity import DeviceIdentity
+from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.transport.response_buffer import match_prompt
 
 CAPTURES: Final = Path(__file__).parent / "fixtures" / "uccm"
@@ -309,3 +311,122 @@ def test_the_oscillator_control_is_dashed_rather_than_declined() -> None:
     assert subject.reports(ReceiverReading.ONE_PPS_INTERVAL) is True, (
         "same reasoning: the screen carries a phase figure this port does not yet read"
     )
+
+
+# ---- The catalogue, from the spellings the firmware was actually asked ---------------------------
+
+
+def _spelling_reply(command: str) -> list[str]:
+    """What `catalog-spellings-12sep2026` recorded for one command."""
+    text = (CAPTURES / "catalog-spellings-12sep2026.txt").read_text(encoding="latin-1")
+    block = text.split(f"==== SENT: {command}")[1].split("---- LINES")[1].split("====")[0]
+    return [
+        match.group(2)
+        for line in block.splitlines()
+        if (match := re.match(r"\s*\[(Payload|Complete|Error|Prompt)\]\s?(.*)$", line))
+    ]
+
+
+def test_the_catalogue_is_what_the_firmware_answered() -> None:
+    """Six of the nine spellings sent on 12 Sep. Not a list from a datasheet."""
+    catalogued = {command.mnemonic for command in driver().commands}
+
+    assert catalogued == {
+        "*IDN?",
+        "SYST:STAT?",
+        "SYNC:TINT?",
+        "DIAG:ROSC:EFC:REL?",
+        "DIAG:LOOP?",
+        "LED:GPSL?",
+    }
+
+
+@pytest.mark.parametrize(
+    ("command", "refusal"),
+    [
+        (":ROSC:HOLD:DUR?", "Command error"),
+        (":GPS:POS:SURV:STAT?", "Undefined header"),
+        (":GPS:POS:SURV:PROG?", "Undefined header"),
+    ],
+)
+def test_the_three_that_were_refused_are_not_catalogued(command: str, refusal: str) -> None:
+    """**And the way each was refused is why.**
+
+    `Undefined header` is a mnemonic this firmware does not have. `Command error` is one it knows
+    and will not answer — `:ROSC:HOLD:DUR?` was refused cold, locked, and through fourteen minutes
+    of genuine holdover. That the module distinguishes the two is itself a finding.
+
+    Cataloguing any of them would offer a control that has never once succeeded against the only
+    module this port has evidence for.
+    """
+    assert any(refusal in line for line in _spelling_reply(command)), (
+        "the capture should show this refusal, or the reasoning below it is wrong"
+    )
+    assert not driver().is_allowed(command)
+
+
+def test_the_oscillator_control_was_in_the_corpus_all_along() -> None:
+    """**The audit's finding, closed properly rather than softened.**
+
+    This driver declined `OSCILLATOR_CONTROL` on the grounds that no capture showed one. Lady
+    Heather pointed at `DIAG:ROSC:EFC:DATA?` and the decline was softened to a dash (#100). Reading
+    the file showed better: `DIAG:ROSC:EFC:REL?` was **asked and answered on 12 September** and
+    nobody had looked.
+
+    The lesson is the one #98 exists for — the corpus was ahead of the driver, and a citation only
+    prompted somebody to check.
+    """
+    reply = _spelling_reply("DIAG:ROSC:EFC:REL?")
+
+    assert any("19.70" in line for line in reply), "the captured value"
+    assert driver().reports(ReceiverReading.OSCILLATOR_CONTROL) is True
+    assert any(c.mnemonic == "DIAG:ROSC:EFC:REL?" for c in driver().commands)
+
+
+def test_the_fast_tier_carries_what_it_claims() -> None:
+    """#61b's rule, for the third family."""
+    plan = driver().plan
+
+    assert set(plan.fast_readings) == {
+        ReceiverReading.ONE_PPS_INTERVAL,
+        ReceiverReading.OSCILLATOR_CONTROL,
+    }
+    for reading in plan.fast_readings:
+        assert driver().reports(reading), "a tier cannot be answerable for a declined reading"
+
+
+def test_the_time_interval_is_read_in_the_units_the_module_sends() -> None:
+    """`1.576293E-09` is **seconds**, and the model holds nanoseconds."""
+    from smartclock_device.transport.transaction import Transaction, TransactionOutcome
+
+    reply = _spelling_reply("SYNC:TINT?")
+    value = next(line for line in reply if "E-" in line)
+
+    folded = driver().apply_fast(
+        ReceiverStatus(captured_at=NOW),
+        {
+            "SYNC:TINT?": Transaction(
+                command="SYNC:TINT?", outcome=TransactionOutcome.COMPLETED, lines=(value,)
+            )
+        },
+    )
+
+    assert folded.one_pps_ti_nanoseconds == pytest.approx(1.576293, abs=1e-6)
+
+
+def test_a_refused_scalar_does_not_overwrite_a_good_reading() -> None:
+    """This module refuses queries it knows, in states it does not like."""
+    from smartclock_device.transport.transaction import Transaction, TransactionOutcome
+
+    known = ReceiverStatus(captured_at=NOW, one_pps_ti_nanoseconds=42.0)
+
+    folded = driver().apply_fast(
+        known,
+        {
+            "SYNC:TINT?": Transaction(
+                command="SYNC:TINT?", outcome=TransactionOutcome.TIMED_OUT, lines=()
+            )
+        },
+    )
+
+    assert folded.one_pps_ti_nanoseconds == 42.0
