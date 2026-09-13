@@ -31,7 +31,7 @@ from smartclock_device.clock import FixedClock
 from smartclock_device.drivers.base import WHOLE_CYCLE
 from smartclock_device.drivers.nmea import sentences
 from smartclock_device.drivers.nmea.driver import NmeaDriver
-from smartclock_device.models.receiver_status import ReceiverStatus
+from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
 from smartclock_device.transport.broadcast import BroadcastListener
 from smartclock_device.transport.transaction import Transaction, TransactionOutcome
 
@@ -63,7 +63,7 @@ def _replay(name: str) -> list[ReceiverStatus]:
     """
     clock = FixedClock(datetime(2026, 9, 13, tzinfo=UTC))
     driver = NmeaDriver(clock)
-    listener = BroadcastListener(clock=clock, boundary=driver.plan.fast[0].mnemonic)
+    listener = BroadcastListener(clock=clock, boundaries=driver.plan.cycle_boundaries)
 
     statuses: list[ReceiverStatus] = []
     previous: ReceiverStatus | None = None
@@ -164,18 +164,19 @@ def test_a_fix_is_taken_away_and_given_back() -> None:
 # ---- The three that are expected to fail -------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#58: the cycle boundary is GGA only, so a GNS talker yields no cycles at all",
+@pytest.mark.parametrize(
+    ("name", "cycles"), [("vk162-gns-no-gga", 719), ("form8n-gns-without-gga", 129)]
 )
-@pytest.mark.parametrize("name", ["vk162-gns-no-gga", "form8n-gns-without-gga"])
-def test_a_talker_that_sends_gns_instead_of_gga_is_read(name: str) -> None:
-    """**Not a missing readout — an unreadable receiver.**
+def test_a_talker_that_sends_gns_instead_of_gga_is_read(name: str, cycles: int) -> None:
+    """**Not a missing readout — an unreadable receiver**, until #58.
 
-    Both captures carry a valid fix in every cycle and not one `GGA`. `sentences.py` calls `GGA`
-    "the sentence every talker emits exactly once per cycle"; these are two receivers that do not.
-    The listener's boundary never comes round, no cycle ever closes, and the application shows
+    Both captures carry a valid fix in every cycle and not one `GGA`. `sentences.py` used to call
+    `GGA` "the sentence every talker emits exactly once per cycle"; these are two receivers that
+    do not. The boundary never came round, no cycle ever closed, and the application showed
     nothing at all while connected to a working talker.
+
+    Written as an expected failure before the parsing existed, per `CLAUDE.md`. The marker came
+    off when `strict` turned the unexpected pass into a failure, which is the mechanism working.
     """
     headers = _headers(name)
     assert not any(h.endswith("GGA") for h in headers), "this capture should have no GGA"
@@ -183,8 +184,11 @@ def test_a_talker_that_sends_gns_instead_of_gga_is_read(name: str) -> None:
 
     statuses = _replay(name)
 
-    assert statuses, "no cycle closed: the receiver is unreadable"
-    assert any(s.position is not None for s in statuses), "GNS carries the fix that GGA would"
+    assert len(statuses) == cycles, "the GNS boundary did not close every cycle"
+    assert all(s.position is not None for s in statuses), "GNS carries the fix that GGA would"
+    assert all(s.mode is SmartClockMode.LOCKED for s in statuses), (
+        "a talker with a fix is LOCKED, whichever sentence reported it"
+    )
 
 
 @pytest.mark.xfail(

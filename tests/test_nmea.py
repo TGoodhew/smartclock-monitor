@@ -20,13 +20,17 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "tools"))
 
+from typing import Final
+
 import nmea_simulator
 
 from conftest import NOW
 from smartclock_device.clock import FixedClock
+from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import (
     WHOLE_CYCLE,
     LinkStyle,
+    PollPlan,
     ReceiverDriver,
 )
 from smartclock_device.drivers.nmea import (
@@ -154,7 +158,7 @@ def test_the_listener_answers_from_the_last_complete_cycle() -> None:
     """A sentence that arrives in three parts is wrong twice before it is right, and a reader who
     saw the half-arrived state would watch the satellite count drop and recover every second."""
     family = driver()
-    listener = BroadcastListener(clock=clock(), boundary=sentences.GGA)
+    listener = BroadcastListener(clock=clock(), boundaries=(sentences.GGA,))
 
     for line in a_cycle():
         listener.feed(family.classify(line), line)
@@ -173,7 +177,7 @@ def test_the_listener_answers_from_the_last_complete_cycle() -> None:
 def test_a_line_from_another_device_still_counts_as_traffic() -> None:
     """A talker sharing a bus with something else is alive, and treating another device's sentence
     as silence would report a link that is plainly working as gone."""
-    listener = BroadcastListener(clock=clock(), boundary=sentences.GGA)
+    listener = BroadcastListener(clock=clock(), boundaries=(sentences.GGA,))
     listener.feed(None, "something else entirely")
 
     assert listener.is_quiet() is False
@@ -184,7 +188,7 @@ def test_silence_is_reported_as_a_timeout() -> None:
     unchanged."* Giving broadcast its own failure vocabulary would mean teaching the supervisor a
     second one."""
     moving = FixedClock(NOW)
-    listener = BroadcastListener(clock=moving, boundary=sentences.GGA)
+    listener = BroadcastListener(clock=moving, boundaries=(sentences.GGA,))
     listener.feed(sentences.GGA, a_cycle()[0])
     assert listener.is_quiet() is False
 
@@ -195,7 +199,7 @@ def test_silence_is_reported_as_a_timeout() -> None:
 def test_a_listener_that_has_heard_nothing_is_quiet_at_once() -> None:
     """A port opened onto a device that never speaks is exactly the case auto-detect walks past,
     and waiting five seconds to say so would cost five seconds per combination."""
-    assert BroadcastListener(clock=clock(), boundary=sentences.GGA).is_quiet() is True
+    assert BroadcastListener(clock=clock(), boundaries=(sentences.GGA,)).is_quiet() is True
 
 
 # ---- Reading a cycle ---------------------------------------------------------------------------
@@ -485,3 +489,80 @@ async def test_closing_stops_the_listener() -> None:
     await session.close()
 
     assert session._listen_task is None
+
+
+# ---- #58: the fix sentence has two spellings ---------------------------------------------------
+
+#: A real GNS line, taken from `tests/fixtures/nmea/vk162-gns-no-gga.nmea` rather than written by
+#: hand. The first draft of these tests carried an invented sentence whose checksum was wrong, so
+#: `parse` refused it and the assertion failed for a reason that had nothing to do with the code
+#: under test. A fixture line cannot have that problem.
+REAL_GNS: Final = "$GPGNS,154416.00,4731.31480,N,12212.36773,W,DN,06,1.44,36.0,-18.8,,0000*78"
+
+
+def _a_command(mnemonic: str) -> ScpiCommand:
+    from smartclock_device.commands.scpi_command import ResponseFormat
+
+    return ScpiCommand(mnemonic=mnemonic, summary=mnemonic, response=ResponseFormat.INTEGER)
+
+
+def test_the_plan_declares_both_fix_sentences_as_boundaries() -> None:
+    """§12's default is the first fast-tier entry, which named GGA and only GGA."""
+    assert set(driver().plan.cycle_boundaries) == set(sentences.FIX_KINDS)
+
+
+def test_a_query_response_family_still_gets_the_default_boundary() -> None:
+    """`boundaries` is empty for a family that never declared one, and §12's rule still applies."""
+    plan = PollPlan(
+        fast=(_a_command(":A?"),),
+        full=_a_command(":B?"),
+    )
+
+    assert plan.cycle_boundaries == (":A?",)
+
+
+def test_a_gns_talker_is_claimed_by_overhearing_it() -> None:
+    """Before #58 `overhear` required GGA, so auto-detect walked past a working GNS receiver."""
+    lines = [
+        REAL_GNS,
+        "$GPGSA,A,3,10,27,32,48,23,08,,,,,,,4.03,1.44,3.76*06",
+    ]
+
+    assert driver().overhear(lines) is True
+
+
+def test_a_talker_sending_both_spellings_still_closes_one_cycle_a_second() -> None:
+    """No receiver in the corpus does this. The listener is right about it anyway.
+
+    The boundary closes on **its own** key repeating, so GGA, GNS, …, GGA closes on the second
+    GGA with the GNS inside it. Closing on "any boundary while any boundary is present" would
+    have cut the cycle in half at the GNS and doubled the cycle count.
+    """
+    listener = BroadcastListener(clock=clock(), boundaries=sentences.FIX_KINDS)
+    gga = "$GPGGA,000821.00,4731.31126,N,12212.37609,W,2,12,0.73,29.2,M,-18.8,M,,0000*5B"
+
+    for _ in range(3):
+        listener.feed(sentences.GGA, gga)
+        listener.feed(sentences.GNS, REAL_GNS)
+
+    assert listener.cycles == 2, "three seconds of both spellings is two closed cycles, not four"
+
+
+def test_the_gns_mode_field_is_one_character_per_constellation() -> None:
+    """`DN` from a VK-162, `ANNN` from a forM8N — a fixed-width code reader gets one of them wrong.
+
+    The rule is *any character that is not N*, so a fix on any one constellation is a fix.
+    """
+    from smartclock_device.drivers.nmea.driver import _has_fix
+
+    def gns(mode: str) -> sentences.Sentence:
+        return sentences.Sentence(
+            talker="GP",
+            kind=sentences.GNS,
+            fields=("154416.00", "4731.31480", "N", "12212.36773", "W", mode, "06"),
+        )
+
+    assert _has_fix(gns("DN")) is True
+    assert _has_fix(gns("ANNN")) is True
+    assert _has_fix(gns("NNNN")) is False
+    assert _has_fix(gns("N")) is False
