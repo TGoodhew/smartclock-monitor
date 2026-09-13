@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import logging
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import timedelta
@@ -317,10 +318,22 @@ class DeviceSession:
         # §12's other link style, and the branch is here rather than in the poller on purpose: the
         # plan is one type for both, so a page or a poll asks for a plan entry the same way and the
         # session knows which kind of link it is holding. A broadcast entry is a *key*, answered
-        # from what the talker already said — nothing is written, and the allowlist below is not
-        # consulted because a talker has none to be on.
+        # from what the talker already said, and anything that goes out for it goes out through
+        # §7.2's write rule rather than by writing the key itself.
         if self._listener is not None:
-            return self._answer_from_broadcast(mnemonic)
+            return await self._answer_from_broadcast(mnemonic)
+
+        if self._driver.link is LinkStyle.BROADCAST:
+            # **A key is not wire text, and the path below assumes it is.** That assumption was
+            # harmless while a broadcast family catalogued nothing; D8 gave it one entry, and this
+            # branch then wrote the bare key `UBX` onto the wire — found by the test written for
+            # the gate above it, which is the only reason it is not still there.
+            #
+            # Reached when the listener is not running: a talker that has not been claimed, or a
+            # link being torn down. Neither is a moment to be writing to a receiver.
+            return Refusal(
+                mnemonic, "The talker is not being listened to, so nothing was asked of it."
+            )
 
         if not self._driver.is_allowed(mnemonic):
             return Refusal(mnemonic, "That command is not in the catalog, so it was not sent.")
@@ -415,7 +428,46 @@ class DeviceSession:
         self._note(result)
         return result
 
-    def _answer_from_broadcast(self, key: str) -> Transaction:
+    async def _send_on_broadcast(self, key: str) -> str | None:
+        """§7.2's write rule, gates 1 and 3 at the point of send (D8, #64).
+
+        Gate 2 lives in the driver and has already run by the time this is called — it is what
+        produced ``text``. This is the other two, and they are asked **here** rather than in the
+        driver because a driver checking its own homework is not a gate.
+
+        1. The key is a catalogued entry for this family. Without it, a plan could name something
+           the allowlist has never heard of and the text would go out anyway.
+        3. The text passes that driver's own exclusion predicate. A driver whose two methods
+           disagree is a **programming error**, not a user error: the text is not sent, and the
+           contradiction is logged at error level so it is findable rather than merely prevented.
+
+        Returns the text that was sent, or ``None`` if nothing was.
+        """
+        text = self._driver.outgoing_text_for(key)
+        if text is None:
+            return None
+
+        if not self._driver.is_allowed(key):
+            logging.getLogger(__name__).error(
+                "%s offered wire text for %r, which is not in its catalogue. Not sent.",
+                self._driver.name,
+                key,
+            )
+            return None
+
+        if self._driver.is_blocked(text):
+            logging.getLogger(__name__).error(
+                "%s offered text for %r that its own exclusion rule refuses. Not sent.",
+                self._driver.name,
+                key,
+            )
+            return None
+
+        async with self._lock:
+            await self._transport.write(f"{text}\r\n".encode("latin-1"))
+        return text
+
+    async def _answer_from_broadcast(self, key: str) -> Transaction:
         """One plan key, from the last complete cycle.
 
         **Silence becomes a timeout** rather than a state of its own. §7.2's reconnect policy
@@ -428,6 +480,11 @@ class DeviceSession:
         working perfectly.
         """
         assert self._listener is not None
+
+        # **Ask, where this family has something to ask** (D8). Most keys are overheard and nothing
+        # goes out for them; the one that is a poll is written here, through the gates above, and
+        # its answer arrives in the stream like everything else.
+        await self._send_on_broadcast(key)
 
         if self._listener.is_quiet():
             result = Transaction(command=key, outcome=TransactionOutcome.TIMED_OUT)

@@ -26,7 +26,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Final
 
 from smartclock_device.clock import Clock
-from smartclock_device.commands.scpi_command import ScpiCommand
+from smartclock_device.commands.scpi_command import ResponseFormat, ScpiCommand
 from smartclock_device.drivers.base import WHOLE_CYCLE, Cadence, LinkStyle, PollPlan
 from smartclock_device.drivers.capability import Capability, CommandGroup, ReceiverReading
 from smartclock_device.drivers.nmea import sentences
@@ -76,13 +76,24 @@ def _key_command(key: str) -> ScpiCommand:
     because the plan is one type for both link styles — a second plan type would double every
     signature that touches one, to describe a difference the listener already knows about.
     """
-    from smartclock_device.commands.scpi_command import ResponseFormat
-
     return ScpiCommand(
         mnemonic=key,
         summary=f"NMEA {key} sentences from the last complete cycle",
         response=ResponseFormat.MULTI_LINE,
     )
+
+
+#: §8.1's catalogue for this family: **one entry**, and it is a key rather than wire text (D8).
+#:
+#: Given its own summary rather than `_key_command`'s, which describes a *read* — "sentences from
+#: the last complete cycle" — and would be the one entry in the catalogue where that is false. This
+#: is the one thing this family sends, and §10.11's picker shows the summary to whoever is about to
+#: send it.
+TIME_POLL_COMMAND: Final = ScpiCommand(
+    mnemonic=sentences.TIME_POLL_KEY,
+    summary="Time and clock poll — GPS − UTC, answered only by a u-blox module",
+    response=ResponseFormat.MULTI_LINE,
+)
 
 
 #: **The boundaries are declared rather than implied.** §12's default is the first fast-tier entry,
@@ -164,19 +175,50 @@ class NmeaDriver:
     # -- Nothing may be sent ---------------------------------------------------------------------
 
     def is_allowed(self, mnemonic: str | None) -> bool:
-        """**Nothing.** A talker is never written to, so there is no allowlist to be on.
+        """**Exactly one entry** (D8, §7.2 gate 1).
 
-        This is not a stub: §8.1's check asks whether a command is catalogued *for this family*,
-        and the honest answer for a family with no command parser is no. §12's capability gate
-        turns that into greyed controls with a sentence, rather than buttons that fail on click.
+        This answered *nothing* until #64, on the reasoning that a talker has no command parser.
+        That is still true of everything but one sentence: `$PUBX,04` is a *poll*, answered by a
+        u-blox module, and it carries GPS − UTC which no standard sentence does.
+
+        §8.1's property is preserved rather than weakened — **no text can be sent for which there
+        is no catalogue entry** — and on this link the entry is a key rather than the text itself,
+        which is why `outgoing_text_for` exists to map one to the other.
         """
-        del mnemonic
-        return False
+        return mnemonic == sentences.TIME_POLL_KEY
 
-    def is_blocked(self, mnemonic: str | None) -> bool:
-        """Nothing is excluded, because nothing can be sent. §8.4 has nothing to bite on here."""
-        del mnemonic
-        return False
+    def is_blocked(self, text: str | None) -> bool:
+        """Every proprietary sentence but the one poll (D8, §7.2 gate 3).
+
+        **This answered `False` for everything, which is now a defect rather than a
+        simplification.**
+        It was correct while nothing could be sent; with a send path it is the gate that has to
+        refuse a port-reconfiguring sentence, and a predicate that permits everything gates nothing.
+
+        NMEA reserves `$P` for vendors, which makes a prefix rule sound here rather than a guess
+        about names. Standard sentences are not this predicate's business: they are broadcast,
+        nothing here ever sends one, and §10.11's picker offers only the catalogue.
+
+        **The permitted case is an equality test, not a prefix**, which is stricter than the
+        sibling's rule and deliberately so — see `sentences.is_the_time_poll`.
+        """
+        if text is None:
+            return False
+        candidate = text.strip()
+        if not candidate.upper().startswith(sentences.PROPRIETARY_PREFIX):
+            return False
+        return not sentences.is_the_time_poll(candidate)
+
+    def outgoing_text_for(self, mnemonic: str | None) -> str | None:
+        """The one sentence this family sends, and nothing else (D8, §7.2 gate 2).
+
+        Built from `sentences.TIME_POLL` rather than written out here, so the text this offers and
+        the text :meth:`is_blocked` permits cannot drift apart — they are the same constant. A
+        caller asking for anything else gets ``None`` and nothing goes out.
+        """
+        if mnemonic != sentences.TIME_POLL_KEY:
+            return None
+        return sentences.TIME_POLL
 
     @property
     def auto_detect_sequence(self) -> tuple[SerialSettings, ...]:
@@ -222,15 +264,19 @@ class NmeaDriver:
 
     @property
     def commands(self) -> tuple[ScpiCommand, ...]:
-        """**Empty**, and §10.11's picker shows it empty. A talker has no command parser, so there
-        is no allowlist to be on — and a console that fell back to another family's catalog would
-        be offering ninety-eight commands to a device that would read every one of them as noise
-        in the middle of its own stream."""
-        return ()
+        """**One**, and §10.11's picker shows exactly that one (D8).
+
+        This was empty, on the reasoning that a talker has no command parser. It has no command
+        parser still; what it has is a *poll* that a u-blox module answers, and §8.1's guarantee is
+        that anything sendable is catalogued — so the entry has to be here rather than hidden in
+        the send path. A console that fell back to another family's catalogue would still be
+        offering ninety-eight commands to a device that would read every one as noise, which is
+        what the emptiness was really protecting against and is unchanged.
+        """
+        return (TIME_POLL_COMMAND,)
 
     def supports(self, command: ScpiCommand) -> bool:
-        del command
-        return False
+        return command.mnemonic == sentences.TIME_POLL_KEY
 
     # -- Reading ---------------------------------------------------------------------------------
 

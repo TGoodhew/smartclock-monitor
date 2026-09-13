@@ -157,6 +157,18 @@ class SmartClockDriver(QueryResponseDefaults):
         }
     )
 
+    def outgoing_text_for(self, mnemonic: str | None) -> str | None:
+        """**Nothing, ever.** A SmartClock's mnemonic *is* its wire text (§7.2, D8).
+
+        This family is written to constantly — it is a query/response receiver — and none of that
+        goes through here. The send path for a catalogued command is the ordinary one, gated by
+        `is_allowed`. Answering anything but ``None`` would create a *second* way to put bytes on
+        the wire for a family that already has one, which is exactly the shape D8's gates exist to
+        prevent.
+        """
+        del mnemonic
+        return None
+
     def reports(self, reading: ReceiverReading) -> bool:
         """Everything the status screen or a §8.1 query supplies, which is most of the enum.
 
