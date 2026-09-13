@@ -24,7 +24,7 @@ not.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Final
@@ -43,6 +43,7 @@ from smartclock_device.drivers.uccm.profile import (
 )
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode, TimeScale
+from smartclock_device.parsing.scalars import parse_seconds_as_nanoseconds
 from smartclock_device.parsing.uccm_screen import UccmScreenParser
 from smartclock_device.transport.settings import Parity, SerialSettings, StopBits
 from smartclock_device.transport.transaction import Transaction
@@ -73,19 +74,98 @@ IDENTITY: Final = ScpiCommand(
     response=ResponseFormat.TEXT,
 )
 
-#: §8.1's catalogue for this family, as far as the corpus establishes it.
+#: §10.7's 1 PPS time interval against GPS, in **seconds** on this family.
 #:
-#: **Two entries, not eight.** `catalog-spellings-12sep2026` records which of the sibling's
-#: catalogued spellings this firmware actually answers, and porting the rest belongs with the
-#: status parser rather than here — a catalogue entry that has never been sent is a claim, and D7
-#: says claims trace to captures.
-COMMANDS: Final[tuple[ScpiCommand, ...]] = (IDENTITY, STATUS_SCREEN)
+#: `1.576293E-09` in `catalog-spellings-12sep2026` — read with the same scalar parser the
+#: SmartClock's `:SYNC:TINT?` uses, because it is the same quantity in the same units and a second
+#: converter would be a second place to get the exponent wrong.
+TIME_INTERVAL: Final = ScpiCommand(
+    mnemonic="SYNC:TINT?",
+    summary="1 PPS time interval against GPS",
+    response=ResponseFormat.DECIMAL,
+    unit="s",
+)
+
+#: §10.4's oscillator electronic frequency control, relative, as a percentage.
+#:
+#: `19.70`. **This is the reading the audit in #98 found this driver wrongly declining** — it was
+#: declined on the grounds that no capture showed one, which was true of the *status screen* and
+#: false of the corpus: the spelling was asked and answered on 12 Sep and nobody had read the file.
+OSCILLATOR_EFC: Final = ScpiCommand(
+    mnemonic="DIAG:ROSC:EFC:REL?",
+    summary="Oscillator frequency control, relative",
+    response=ResponseFormat.DECIMAL,
+    unit="%",
+)
+
+#: The disciplining loop's own figures, as a small table.
+#:
+#: Answered with a header row and a row of values — `DAC_LINK DAC_AVG DAC_GPS FREQ_CORR LINK_OFF
+#: FREQ_DIFF FREQ_FRAC` — preceded by a `LINK0:` line. **Its format differs by manufacturer**, which
+#: is why the sibling reads it to establish the vendor; here the vendor comes from `*IDN?` and this
+#: is read for the figures alone.
+LOOP: Final = ScpiCommand(
+    mnemonic="DIAG:LOOP?",
+    summary="The disciplining loop's own figures",
+    response=ResponseFormat.MULTI_LINE,
+)
+
+#: Whether the GPS lock lamp on the module's own panel is lit. `1` in the capture.
+GPS_LOCK_LAMP: Final = ScpiCommand(
+    mnemonic="LED:GPSL?",
+    summary="The GPS lock lamp on the receiver's panel",
+    response=ResponseFormat.INTEGER,
+)
+
+#: §8.1's catalogue for this family: **the spellings this firmware was asked and answered**.
+#:
+#: `catalog-spellings-12sep2026` sent nine and recorded every reply. Six answered and are here.
+#: Three are deliberately absent, and the *way* they were refused is why:
+#:
+#: - `:GPS:POS:SURV:STAT?` and `:GPS:POS:SURV:PROG?` answer **`Undefined header`** — this firmware
+#:   does not have the mnemonic at all.
+#: - `:ROSC:HOLD:DUR?` answers **`Command error`** — a mnemonic it knows and will not answer, and
+#:   it was refused cold, locked, and through fourteen minutes of genuine holdover.
+#:
+#: **That the module distinguishes the two is itself a finding**, recorded in
+#: `transitions-13sep2026`. Cataloguing any of the three would offer a control that has never once
+#: succeeded against the only module this port has evidence for.
+COMMANDS: Final[tuple[ScpiCommand, ...]] = (
+    IDENTITY,
+    STATUS_SCREEN,
+    TIME_INTERVAL,
+    OSCILLATOR_EFC,
+    LOOP,
+    GPS_LOCK_LAMP,
+)
 
 #: §7.3's two tiers. The full read is the screen; there is no scalar sweep in the corpus to model a
 #: fast tier on, so both tiers read the same thing until one is captured.
 CADENCE: Final = Cadence(fast=timedelta(seconds=2), full=timedelta(seconds=10))
 
-PLAN: Final = PollPlan(fast=(STATUS_SCREEN,), full=STATUS_SCREEN)
+#: §7.3's two tiers, now that there is something to put on the fast one.
+#:
+#: The screen is the full read; the two scalars the module answers quickly are the sweep. Both
+#: were captured answering in the same pass, so neither is a guess — but **no capture measures how
+#: long either takes**, which is why the cadence below is the sibling's and #96 is where a
+#: per-driver timeout belongs.
+PLAN: Final = PollPlan(
+    fast=(TIME_INTERVAL, OSCILLATOR_EFC),
+    full=STATUS_SCREEN,
+    fast_readings=(ReceiverReading.ONE_PPS_INTERVAL, ReceiverReading.OSCILLATOR_CONTROL),
+)
+
+
+def _scalar[T](
+    results: dict[str, Transaction],
+    mnemonic: str,
+    parse: Callable[[str | None], T | None],
+) -> T | None:
+    """One fast-tier answer, or ``None`` where it was refused or did not parse."""
+    outcome = results.get(mnemonic)
+    if outcome is None or not outcome.succeeded:
+        return None
+    return parse(outcome.first_line)
 
 
 #: What each decoded state means in §11.2's vocabulary.
@@ -316,8 +396,22 @@ class UccmDriver(QueryResponseDefaults):
         )
 
     def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
-        del results
-        return status
+        """Fold the two scalars this family answers quickly.
+
+        **A field is taken only when its transaction succeeded and returned something**, which is
+        the SmartClock driver's rule and it is here for the same reason: this module refuses a
+        query it knows in states it does not like, and writing ``None`` over a good value on a
+        refusal would make the reading flicker once a sweep.
+        """
+        changes: dict[str, object] = {}
+
+        interval = _scalar(results, TIME_INTERVAL.mnemonic, parse_seconds_as_nanoseconds)
+        if interval is not None:
+            changes["one_pps_ti_nanoseconds"] = interval
+
+        if not changes:
+            return status
+        return dataclasses.replace(status, **changes)  # type: ignore[arg-type]
 
     def overhear(self, lines: Sequence[str]) -> bool:
         """Never. A UCCM is asked, not overheard."""
