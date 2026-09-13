@@ -12,6 +12,7 @@ the page drained it. Real errors were being discarded to make room for poll nois
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 from datetime import timedelta
 from pathlib import Path
@@ -622,3 +623,91 @@ def _answered(line: str) -> Transaction:
     return Transaction(
         command="", outcome=TransactionOutcome.COMPLETED, lines=(line,), prompt_status="scpi >"
     )
+
+
+# ---- #61: a page is as fresh as its slowest tier ------------------------------------------------
+
+
+def test_a_page_is_as_fresh_as_the_older_tier_that_fills_it() -> None:
+    """§7.3's tiers run at different rates, so the newest of the two is not the page's age."""
+    full = NOW
+    fast = NOW + timedelta(seconds=45)
+    reading = Reading(
+        status=ReceiverStatus(captured_at=full),
+        captured_at=fast,
+        full_at=full,
+        fast_at=fast,
+    )
+
+    assert reading.oldest_tier_at == full, (
+        "the fast sweep's timestamp reported a minute-old screen as current"
+    )
+
+
+def test_a_reading_with_only_one_tier_reports_that_one() -> None:
+    """A broadcast family has no separate fast tier, and the first full read has no fast one yet."""
+    only_full = Reading(status=ReceiverStatus(captured_at=NOW), captured_at=NOW, full_at=NOW)
+
+    assert only_full.oldest_tier_at == NOW
+
+
+def test_a_reading_built_by_hand_falls_back_to_its_own_timestamp() -> None:
+    """Most tests build a Reading with neither stamp, and they must not all become stale."""
+    bare = Reading(status=ReceiverStatus(captured_at=NOW), captured_at=NOW)
+
+    assert bare.oldest_tier_at == NOW
+    assert bare.stale is False
+
+
+def test_a_full_read_that_stops_goes_stale_while_the_fast_sweep_keeps_answering() -> None:
+    """The defect, end to end: the tier that fills most of the interface dies and nothing said so.
+
+    Drives a real `PollingService` against a transport that answers the scalars and refuses the
+    status screen, then winds the injected clock past two full intervals.
+    """
+
+    async def run() -> None:
+        clock = FixedClock(NOW)
+        driver = SmartClockDriver(clock=clock)
+        transport = FakeTransport(
+            {
+                "*CLS": "",
+                "*IDN?": "SYMMETRICOM,Z3805A,3625A02931,1.01.03-A",
+                catalog.STATUS_SCREEN.mnemonic: DEMO_SEQUENCE[0],
+                catalog.SYNC_STATE.mnemonic: " LOCK",
+                catalog.TIME_FIGURE_OF_MERIT.mnemonic: " +3",
+                catalog.FREQUENCY_FIGURE_OF_MERIT.mnemonic: " +2",
+                catalog.TIME_INTERVAL.mnemonic: " -5.4E-009",
+                catalog.OSCILLATOR_EFC.mnemonic: " -1.68528E+001",
+                catalog.TRACKED_COUNT.mnemonic: " +8",
+            }
+        )
+        session = DeviceSession(transport, driver, clock)
+        await session.open(probe=timedelta(seconds=1))
+
+        published: list[Reading] = []
+        service = PollingService(
+            session=session, driver=driver, clock=clock, on_reading=published.append
+        )
+
+        await service.poll_full()
+        fresh = published[-1]
+        assert fresh.stale is False, "a fresh full read is not stale"
+
+        # The screen stops answering; the scalars do not.
+        transport.script(catalog.STATUS_SCREEN.mnemonic, None)
+        clock.advance(driver.cadence.full * 3)
+        await service.poll_fast()
+
+        # Bound to a local rather than re-indexing: `published[-1].stale` is a narrowable
+        # expression to mypy, so asserting it False above made every later reading of it
+        # unreachable — while the list had in fact grown a different element underneath.
+        after = published[-1]
+        assert after.stale, (
+            "the status screen has not been read for three intervals and nothing said so"
+        )
+        assert after.oldest_tier_at == NOW, (
+            "the page's age must still be the full read's, not the sweep's"
+        )
+
+    asyncio.run(run())
