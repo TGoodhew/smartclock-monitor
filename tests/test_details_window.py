@@ -28,7 +28,7 @@ from smartclock_device.models.receiver_status import (
     SignalStrengthKind,
     SmartClockMode,
 )
-from smartclock_device.models.satellite import PredictedSatellite, TrackedSatellite
+from smartclock_device.models.satellite import PredictedSatellite, SatelliteId, TrackedSatellite
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.themes.tokens import ALL_THEMES, Theme, palette_for
 from smartclock_monitor.views.details_window import DetailsWindow
@@ -161,14 +161,14 @@ def test_a_satellite_with_no_reading_still_gets_a_marker() -> None:
 
 def test_the_marker_description_is_the_sentence_the_specification_gives() -> None:
     """§9.10.2 gives the form verbatim."""
-    said = describe(19, 65, 52, 49, SignalStrengthKind.CARRIER_TO_NOISE, tracked=True)
+    said = describe(SatelliteId(19), 65, 52, 49, SignalStrengthKind.CARRIER_TO_NOISE, tracked=True)
 
     assert said == "PRN 19, elevation 65 degrees, azimuth 52 degrees, carrier to noise 49, tracked."
 
 
 def test_an_unreported_field_is_omitted_rather_than_read_as_a_dash() -> None:
     """ "Elevation dash degrees" is noise where leaving it out is a fact."""
-    said = describe(7, None, 116, None, SignalStrengthKind.UNKNOWN, tracked=False)
+    said = describe(SatelliteId(7), None, 116, None, SignalStrengthKind.UNKNOWN, tracked=False)
 
     assert "elevation" not in said
     assert said == "PRN 7, azimuth 116 degrees, not tracked."
@@ -257,11 +257,11 @@ def test_arrow_keys_walk_the_markers_in_prn_order(application: QApplication) -> 
 
     press = QKeyEvent(QKeyEvent.Type.KeyPress, Qt.Key.Key_Right, Qt.KeyboardModifier.NoModifier)
     plot.keyPressEvent(press)
-    first = plot.selected_prn
+    first = plot.selected_designation
     plot.keyPressEvent(press)
-    second = plot.selected_prn
+    second = plot.selected_designation
 
-    assert [first, second] == [2, 8]
+    assert [first, second] == ["2", "8"], "a SmartClock satellite is still a bare number"
 
 
 def test_the_table_and_the_plot_agree(application: QApplication) -> None:

@@ -22,6 +22,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
+from smartclock_device.models.satellite import Constellation
+
 #: The sentences this driver understands, keyed as plan entries.
 GGA: Final = "GGA"
 GNS: Final = "GNS"
@@ -166,3 +168,48 @@ def parse_int(value: str | None) -> int | None:
         return int(float(value))
     except ValueError:
         return None
+
+
+#: The NMEA 4.11 GNSS system id, as it appears in GSA's last field.
+#:
+#: Present on every ``GN`` GSA in `tests/fixtures/nmea/` — 7,976 of them — and absent from every
+#: single-constellation one, where the talker names the system instead. That split is what makes
+#: reading it safe rather than speculative.
+SYSTEM_IDS: Final[dict[str, Constellation]] = {
+    "1": Constellation.GPS,
+    "2": Constellation.GLONASS,
+    "3": Constellation.GALILEO,
+    "4": Constellation.BEIDOU,
+    "5": Constellation.QZSS,
+    "6": Constellation.NAVIC,
+}
+
+#: Where NMEA puts satellite-based augmentation inside the GPS talker, inclusive.
+SBAS_RANGE: Final = (33, 64)
+
+
+def constellation_for(talker: str | None, prn: int) -> Constellation:
+    """Which constellation a satellite number belongs to, from the sentence that carried it.
+
+    **The talker is the only thing in a GSV page that says this.** The sentence carries no system
+    field, and NMEA 4.11's trailing signal id names a *frequency* rather than a constellation. So
+    ``GN`` — which a few receivers use for GSV — is answered ``UNKNOWN``: it means *combined*, and
+    guessing from the number would be inventing the very attribution this exists to read.
+
+    **The one number-based rule is the standard's own.** NMEA reserves 33–64 for satellite-based
+    augmentation inside the GPS talker, and that is not a hypothesis: the VK-162 captures carry
+    ``$GPGSV`` satellites 46 and 48, which are WAAS. Numbers outside that range in a ``GP`` page are
+    left as GPS rather than guessed at, because a receiver using raw SBAS numbering is one nobody
+    here has seen.
+    """
+    if talker == "GP":
+        low, high = SBAS_RANGE
+        return Constellation.SBAS if low <= prn <= high else Constellation.GPS
+    return {
+        "GL": Constellation.GLONASS,
+        "GA": Constellation.GALILEO,
+        "GB": Constellation.BEIDOU,
+        "BD": Constellation.BEIDOU,
+        "GQ": Constellation.QZSS,
+        "GI": Constellation.NAVIC,
+    }.get(talker or "", Constellation.UNKNOWN)
