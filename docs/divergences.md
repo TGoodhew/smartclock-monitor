@@ -146,6 +146,34 @@ defects were found rather than where two repositories differ.
 
 ---
 
+## Three places the specification is now ahead of this port
+
+Not divergences — **gaps**. The specification was re-pinned to WinZ3805A `d892779` on 13 Sep 2026,
+and three of its amendments describe behaviour that is built upstream and is not built here. They
+are listed with the rest so nobody reads §7.2, §10.12 or §11 against this code and concludes the
+code is right.
+
+| § | The specification now says | Here | |
+|---|---|---|---|
+| **§7.2** | A broadcast family may be written to, through one member and three gates | No send path at all | *Undecided* — [#64](https://github.com/TGoodhew/smartclock-monitor/issues/64) |
+| **§7.1 / §10.12** | Auto-detect walks **eleven** combinations | Walks **ten** | *Pending* — the eleventh is the UCCM's, D7 |
+| **§11** | A reading a family can never supply is **declined outright**; a destination it cannot fill is **dimmed, not disabled** | Everything renders `—` | *Pending* — [#60](https://github.com/TGoodhew/smartclock-monitor/issues/60) |
+
+**§11's amendment settles a question this port had left open.** `views/capability.py` argues that an
+absent *control* is disabled and explained, never hidden, and #60 asked what the equivalent rule for
+an absent *reading* should be — with three candidate answers and a recommendation. The specification
+now answers it, and its reasoning is the one this port would have had to invent: **the em dash means
+*not yet*, and using it for *never* promises something that will not arrive.** So a reading is
+declined outright rather than dashed.
+
+The navigation half is the more interesting clause and is easy to get wrong: a destination a family
+cannot fill is **dimmed rather than disabled**, *"because a disabled item takes no pointer input and
+so cannot carry the tooltip explaining itself"*. That is the same argument `capability.py` already
+makes for controls, carried one level up — which is why the rule for readings and the rule for
+controls turn out not to conflict after all.
+
+---
+
 ## The UCCM family is here, and has never been connected to
 
 Upstream's UCCM driver is the product of seven bench sittings. This port's is the product of

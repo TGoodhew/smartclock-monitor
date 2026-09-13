@@ -4,7 +4,9 @@ This repository is a Python and Qt reimplementation of
 [WinZ3805A](https://github.com/TGoodhew/WinZ3805A). Four things were copied from it rather
 than written here, and two of those can go wrong silently if the two repositories diverge.
 
-**Source commit:** `73d5962a0ae43e7f9a2c0963d7edd3b109c32787` (`73d5962`, 31 Aug 2026).
+**Source commit:** `d892779` (13 Sep 2026, WinZ3805A 1.2.0). Re-pinned from `73d5962` (31 Aug) on
+13 Sep 2026 — 200 commits of drift, of which fourteen touched the specification. See *What the
+re-pin brought across*, below.
 
 ---
 
@@ -91,6 +93,30 @@ a comment, so it stays.
 
 Figures in [`palette-figures.md`](palette-figures.md); `validate.py` reproduces them and prints
 `!!` beside any it cannot.
+
+## What the re-pin brought across
+
+`docs/requirements.md` sat at `73d5962` for a fortnight while WinZ3805A moved 200 commits. It is
+byte-exact again — `git hash-object` gives `6ed0af4f` in both repositories — and the refresh brought
+five amendments worth naming, because three of them describe behaviour this port does not have:
+
+| Amended | What changed | Where this port stands |
+|---|---|---|
+| **§9.4.4** | Both data ramps belong to a **surface**, not to the application. Closes WinZ3805A#367 and #372. | **Already matches.** `themes/tokens.py` derives both per theme; the sequential derivation went *upstream* from here. |
+| **§7.1 / §10.12** | The auto-detect union is **eleven** combinations, the eleventh being 57600-8-N-1 for a UCCM. | Walks **ten**. The eleventh arrives with the UCCM driver (D7). |
+| **§7.2** | A broadcast family **may be written to**, under three gates, replacing the flat prohibition. | **Undecided** — [#64](https://github.com/TGoodhew/smartclock-monitor/issues/64). The driver here still says "never written to". |
+| **§8.1 / §8.4** | Correction: the exclusion predicate **has a production caller** upstream, and logs. | Still true here that it has none, *because* there is no send path. Follows #64. |
+| **§11** | A reading a family can never supply is **declined outright** rather than dashed; a navigation destination it cannot fill is **dimmed rather than disabled**. | Not built — [#60](https://github.com/TGoodhew/smartclock-monitor/issues/60), whose open design question this settles. |
+
+Every one of the 73 distinct § references in this tree was re-checked against the new numbering and
+all 73 resolve; §7.1 and §7.2 are the pair to watch, because upstream's own amendment notes it cited
+the scope note as §7.1 throughout and it is in §7.2.
+
+**The specification is the authority, so where the table above says "not built", the specification is
+right and this port is behind** — not the other way round. `divergences.md` records each as a gap
+with an issue, rather than as a decision, until it is one.
+
+---
 
 ---
 
