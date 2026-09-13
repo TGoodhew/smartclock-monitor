@@ -289,17 +289,23 @@ def application() -> object:
         pytest.skip(f"Qt could not start a platform plugin: {error}")
 
 
-def test_the_oscillator_control_decline_is_marked_as_the_weakest_one() -> None:
-    """It rests on seven sittings **not showing a field** rather than on a receiver saying it has
-    none, which is a different kind of evidence from the rest of the set.
+def test_the_oscillator_control_is_dashed_rather_than_declined() -> None:
+    """It was declined, and a citation contradicted the decline (#98).
 
-    The captured screen shows TFOM, FFOM, an antenna delay, an elevation mask and a phase figure;
-    it shows no oscillator control voltage anywhere. So a dash would say *not yet* about a reading
-    that is not coming — but it is the first decline to revisit if a UCCM ever reaches a bench.
+    The decline rested on seven sittings **not showing a field** rather than on a receiver saying
+    it has none — the code said as much at the time. Lady Heather 5.00 queries
+    `DIAG:ROSC:EFC:DATA?` on this family, so the reading exists; it is simply not on the status
+    screen, which is a different fact.
+
+    **A decline is a strictly stronger claim than a dash.** Softening one this port cannot support
+    needs no new evidence; asserting it would. Reading it is a separate piece of work and wants a
+    capture, per D7.
     """
     subject = driver()
 
-    assert subject.reports(ReceiverReading.OSCILLATOR_CONTROL) is False
+    assert subject.reports(ReceiverReading.OSCILLATOR_CONTROL) is True, (
+        "unparsed is 'not yet', which is the dash — not 'never', which is the decline"
+    )
     assert subject.reports(ReceiverReading.ONE_PPS_INTERVAL) is True, (
-        "the screen carries a phase figure, so this one is unparsed rather than absent"
+        "same reasoning: the screen carries a phase figure this port does not yet read"
     )

@@ -257,6 +257,14 @@ class UccmDriver(QueryResponseDefaults):
     #: Read off the captured screen rather than guessed: it carries no diagnostic log, no error
     #: queue, no status registers and no holdover figures. It **does** carry TFOM, FFOM, an antenna
     #: delay, an elevation mask and a position mode, so those are not declined.
+    #:
+    #: **The oscillator control was in this set and has been taken out** (#98). It was declined on
+    #: the grounds that no capture shows one, with a comment admitting that rested on seven
+    #: sittings *not showing a field* rather than on a receiver saying it has none. Lady Heather
+    #: 5.00 queries `DIAG:ROSC:EFC:DATA?` on this family, so the reading exists — it is simply not
+    #: on the status screen, which is a different fact. A **decline is a strictly stronger claim
+    #: than a dash**, so a claim contradicted by a citation goes back to the dash §11.1 means by
+    #: *not yet*. Softening needs no new evidence; asserting would.
     NEVER_REPORTS: Final[frozenset[ReceiverReading]] = frozenset(
         {
             ReceiverReading.DIAGNOSTIC_LOG,
@@ -271,13 +279,6 @@ class UccmDriver(QueryResponseDefaults):
             ReceiverReading.CONSTELLATION_INTEGRITY,
             ReceiverReading.FIX_QUALITY,
             ReceiverReading.GPS_UTC_OFFSET,
-            # **An absence-of-evidence call, marked as one.** No capture in the corpus carries an
-            # oscillator control voltage — not on the screen, not in any reply — so this port has
-            # no way to read one and a dash would say "not yet" about a figure that is not coming.
-            # It is the weakest decline in this set: it rests on seven sittings not showing a
-            # field rather than on a receiver saying it has none, and it is the first thing to
-            # revisit if a UCCM ever reaches a bench.
-            ReceiverReading.OSCILLATOR_CONTROL,
         }
     )
 
