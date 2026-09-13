@@ -410,6 +410,7 @@ def _announce(
             window.set_identity(None, None)
             # Nothing is known about a family that is not there, so every destination comes back.
             window.set_driver(None)
+            window.set_receiver_key(None)
             if stopped_by_user():
                 changes.user_disconnected()
             else:
@@ -433,6 +434,15 @@ def _announce(
         window.set_connection_text(f"Connected to {named} — {session.description}")
         changes.connected(session.description, identity.model if identity is not None else None)
         window.set_command_runner(SessionCommands(session))
+        # #71: whose readings these are. The serial number where the receiver gives one, the port
+        # and settings where it does not — a talker has no identity to offer and never will, so
+        # falling back to the link is the only key it can have. Either way the trend store stops
+        # drawing two receivers as one history.
+        window.set_receiver_key(
+            identity.serial_number
+            if identity is not None and identity.serial_number
+            else session.description
+        )
         # §11: the pages this family can never fill are dimmed rather than disabled (#60).
         window.set_driver(session.driver)
         # P0-1: the identity has to reach a surface, not only the status bar and the log. §10.4's

@@ -44,7 +44,7 @@ from smartclock_monitor.services.polling import Reading
 
 #: Bumped when the schema changes in a way an older build cannot read. Stored in the file's own
 #: ``PRAGMA user_version``, which is what SQLite provides for exactly this and costs no table.
-SCHEMA_VERSION: Final = 1
+SCHEMA_VERSION: Final = 2
 
 #: How much history to keep, per §12: **eight weeks**.
 #:
@@ -89,9 +89,11 @@ CREATE TABLE IF NOT EXISTS reading (
     captured_at    REAL    NOT NULL,
     ti_nanoseconds REAL,
     efc_percent    REAL,
-    mode           INTEGER NOT NULL
+    mode           INTEGER NOT NULL,
+    receiver       TEXT
 );
 CREATE INDEX IF NOT EXISTS reading_by_time ON reading (captured_at);
+CREATE INDEX IF NOT EXISTS reading_by_receiver ON reading (receiver, captured_at);
 """
 
 
@@ -221,6 +223,15 @@ class TrendStore:
         self._retention = retention
         self._since_prune = 0
 
+        #: Which receiver the rows being written belong to, or ``None`` before one is known.
+        #:
+        #: **The whole of #71.** One store at a fixed path served every receiver this application
+        #: had ever been connected to, so §10.7's chart drew them as one history — and §10.7.1's
+        #: drift fit reported a confident per-day slope for a line with two oscillators in it. The
+        #: readouts were fixed by #61a; this is the same lie with a longer memory, and it survived
+        #: a restart where they did not.
+        self._receiver: str | None = None
+
     # -- Opening ---------------------------------------------------------------------------------
 
     @classmethod
@@ -276,6 +287,20 @@ class TrendStore:
         # losing the last second of a trend to a power cut costs a pixel.
         connection.execute("PRAGMA journal_mode=WAL")
         connection.execute("PRAGMA synchronous=NORMAL")
+        # **Before the schema script, not after** (#71). `_SCHEMA` creates an index *on* the new
+        # column, and `CREATE TABLE IF NOT EXISTS` leaves a version 1 table exactly as it was — so
+        # running the script first fails on an index over a column that does not exist yet, and the
+        # store refuses to open at all. Found by the migration test rather than by reading this.
+        #
+        # Version 1 files keep their rows and gain the column **empty**. Those readings were
+        # written before anything recorded whose they were, and there is no way to find out now —
+        # so they are left unattributed rather than assigned to whoever connects next, which is the
+        # defect the column exists to fix. They read back only when no receiver is established.
+        if version and version < 2:
+            columns = {row[1] for row in connection.execute("PRAGMA table_info(reading)")}
+            if columns and "receiver" not in columns:
+                connection.execute("ALTER TABLE reading ADD COLUMN receiver TEXT")
+
         connection.executescript(_SCHEMA)
         connection.execute(f"PRAGMA user_version={SCHEMA_VERSION}")
 
@@ -288,6 +313,22 @@ class TrendStore:
             yield self._connection
         except sqlite3.Error as error:
             raise TrendStoreError(str(error)) from error
+
+    # -- Whose readings these are ----------------------------------------------------------------
+
+    def set_receiver(self, key: str | None) -> None:
+        """Say which receiver subsequent readings belong to, and which to read back.
+
+        **Called when the identity lands, which is later than the first reading.** A family that
+        has to be probed answers `*IDN?` after the link is up, and a talker never answers it at
+        all — so the caller supplies whatever it can defend as a key, and ``None`` means *nothing
+        established*, which reads and writes the unattributed rows.
+        """
+        self._receiver = key
+
+    @property
+    def receiver(self) -> str | None:
+        return self._receiver
 
     # -- Writing ---------------------------------------------------------------------------------
 
@@ -306,13 +347,14 @@ class TrendStore:
         taken = reading.captured_at or status.captured_at
         with self._guarded() as connection:
             connection.execute(
-                "INSERT INTO reading (captured_at, ti_nanoseconds, efc_percent, mode)"
-                " VALUES (?, ?, ?, ?)",
+                "INSERT INTO reading (captured_at, ti_nanoseconds, efc_percent, mode, receiver)"
+                " VALUES (?, ?, ?, ?, ?)",
                 (
                     _epoch(taken),
                     status.one_pps_ti_nanoseconds,
                     reading.efc_percent,
                     status.mode.value,
+                    self._receiver,
                 ),
             )
 
@@ -392,9 +434,13 @@ class TrendStore:
 
         with self._guarded() as connection:
             rows = connection.execute(
+                # **Filtered to the connected receiver** (#71). `IS` rather than `=` so a `None`
+                # key matches the unattributed rows — SQL equality never matches NULL, and a
+                # store opened before any identity landed would otherwise read back empty.
                 "SELECT captured_at, ti_nanoseconds, efc_percent, mode FROM reading"
-                " WHERE captured_at BETWEEN ? AND ? ORDER BY captured_at",
-                (_epoch(start), _epoch(end)),
+                " WHERE captured_at BETWEEN ? AND ? AND receiver IS ?"
+                " ORDER BY captured_at",
+                (_epoch(start), _epoch(end), self._receiver),
             )
             for captured_at, ti_value, efc_value, mode in rows:
                 at.append(captured_at)

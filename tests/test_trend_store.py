@@ -26,6 +26,7 @@ from smartclock_monitor.services.trend_store import (
     Series,
     TrendStore,
     TrendStoreError,
+    _epoch,
     empty_series,
 )
 
@@ -519,3 +520,72 @@ def test_eight_weeks_of_history_survives_pruning(clock: FixedClock) -> None:
     # taken at the boundary is inside the window it defines.
     assert dropped == 3, "days 57, 58 and 59 are past the window"
     assert store.count() == 57
+
+
+# ---- #71: whose readings these are --------------------------------------------------------------
+
+
+def test_two_receivers_do_not_share_a_history() -> None:
+    """**The defect, and the reason it outlived #61a.**
+
+    One store at a fixed path served every receiver this application had ever been connected to, so
+    §10.7's chart drew them as one line and §10.7.1's fit reported a confident per-day slope for a
+    series with two oscillators in it. The readouts were fixed by clearing them on connect; this is
+    the same lie with a longer memory, and it survived a restart where they did not.
+    """
+    store = TrendStore.in_memory(FixedClock(NOW))
+
+    store.set_receiver("first")
+    store.append(reading(NOW, ti=10.0))
+    store.set_receiver("second")
+    store.append(reading(NOW, ti=99.0))
+
+    assert [round(v) for v in _ti(store.window(timedelta(hours=1)))] == [99]
+
+    store.set_receiver("first")
+    assert [round(v) for v in _ti(store.window(timedelta(hours=1)))] == [10]
+
+
+def test_readings_taken_before_a_receiver_was_known_are_not_attributed_to_one() -> None:
+    """`None` means *nothing established*, and those rows must not be handed to whoever connects
+    next — which is precisely the defect, rewritten one level down."""
+    store = TrendStore.in_memory(FixedClock(NOW))
+
+    store.append(reading(NOW, ti=1.0))
+    store.set_receiver("a receiver")
+
+    assert list(_ti(store.window(timedelta(hours=1)))) == []
+
+    store.set_receiver(None)
+    assert [round(v) for v in _ti(store.window(timedelta(hours=1)))] == [1]
+
+
+def test_a_version_one_file_keeps_its_rows_and_gains_the_column_empty(tmp_path: Path) -> None:
+    """Existing databases are migrated rather than discarded, and their rows stay unattributed.
+
+    There is no way to find out now whose they were, so assigning them to the next receiver would
+    be the bug rather than the fix.
+    """
+    path = tmp_path / "old.sqlite"
+    legacy = sqlite3.connect(path)
+    legacy.executescript(
+        "CREATE TABLE reading (captured_at REAL NOT NULL, ti_nanoseconds REAL,"
+        " efc_percent REAL, mode INTEGER NOT NULL);"
+    )
+    legacy.execute("INSERT INTO reading VALUES (?, 5.0, 1.0, 0)", (_epoch(NOW),))
+    legacy.execute("PRAGMA user_version=1")
+    legacy.commit()
+    legacy.close()
+
+    store = TrendStore.open(path, FixedClock(NOW))
+
+    assert [round(v) for v in _ti(store.window(timedelta(hours=1)))] == [5], (
+        "the old rows survive and read back while nothing is established"
+    )
+    store.set_receiver("somebody new")
+    assert list(_ti(store.window(timedelta(hours=1)))) == [], "and are not handed to them"
+
+
+def _ti(series: Series) -> list[float]:
+    """The non-missing 1 PPS readings in a window, oldest first."""
+    return [v for v in (series.ti_at(i) for i in range(len(series))) if v is not None]
