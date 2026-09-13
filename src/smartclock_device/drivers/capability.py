@@ -46,6 +46,7 @@ class Capability(Enum):
     DIAGNOSTIC_LOG = "the diagnostic log"
     LOG_COUNT = "how many log entries there are"
     LIFETIME_HOURS = "hours since manufacture"
+    GPS_ENGINE = "what GPS receiver is inside the instrument"
     ERROR_QUEUE = "the error queue"
     HARDWARE_CONDITION = "the hardware status register"
     TIME_CODE_FORMAT = "the time-code output format"
@@ -159,6 +160,15 @@ class ReceiverReading(Enum):
 
     #: §10.9's total powered hours.
     POWER_ON_HOURS = "hours since manufacture"
+
+    #: §10.9's identity of the GPS engine **inside** the instrument.
+    #:
+    #: Distinct from :attr:`DEVICE_IDENTITY`, which is the instrument's. A SmartClock is a
+    #: disciplining chassis wrapped around somebody else's GPS receiver and the two revise on
+    #: separate schedules — the bench unit reports firmware ``1.01.03-A`` while the engine inside it
+    #: reports a Furuno GT-80 running software version 005. A talker **is** the GPS receiver, so
+    #: there is no second one for it to describe.
+    GPS_ENGINE_IDENTITY = "what GPS receiver is inside the instrument"
 
     #: §10.4 and §10.9's health monitor, and its per-subsystem items.
     HEALTH_MONITOR = "the health monitor"

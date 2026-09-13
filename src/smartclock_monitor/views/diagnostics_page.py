@@ -45,6 +45,7 @@ from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_device.drivers.capability import Capability, CommandGroup, ReceiverReading
 from smartclock_device.models.diagnostic_log_entry import DiagnosticLogEntry
+from smartclock_device.parsing import gps_engine
 from smartclock_device.parsing.diagnostic_log import parse_all
 from smartclock_device.parsing.scalars import parse_integer
 from smartclock_device.transport.transaction import Transaction
@@ -92,6 +93,7 @@ class DiagnosticsPage(Page):
         layout.addWidget(self._build_log())
         layout.addWidget(self._build_queue())
         layout.addWidget(self._build_lifetime())
+        layout.addWidget(self._build_gps_engine())
         layout.addWidget(self._build_application_log())
         layout.addWidget(self._build_experimental())
         layout.addStretch(1)
@@ -337,6 +339,42 @@ class DiagnosticsPage(Page):
         del reading
         self._retune()
 
+    def _build_gps_engine(self) -> QWidget:
+        """§10.9's third card: what GPS receiver is inside the instrument.
+
+        One line per populated field, in receiver order and in the receiver's own words, because
+        the answer assigns no meaning to position — see `parsing/gps_engine.py`.
+        """
+        holder, holder_layout = card("GPS receiver")
+        self._gps_engine = label("", "body")
+        self._gps_engine.setWordWrap(True)
+        self._gps_engine.setAccessibleName("GPS receiver inside the instrument")
+        holder_layout.addWidget(self._gps_engine)
+        self._gps_engine_note = label("", "caption")
+        self._gps_engine_note.setWordWrap(True)
+        holder_layout.addWidget(self._gps_engine_note)
+        self._gps_engine_card = holder
+        return holder
+
+    def _show_gps_engine(self, fields: tuple[str, ...], asked: bool) -> None:
+        """Three states, and only one of them is a list.
+
+        Not asked at all — the connected family has no second receiver inside it — is a sentence
+        rather than an empty card. Asked and answered with nothing is also a sentence, and a
+        different one: the instrument has the query and filled none of it in.
+        """
+        self._gps_engine.setText("\n".join(fields))
+        self._gps_engine.setVisible(bool(fields))
+        if fields:
+            self._gps_engine_note.setVisible(False)
+            return
+        self._gps_engine_note.setText(
+            "This receiver is the GPS receiver — there is no separate engine inside it."
+            if not asked
+            else "The instrument answered, and filled none of the fields in."
+        )
+        self._gps_engine_note.setVisible(True)
+
     def _retune(self) -> None:
         live = self._runner is not None and self._runner.is_connected
         driver = self._runner.driver if live and self._runner is not None else None
@@ -362,6 +400,7 @@ class DiagnosticsPage(Page):
                 (Capability.DIAGNOSTIC_LOG, None),
                 (Capability.LOG_COUNT, None),
                 (Capability.LIFETIME_HOURS, None),
+                (Capability.GPS_ENGINE, None),
             ],
             self._absorb,
         )
@@ -383,6 +422,14 @@ class DiagnosticsPage(Page):
         # §11.1: an unread or unparseable answer renders a dash rather than "0 h" — a zero being a
         # claim about the hardware where a dash is a statement about the read.
         self._lifetime.setText(DASH if value is None else f"{value:,} h")
+
+        engine = answered.get(Capability.GPS_ENGINE)
+        self._show_gps_engine(
+            gps_engine.parse(engine.transaction.first_line)
+            if engine is not None and engine.transaction is not None
+            else (),
+            asked=engine is not None,
+        )
 
         count = answered.get(Capability.LOG_COUNT)
         reported = None

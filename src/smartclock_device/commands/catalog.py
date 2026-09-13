@@ -160,6 +160,34 @@ LIFETIME_HOURS: Final = ScpiCommand(
     unit="h",
 )
 
+#: §10.9: what the GPS receiver *inside* the instrument calls itself.
+#:
+#: **Documented, so an ordinary tier A query rather than one of §8.5's undocumented six** — Z3801A
+#: User's Guide, Table 4-2, ``:DIAGnostic:IDENtification:GPSystem?``, *"returns a sequence of quoted
+#: strings"*, described as *"the model number, serial number, and revision of the internal GPS
+#: receiver"*.
+#:
+#: A SmartClock is a disciplining chassis wrapped around somebody else's GPS engine, and the two
+#: revise on separate schedules. Asked of the bench Z3805A on 13 Sep 2026, whose own firmware is
+#: ``1.01.03-A``, it answers::
+#:
+#:     "--","SFTW P/N # 4850266","SOFTWARE VER # 005","--","--",
+#:     "MODEL # FURUNO GT-80","--","--","--","--"
+#:
+#: (one line on the wire; wrapped here)
+#:
+#: **Ten fields, seven of them ``--``, and the serial number the documentation was most specific
+#: about is among the empty ones.** So nothing may assign meaning to position: the three that are
+#: populated label themselves, and a firmware that fills two more slots gains two more lines rather
+#: than shifting what the existing ones mean.
+#:
+#: Read on demand, never polled — the module inside cannot change while the instrument is powered.
+GPS_ENGINE_IDENTITY: Final = ScpiCommand(
+    mnemonic=":DIAG:IDEN:GPS?",
+    summary="GPS receiver identity — the model and firmware of the engine inside the instrument",
+    response=ResponseFormat.VALUE_LIST,
+)
+
 # ---- §10.8 Holdover ----------------------------------------------------------------------------
 
 #: **A value list, not a bare decimal**, and that was found by asking the receiver: it answers
@@ -684,6 +712,7 @@ ALL: Final[tuple[ScpiCommand, ...]] = (
     TIME_CODE_FORMAT,
     LOG_COUNT,
     LIFETIME_HOURS,
+    GPS_ENGINE_IDENTITY,
     HOLDOVER_DURATION,
     HOLDOVER_DURATION_THRESHOLD,
     HOLDOVER_DURATION_EXCEEDED,

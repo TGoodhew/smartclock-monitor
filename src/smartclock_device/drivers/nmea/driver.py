@@ -327,6 +327,9 @@ class NmeaDriver:
             ReceiverReading.DIAGNOSTIC_LOG,
             ReceiverReading.ERROR_QUEUE,
             ReceiverReading.ELEVATION_MASK,
+            # A talker IS the GPS receiver. There is no second one inside it to describe, which is
+            # a different fact from "it declines to say".
+            ReceiverReading.GPS_ENGINE_IDENTITY,
             ReceiverReading.POSITION_HOLD,
             # And no status screen, so §11.1's parse-health line is about nothing.
             ReceiverReading.STATUS_SCREEN,
