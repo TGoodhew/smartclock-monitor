@@ -78,9 +78,24 @@ parsing rather than treating the space as part of the field.
 §11.1 asks for eight states. Seven are captured — power-up with 0 tracked, acquiring, locked,
 holdover, survey in progress, position hold and the week-rollover date. One is not:
 
-| State | How to reach it |
+| State | Why not, and what would be needed |
 |---|---|
-| Health-monitor failure | Opportunistic: capture whenever the health line is not `[ OK ]`. Leave the harness running during any hardware move (the procedure is `docs/manual-qa.md` §5); it writes one file per state it has not seen and is designed to reconnect when the power goes and the adapter re-enumerates — a path that has not been deliberately exercised. |
+| Health-monitor failure | **Not capturable here, and now recorded as such rather than left open.** The line reads `[ OK ]` because the receiver is healthy, and there is no way to make it read otherwise short of the hardware actually failing. Every other state in this table was reached by *doing* something — a power cycle, a hardware move, an antenna pull — and this one has no such action behind it. |
+
+**We cannot simulate dying hardware, and pretending otherwise would be worse than the gap.**
+
+The obvious alternative — writing a synthetic screen with a failing health line — was considered and
+rejected. It would be a fixture that proves the parser handles a layout **we invented**, filed
+beside ten that are device output, in a directory whose entire value is that its contents are
+exactly what a receiver sent. `test_fixtures.py` walks all ten and `.gitattributes` marks the
+directory `-text` for that reason; a hand-written eleventh would quietly make that claim false.
+
+The parser's behaviour on an unhealthy line is covered where synthetic input belongs — in
+`test_status_screen.py`, against a modified copy of a real screen, and labelled as synthetic there.
+What is missing is **evidence**, not coverage, and only a receiver in that state can supply it.
+
+If one ever is — a unit that starts failing its own self-test — that is the moment to capture, and
+it will not come round twice.
 
 Two modes the application distinguishes have no capture either, because neither happened during
 the sitting and §11.1 does not ask for them: *Waiting to recover* — a holdover screen carrying a
