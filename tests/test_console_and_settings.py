@@ -22,7 +22,7 @@ from smartclock_device.clock import FixedClock
 from smartclock_device.commands import catalog
 from smartclock_device.commands.blocked import is_blocked
 from smartclock_device.commands.scpi_command import ArgumentKind, SafetyTier
-from smartclock_device.drivers.nmea import NmeaDriver
+from smartclock_device.drivers.nmea import NmeaDriver, sentences
 from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_monitor.services.preferences import DEFAULTS, Preferences, load, save
 from smartclock_monitor.themes.tokens import Theme
@@ -372,20 +372,26 @@ def test_an_unbound_console_offers_nothing() -> None:
 def test_the_picker_is_rebound_when_a_talker_connects() -> None:
     """The bug, made reachable the day a second family was registered: the picker *is* the
     allowlist made visible, so a stale one offers a family ninety-eight commands it has never
-    heard of — on a device that would read every one of them as noise in its own stream."""
+    heard of — on a device that would read every one of them as noise in its own stream.
+
+    **A talker's allowlist is one entry rather than none since D8.** That is the change #64 made
+    and the property the picker exists to show: whatever is sendable is catalogued, so the count
+    here is exactly the count of things that can go out.
+    """
     page = a_console()
     assert page.command_box.count() == len(catalog.ALL)
 
     page.set_command_runner(FakeRunner(driver_for=NmeaDriver(clock=FixedClock(NOW))))
 
-    assert page.command_box.count() == 0, "a talker has no allowlist to be on"
-    assert page.selected() is None
+    assert page.command_box.count() == 1, "a talker's catalogue is the one poll, and nothing else"
+    chosen = page.selected()
+    assert chosen is not None and chosen.mnemonic == sentences.TIME_POLL_KEY
 
 
 def test_the_picker_comes_back_when_the_smartclock_returns() -> None:
     """The other direction, which is the half a one-way rebind would leave broken."""
     page = ConsolePage(driver=NmeaDriver(clock=FixedClock(NOW)))
-    assert page.command_box.count() == 0
+    assert page.command_box.count() == 1
 
     page.set_command_runner(FakeRunner())
 
@@ -413,15 +419,24 @@ def test_an_empty_picker_says_why_it_is_empty() -> None:
     assert "Not connected" in page._why_empty.text()
 
 
-def test_a_talker_s_empty_picker_names_the_family() -> None:
-    """Two different facts, and a user can act on the difference: nothing is connected, or the
-    connected family has no command parser. Naming the family is what §12's capability gate does
-    everywhere else, for the same reason."""
-    page = ConsolePage(driver=NmeaDriver(clock=FixedClock(NOW)))
+def test_nothing_the_picker_offers_would_be_refused_at_the_point_of_send() -> None:
+    """§10.11's picker *is* §8.1's allowlist made visible, and D8 added a third gate behind it.
 
-    text = page._why_empty.text()
-    assert "NMEA 0183 talker" in text
-    assert "read only" in text
+    A driver whose catalogue and whose exclusion predicate disagree is a programming error, and
+    the console is where a user would meet it: an entry that is offered, chosen, and then refused
+    at the point of send. Asked of every family, over every entry it offers.
+    """
+    clock = FixedClock(NOW)
+    for driver in (SmartClockDriver(clock=clock), NmeaDriver(clock=clock)):
+        for command in driver.commands:
+            assert driver.is_allowed(command.mnemonic), (
+                f"{driver.name} offers an uncatalogued entry"
+            )
+            text = driver.outgoing_text_for(command.mnemonic)
+            if text is not None:
+                assert not driver.is_blocked(text), (
+                    f"{driver.name} offers {command.mnemonic}, then refuses its own text for it"
+                )
 
 
 def test_the_explanation_goes_away_when_a_receiver_arrives() -> None:

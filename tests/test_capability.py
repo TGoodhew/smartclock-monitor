@@ -74,6 +74,11 @@ class TalkerDriver(QueryResponseDefaults):
     #: test says what it is about, and a double that pre-declined things would hide it.
     declines: frozenset[ReceiverReading] = field(default_factory=frozenset)
 
+    def outgoing_text_for(self, mnemonic: str | None) -> str | None:
+        """Nothing. A double that could transmit would be testing a send path nobody wrote."""
+        del mnemonic
+        return None
+
     def reports(self, reading: ReceiverReading) -> bool:
         return reading not in self.declines
 

@@ -216,3 +216,39 @@ def constellation_for(talker: str | None, prn: int) -> Constellation:
         "GQ": Constellation.QZSS,
         "GI": Constellation.NAVIC,
     }.get(talker or "", Constellation.UNKNOWN)
+
+
+# ---- The one sentence this family sends (D8, #64) ----------------------------------------------
+
+#: The plan key for the time poll. A **key**, not wire text: §12 says a broadcast family's
+#: catalogue entry is a key and the driver maps it to bytes, which is what keeps §8.1's property —
+#: *no text can be sent for which there is no catalogue entry* — true on a link where the mnemonic
+#: is not the thing sent.
+TIME_POLL_KEY: Final = "UBX"
+
+#: u-blox's ``$PUBX,04``, the only sentence this port ever transmits.
+#:
+#: It carries **GPS − UTC**, which no standard NMEA sentence does, and it is the whole reason D8
+#: traded away a structural guarantee. Written with its checksum computed rather than typed: a
+#: hand-written checksum has already failed twice in this suite's history.
+TIME_POLL_BODY: Final = "PUBX,04"
+TIME_POLL: Final = f"${TIME_POLL_BODY}*{checksum_of(TIME_POLL_BODY):02X}"
+
+#: NMEA reserves ``$P`` for vendors, which is what makes a prefix rule sound here rather than a
+#: guess about names. Standard sentences are not this predicate's business: they are broadcast,
+#: nothing ever sends one, and §10.11's picker offers only the catalogue.
+PROPRIETARY_PREFIX: Final = "$P"
+
+
+def is_the_time_poll(text: str | None) -> bool:
+    """Whether this is *exactly* the one sentence, terminator and casing aside.
+
+    **Exact rather than a prefix**, which is stricter than the sibling's rule and deliberately so.
+    A prefix test accepts ``$PUBX,04,SOMETHING`` as readily as the poll itself, and §7.2's
+    verification note warns in the other direction — *"a prefix rule that accepted a truncation
+    would accept far more than one sentence"*. Both holes close with an equality test, and there is
+    exactly one sentence to compare against, so nothing is lost by it.
+    """
+    if text is None:
+        return False
+    return text.strip().upper() == TIME_POLL.upper()

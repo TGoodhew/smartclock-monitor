@@ -298,6 +298,25 @@ class ReceiverDriver(Protocol):
         """Fold the fast-tier answers into the status the full tier last produced."""
         ...
 
+    def outgoing_text_for(self, mnemonic: str | None) -> str | None:
+        """The wire text for one **catalogued** entry on a broadcast link, or ``None`` (D8, §7.2).
+
+        §7.2's write rule, gate 2. A broadcast family may be written to **only** through this
+        member, and answering ``None`` — which is the right answer for every family that does not
+        transmit — is what keeps the structural property for everyone else.
+
+        **Required rather than defaulted, which is stronger than the specification asks.** §7.2
+        says the member *defaults to null* so that a family which has not considered transmitting
+        cannot acquire a send path by inheriting one. A Python `Protocol` cannot default anything
+        for a structural implementer anyway, and making it required means a new family cannot
+        compile without writing an answer: the considered ``return None`` is forced rather than
+        merely likely.
+
+        For a query/response family this is **not** the send path — its mnemonic *is* its wire text
+        and goes out the ordinary way — so such a family answers ``None`` here for everything.
+        """
+        ...
+
     def reports(self, reading: ReceiverReading) -> bool:
         """Whether this family can **ever** supply a reading (§11, #60).
 
