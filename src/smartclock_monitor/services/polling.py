@@ -17,6 +17,7 @@ import asyncio
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
+from typing import ClassVar
 
 from smartclock_device.clock import Clock
 from smartclock_device.commands import catalog
@@ -63,6 +64,35 @@ class Reading:
     #: Whether §7.3.1 is currently suppressing the refusable reading.
     suppressed: bool = False
 
+    #: When the **full** read last succeeded, and when the **fast** sweep last did.
+    #:
+    #: Separate from :attr:`captured_at`, which is when *this sweep* finished — and the difference
+    #: is the whole of #61's staleness half. §7.3's tiers run at different rates and fail
+    #: independently: a full read that has stopped answering leaves the screen's fields frozen
+    #: while the fast sweep goes on delivering figures of merit once a second. Taking the newest of
+    #: the two as "when this was updated" reports a page as current that is a minute old, which is
+    #: the one reading a timing instrument must never give.
+    full_at: datetime | None = None
+    fast_at: datetime | None = None
+
+    #: Whether the tier that fills most of the interface has gone quiet for longer than it should.
+    #:
+    #: Decided here rather than in a view, because the threshold comes from the driver's cadence
+    #: and a view has no business knowing one. §9.4.1's caution row is *"recovering, waiting,
+    #: reduced accuracy, stale data"*; this is the last of those.
+    stale: bool = False
+
+    @property
+    def oldest_tier_at(self) -> datetime | None:
+        """The older of the tiers that have delivered — how fresh the page as a whole is.
+
+        A page fed by both tiers is only as fresh as its **slower** half. Returning the newest
+        would report an Overview as current because one figure of merit arrived a second ago,
+        while the status screen beside it had not been read for a minute.
+        """
+        stamps = [at for at in (self.full_at, self.fast_at) if at is not None]
+        return min(stamps) if stamps else self.captured_at
+
     @classmethod
     def nothing_known(cls, captured_at: datetime) -> Reading:
         """A sweep that knows nothing — every field unfilled, so every surface renders §11.1's dash.
@@ -97,6 +127,8 @@ class PollingService:
     on_identity: Callable[[], None] | None = None
 
     _status: ReceiverStatus | None = field(default=None, init=False)
+    _full_at: datetime | None = field(default=None, init=False)
+    _fast_at: datetime | None = field(default=None, init=False)
     _suppressed_in_state: str | None = field(default=None, init=False)
     _last: Reading | None = field(default=None, init=False)
 
@@ -145,6 +177,7 @@ class PollingService:
             return
 
         self._status = self.driver.parse_full(result, self._status)
+        self._full_at = self.clock.utc_now()
         self._publish()
 
     async def poll_fast(self) -> None:
@@ -173,6 +206,7 @@ class PollingService:
             return
 
         self._status = self.driver.apply_fast(self._status, results)
+        self._fast_at = self.clock.utc_now()
         self._publish(results, state)
 
     # -- §7.3.1 --------------------------------------------------------------------------------
@@ -203,6 +237,24 @@ class PollingService:
         elif self._suppressed_in_state is not None and state != self._suppressed_in_state:
             self._suppressed_in_state = None
 
+    #: How many full-read intervals may pass before the page is called stale.
+    #:
+    #: Two rather than one: a single missed read is ordinary — a refusal, a retry, a receiver busy
+    #: with a survey — and raising §9.4.1's caution row for it would be the gate that cries wolf.
+    #: Two consecutive misses is a tier that has stopped.
+    STALE_AFTER_INTERVALS: ClassVar[int] = 2
+
+    def _is_stale(self, now: datetime) -> bool:
+        """Whether the full read has gone quiet for longer than its own cadence allows.
+
+        **The full tier, not the newest one.** The fast sweep can go on answering indefinitely
+        while the status screen behind it is frozen, and it is the screen that fills the satellite
+        table, the position and the health card.
+        """
+        if self._full_at is None:
+            return False
+        return now - self._full_at > self.driver.cadence.full * self.STALE_AFTER_INTERVALS
+
     # -- Publishing ----------------------------------------------------------------------------
 
     def _publish(
@@ -221,13 +273,17 @@ class PollingService:
             tracked = _value(results, catalog.TRACKED_COUNT.mnemonic, parse_integer) or tracked
             sync = state or sync
 
+        now = self.clock.utc_now()
         reading = Reading(
             status=self._status,
-            captured_at=self.clock.utc_now(),
+            captured_at=now,
             efc_percent=efc,
             tracked_count=tracked,
             sync_state=sync,
             suppressed=self._suppressed_in_state is not None,
+            full_at=self._full_at,
+            fast_at=self._fast_at,
+            stale=self._is_stale(now),
         )
         self._last = reading
 

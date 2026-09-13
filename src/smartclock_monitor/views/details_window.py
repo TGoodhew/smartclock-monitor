@@ -527,8 +527,15 @@ class DetailsWindow(QMainWindow):
 
         bar = self.statusBar()
         if bar is not None:
+            # **The older tier, not the newest** (#61). §7.3's two tiers fail independently, and
+            # the fast sweep can go on answering once a second while the status screen behind it
+            # is frozen — so taking the sweep's own timestamp reported a page as current that had
+            # not been read for a minute. That is the one reading a timing instrument must not
+            # give, and it was the line most likely to be believed.
+            moment = reading.oldest_tier_at or reading.status.captured_at
             bar.showMessage(
-                f"Updated {(reading.captured_at or reading.status.captured_at):%H:%M:%S}"
+                ("Stale — " if reading.stale else "Updated ")
+                + f"{moment:%H:%M:%S}"
                 + (" — one reading suppressed, see Timing" if reading.suppressed else "")
             )
 
