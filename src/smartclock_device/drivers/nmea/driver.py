@@ -27,7 +27,7 @@ from typing import Final
 from smartclock_device.clock import Clock
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import WHOLE_CYCLE, Cadence, LinkStyle, PollPlan
-from smartclock_device.drivers.capability import Capability, CommandGroup, Reading
+from smartclock_device.drivers.capability import Capability, CommandGroup, ReceiverReading
 from smartclock_device.drivers.nmea import sentences
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.position import GeoPosition, HeightDatum, PositionMode
@@ -285,33 +285,33 @@ class NmeaDriver:
     #:
     #: Everything here follows from one fact: **a talker has no disciplined oscillator and no
     #: command parser.** It reports where it is and what it can hear, once a second, unprompted.
-    NEVER_REPORTS: Final[frozenset[Reading]] = frozenset(
+    NEVER_REPORTS: Final[frozenset[ReceiverReading]] = frozenset(
         {
             # No oscillator, so nothing that measures or steers one.
-            Reading.TFOM,
-            Reading.FFOM,
-            Reading.ONE_PPS_INTERVAL,
-            Reading.OSCILLATOR_CONTROL,
-            Reading.HOLDOVER,
-            Reading.ANTENNA_DELAY,
-            Reading.OUTPUT_VALIDITY,
+            ReceiverReading.TFOM,
+            ReceiverReading.FFOM,
+            ReceiverReading.ONE_PPS_INTERVAL,
+            ReceiverReading.OSCILLATOR_CONTROL,
+            ReceiverReading.HOLDOVER,
+            ReceiverReading.ANTENNA_DELAY,
+            ReceiverReading.OUTPUT_VALIDITY,
             # No command parser, so nothing that has to be asked for.
-            Reading.DEVICE_IDENTITY,
-            Reading.LEAP_SECOND,
-            Reading.TIME_CODE_FORMAT,
-            Reading.POWER_ON_HOURS,
-            Reading.HEALTH_MONITOR,
-            Reading.STATUS_REGISTERS,
-            Reading.DIAGNOSTIC_LOG,
-            Reading.ERROR_QUEUE,
-            Reading.ELEVATION_MASK,
-            Reading.POSITION_HOLD,
+            ReceiverReading.DEVICE_IDENTITY,
+            ReceiverReading.LEAP_SECOND,
+            ReceiverReading.TIME_CODE_FORMAT,
+            ReceiverReading.POWER_ON_HOURS,
+            ReceiverReading.HEALTH_MONITOR,
+            ReceiverReading.STATUS_REGISTERS,
+            ReceiverReading.DIAGNOSTIC_LOG,
+            ReceiverReading.ERROR_QUEUE,
+            ReceiverReading.ELEVATION_MASK,
+            ReceiverReading.POSITION_HOLD,
             # And no status screen, so §11.1's parse-health line is about nothing.
-            Reading.STATUS_SCREEN,
+            ReceiverReading.STATUS_SCREEN,
         }
     )
 
-    def reports(self, reading: Reading) -> bool:
+    def reports(self, reading: ReceiverReading) -> bool:
         """§11: what a talker can never supply is declined, not dashed."""
         return reading not in self.NEVER_REPORTS
 

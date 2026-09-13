@@ -401,6 +401,8 @@ def _announce(
             # Both halves are wanted: §10.4's card is emptied (this branch) and an intentional
             # disconnect is not filed as a fault (#28, on main).
             window.set_identity(None, None)
+            # Nothing is known about a family that is not there, so every destination comes back.
+            window.set_driver(None)
             if stopped_by_user():
                 changes.user_disconnected()
             else:
@@ -424,6 +426,8 @@ def _announce(
         window.set_connection_text(f"Connected to {named} — {session.description}")
         changes.connected(session.description, identity.model if identity is not None else None)
         window.set_command_runner(SessionCommands(session))
+        # §11: the pages this family can never fill are dimmed rather than disabled (#60).
+        window.set_driver(session.driver)
         # P0-1: the identity has to reach a surface, not only the status bar and the log. §10.4's
         # *Receiver* card is that surface, and until this line nothing filled it.
         window.set_identity(identity, session.identity_text)

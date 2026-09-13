@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Final
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QKeySequence, QShowEvent
+from PySide6.QtGui import QAction, QColor, QKeySequence, QShowEvent
 from PySide6.QtWidgets import (
     QFileDialog,
     QHBoxLayout,
@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.export import machine_rows, suggested_filename, to_csv
@@ -275,6 +276,46 @@ class DetailsWindow(QMainWindow):
     #: Set by whoever owns this window: F1 opens one guide, and which window it belongs to is not
     #: this one's decision.
     help_requested: Callable[[], None] | None = None
+
+    def apply_driver(self, driver: ReceiverDriver | None) -> None:
+        """§11: dim the destinations the connected family can never fill (#60).
+
+        **Dimmed, not disabled**, and the specification gives the reason: *"a disabled item takes
+        no pointer input and so cannot carry the tooltip explaining itself"*. A greyed item a user
+        can still click, landing on a page that names the family, tells them whose limitation it
+        is. A disabled one tells them nothing and reads as a broken application.
+
+        That is the same argument `views/capability.py` already makes about controls, one level up,
+        which is why the rule for readings and the rule for controls do not conflict after all.
+
+        Called with ``None`` on disconnect, which restores every destination: nothing is known
+        about a family that is not there, and leaving pages dimmed from the last receiver would be
+        the stale-state defect #61 exists to prevent.
+        """
+        family = driver.name if driver is not None else ""
+        for row, page in enumerate(self._pages):
+            # Row *n* is `self._pages[n]` by construction — __init__ adds one item per page, in
+            # order, and the console's row is appended after them — so this is never None. Qt's
+            # stubs say so too, which is why there is no guard: a branch the types prove dead reads
+            # as caution and is noise.
+            item = self._navigation.item(row)
+            unavailable = bool(
+                driver is not None
+                and page.needs
+                and not any(driver.reports(reading) for reading in page.needs)
+            )
+            palette = palette_for(self._theme)
+            item.setForeground(
+                QColor(palette.text_disabled if unavailable else palette.text_primary)
+            )
+            item.setToolTip(page.unavailable_because(family) if unavailable else "")
+            # The accessible name carries it too: dimming is a colour, and §9.13 forbids colour
+            # from being the only channel.
+            item.setData(
+                Qt.ItemDataRole.AccessibleTextRole,
+                f"{page.title}, unavailable" if unavailable else page.title,
+            )
+            page.set_unavailable(page.unavailable_because(family) if unavailable else None)
 
     def _open_help(self) -> None:
         if self.help_requested is not None:

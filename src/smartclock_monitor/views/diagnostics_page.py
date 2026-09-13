@@ -43,7 +43,7 @@ from PySide6.QtWidgets import (
 
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import ReceiverDriver
-from smartclock_device.drivers.capability import Capability, CommandGroup
+from smartclock_device.drivers.capability import Capability, CommandGroup, ReceiverReading
 from smartclock_device.models.diagnostic_log_entry import DiagnosticLogEntry
 from smartclock_device.parsing.diagnostic_log import parse_all
 from smartclock_device.parsing.scalars import parse_integer
@@ -70,6 +70,13 @@ _LOG_COLUMNS = ("", "#", "When", "Entry")
 
 class DiagnosticsPage(Page):
     """§10.9."""
+
+    needs = (
+        ReceiverReading.DIAGNOSTIC_LOG,
+        ReceiverReading.ERROR_QUEUE,
+        ReceiverReading.STATUS_SCREEN,
+        ReceiverReading.HEALTH_MONITOR,
+    )
 
     title = "Diagnostics"
 

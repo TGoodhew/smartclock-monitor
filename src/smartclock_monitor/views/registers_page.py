@@ -35,7 +35,7 @@ from PySide6.QtWidgets import (
 
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import ReceiverDriver
-from smartclock_device.drivers.capability import CommandGroup
+from smartclock_device.drivers.capability import CommandGroup, ReceiverReading
 from smartclock_device.models import status_register_map as registers
 from smartclock_device.models.status_register_map import StatusRegisterMap
 from smartclock_device.models.status_register_reading import StatusRegisterReading
@@ -61,6 +61,8 @@ _BITS = 15
 
 class StatusRegistersPage(Page):
     """§10.10."""
+
+    needs = (ReceiverReading.STATUS_REGISTERS,)
 
     title = "Status Registers"
 

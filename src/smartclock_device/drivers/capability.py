@@ -93,7 +93,7 @@ class CommandGroup(Enum):
     REGISTER_SETTERS = "status register setters"
 
 
-class Reading(Enum):
+class ReceiverReading(Enum):
     """A reading the interface shows, which a family may have no way of ever supplying (#60).
 
     **The read-side counterpart of :class:`Capability`.** That one answers *"what may I send"*, and
@@ -190,4 +190,4 @@ class Reading(Enum):
 
 #: Every reading. Named so a gate can walk them without the enum being iterated at a call site,
 #: where iterating would be the scatter of conditionals the driver seam exists to prevent.
-ALL_READINGS: tuple[Reading, ...] = tuple(Reading)
+ALL_READINGS: tuple[ReceiverReading, ...] = tuple(ReceiverReading)
