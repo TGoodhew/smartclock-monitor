@@ -41,6 +41,7 @@ from smartclock_device.drivers.uccm.profile import (
 )
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus
+from smartclock_device.parsing.uccm_screen import UccmScreenParser
 from smartclock_device.transport.settings import Parity, SerialSettings, StopBits
 from smartclock_device.transport.transaction import Transaction
 
@@ -265,14 +266,9 @@ class UccmDriver(QueryResponseDefaults):
     def parse_full(
         self, transaction: Transaction, previous: ReceiverStatus | None
     ) -> ReceiverStatus:
-        """**Not yet.** The screen is captured and the parser is a separate change.
-
-        Returns a status carrying only the moment it was taken, which renders as §11.1's dashes
-        throughout — the honest picture for a family this port can recognise and cannot yet read.
-        Guessing at the columns from a screenshot would be exactly the guess D7 forbids.
-        """
-        del transaction, previous
-        return ReceiverStatus(captured_at=self.clock.utc_now())
+        """One status screen, read by `parsing/uccm_screen.py`. **Never raises** (§11.1)."""
+        del previous
+        return UccmScreenParser(self.clock).parse(transaction.text)
 
     def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
         del results

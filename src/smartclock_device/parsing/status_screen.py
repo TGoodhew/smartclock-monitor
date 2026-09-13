@@ -887,6 +887,20 @@ def _parse_leap_pending(lines: list[str]) -> LeapSecondPending:
 # ---------------------------------------------------------------------------------------------
 
 
+def parse_position_block(lines: list[str]) -> tuple[GeoPosition | None, HeightDatum]:
+    """The `LAT` / `LON` / `HGT` block, for any family that prints one in this shape.
+
+    **Public because a second family prints the same block.** A UCCM's screen carries
+    `LAT      S  34:32:39.019` and `HGT               +49.72 m (MSL)` — the same sexagesimal form
+    with the same hemisphere letter and the same parenthesised datum. Writing a second parser for
+    it would be a second place for the degrees-minutes-seconds conversion to be wrong, and they
+    would not be wrong in the same way.
+
+    Warnings are dropped here; a caller that wants them uses the private form below.
+    """
+    return _parse_position(lines, [])
+
+
 def _parse_position(
     lines: list[str], warnings: list[str]
 ) -> tuple[GeoPosition | None, HeightDatum]:
