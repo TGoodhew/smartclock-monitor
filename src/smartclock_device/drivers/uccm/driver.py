@@ -271,6 +271,13 @@ class UccmDriver(QueryResponseDefaults):
             ReceiverReading.CONSTELLATION_INTEGRITY,
             ReceiverReading.FIX_QUALITY,
             ReceiverReading.GPS_UTC_OFFSET,
+            # **An absence-of-evidence call, marked as one.** No capture in the corpus carries an
+            # oscillator control voltage — not on the screen, not in any reply — so this port has
+            # no way to read one and a dash would say "not yet" about a figure that is not coming.
+            # It is the weakest decline in this set: it rests on seven sittings not showing a
+            # field rather than on a receiver saying it has none, and it is the first thing to
+            # revisit if a UCCM ever reaches a bench.
+            ReceiverReading.OSCILLATOR_CONTROL,
         }
     )
 

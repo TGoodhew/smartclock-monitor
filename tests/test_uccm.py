@@ -287,3 +287,19 @@ def application() -> object:
         return qt.QApplication([])
     except Exception as error:  # pragma: no cover - depends on the machine, not the code
         pytest.skip(f"Qt could not start a platform plugin: {error}")
+
+
+def test_the_oscillator_control_decline_is_marked_as_the_weakest_one() -> None:
+    """It rests on seven sittings **not showing a field** rather than on a receiver saying it has
+    none, which is a different kind of evidence from the rest of the set.
+
+    The captured screen shows TFOM, FFOM, an antenna delay, an elevation mask and a phase figure;
+    it shows no oscillator control voltage anywhere. So a dash would say *not yet* about a reading
+    that is not coming — but it is the first decline to revisit if a UCCM ever reaches a bench.
+    """
+    subject = driver()
+
+    assert subject.reports(ReceiverReading.OSCILLATOR_CONTROL) is False
+    assert subject.reports(ReceiverReading.ONE_PPS_INTERVAL) is True, (
+        "the screen carries a phase figure, so this one is unparsed rather than absent"
+    )
