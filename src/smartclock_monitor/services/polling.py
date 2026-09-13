@@ -22,6 +22,7 @@ from typing import ClassVar
 from smartclock_device.clock import Clock
 from smartclock_device.commands import catalog
 from smartclock_device.drivers.base import ReceiverDriver
+from smartclock_device.drivers.nmea.sentences import TIME_POLL_KEY as POLL_KEY
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.parsing.scalars import parse_decimal, parse_integer, parse_keyword
 from smartclock_device.transport.transaction import Transaction
@@ -161,6 +162,26 @@ class PollingService:
             else:
                 await self.poll_fast()
 
+    async def will_answer_the_poll(self) -> bool:
+        """§7.2's **fourth** gate: will *this particular module* understand the sentence (D8).
+
+        Deliberately **not** the driver's. `NmeaDriver` offers `$PUBX,04` for its catalogued entry
+        on any talker, because willingness-to-transmit is a fact about the *family*. Whether the
+        receiver on the other end is a u-blox is a fact about *this receiver*, and a driver is a
+        singleton — one that remembered the answer would carry one module's to the next, which is
+        the defect #61 was about.
+
+        The evidence is the power-on banner, which lives on the status because the status is
+        per-session. A receiver that was already running when the application connected has no
+        banner here, and the honest answer is then **no**: not "probably", and not "ask and see".
+        Asking anyway would put a proprietary sentence on a link belonging to a module that never
+        said it was u-blox, which is precisely the trade D8 made and precisely the limit it set.
+        """
+        status = self._status
+        if status is None:
+            return False
+        return any("U-BLOX" in line.upper() for line in status.banner)
+
     async def poll_full(self) -> None:
         """Read the full status and publish it.
 
@@ -172,6 +193,14 @@ class PollingService:
             self.on_identity()
 
         plan = self.driver.plan
+
+        # §7.2 gate 4, before the full read so the answer lands in the same cycle. Asked every slow
+        # tick rather than once: a banner can arrive late, and a session that joined a running
+        # receiver may never see one at all.
+        offers_poll = self.driver.outgoing_text_for(POLL_KEY) is not None
+        if offers_poll and await self.will_answer_the_poll():
+            await self.session.execute(POLL_KEY)
+
         result = await self.session.execute(plan.full.mnemonic)
         if isinstance(result, Refusal) or not result.succeeded:
             return

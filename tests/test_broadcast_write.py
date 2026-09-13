@@ -24,7 +24,9 @@ from smartclock_device.drivers.nmea import sentences
 from smartclock_device.drivers.nmea.driver import NmeaDriver
 from smartclock_device.drivers.registry import Registry
 from smartclock_device.drivers.smartclock import SmartClockDriver
+from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.transport.fake import FakeTransport
+from smartclock_monitor.services.polling import PollingService
 from smartclock_monitor.services.session import DeviceSession
 
 
@@ -205,3 +207,61 @@ def test_a_driver_offering_text_for_an_uncatalogued_key_sends_nothing() -> None:
         assert not any(sentences.TIME_POLL in w for w in transport.written)
 
     asyncio.run(run())
+
+
+# ---- Gate 4: will *this* module answer? ---------------------------------------------------------
+
+
+def test_a_module_that_never_said_it_was_ublox_is_not_asked() -> None:
+    """§7.2's fourth gate, and the honest answer for a session that joined a running receiver.
+
+    A banner is printed once, in the talker's first second. A receiver that was already up when the
+    application connected has none here, and "no banner" must mean **no** rather than "probably" or
+    "ask and see" — asking anyway would put a proprietary sentence on a link belonging to a module
+    that never said it was u-blox, which is exactly the limit D8 set.
+    """
+
+    async def run() -> None:
+        session, transport = _session(talker())
+        await session.open(probe=timedelta(seconds=1))
+        service = PollingService(session=session, driver=talker(), clock=FixedClock(NOW))
+
+        assert await service.will_answer_the_poll() is False, "no status yet, so no banner"
+
+        service._status = ReceiverStatus(captured_at=NOW, banner=("some other maker",))
+        assert await service.will_answer_the_poll() is False
+
+        del transport
+
+    asyncio.run(run())
+
+
+def test_a_module_whose_banner_says_ublox_is_asked() -> None:
+    """The bench's own forM8N banner, verbatim from `form8n-wsl-bench.nmea`."""
+
+    async def run() -> None:
+        session, _ = _session(talker())
+        await session.open(probe=timedelta(seconds=1))
+        service = PollingService(session=session, driver=talker(), clock=FixedClock(NOW))
+        service._status = ReceiverStatus(
+            captured_at=NOW,
+            banner=("u-blox AG - www.u-blox.com", "HW UBX-M8130 00080000"),
+        )
+
+        assert await service.will_answer_the_poll() is True
+
+    asyncio.run(run())
+
+
+def test_the_gate_is_the_pollers_and_not_the_drivers() -> None:
+    """A driver is a singleton; one that remembered a banner would carry one module's to the next.
+
+    So the driver offers the text for *any* talker, and the poller decides whether to ask. Both
+    halves are asserted here because either alone would look correct.
+    """
+    driver = talker()
+
+    assert driver.outgoing_text_for(sentences.TIME_POLL_KEY) is not None, (
+        "the driver's willingness is a fact about the family, not about this receiver"
+    )
+    assert not hasattr(driver, "banner"), "and it must not be remembering one"

@@ -271,10 +271,27 @@ class TimePage(Page):
             )
 
     def _redraw_leap(self) -> None:
-        self._leap_fields.set(
-            "GPS − UTC",
-            DASH if self._accumulated is None else f"{self._accumulated:+d} s accumulated",
-        )
+        # **Two families answer this differently and one of them had no answer at all.** A
+        # SmartClock is asked, and `self._accumulated` holds what it said. A talker broadcasts
+        # nothing of the sort — no standard sentence carries GPS − UTC — so until D8 it drew a dash
+        # for ever. It is now polled, and the figure arrives on the status like any other reading.
+        #
+        # The receiver's own answer wins where there is one; the polled figure fills in where the
+        # family has no query to ask.
+        polled = self._status.gps_utc_offset_seconds if self._status is not None else None
+        is_default = self._status.gps_utc_is_default if self._status is not None else False
+        accumulated = self._accumulated if self._accumulated is not None else polled
+
+        if accumulated is None:
+            shown = DASH
+        else:
+            shown = f"{accumulated:+d} s accumulated"
+            if self._accumulated is None and is_default:
+                # A firmware default is a guess the receiver is making, and §11.1's rule about
+                # not dressing an absence as a fact applies to a value dressed as a measurement.
+                shown += " (firmware default)"
+
+        self._leap_fields.set("GPS − UTC", shown)
 
         pending = self._status.leap_pending if self._status is not None else None
         announced = self._announced or (

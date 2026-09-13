@@ -561,3 +561,53 @@ def test_a_session_that_joined_late_simply_has_no_banner() -> None:
 
     assert previous is not None, "the slice should still close cycles"
     assert previous.banner == (), "no banner, and nothing pretending there is one"
+
+
+# ---- #62 / D8: GPS − UTC, the reading the send path was traded for ------------------------------
+
+
+def test_the_poll_reply_carries_gps_minus_utc() -> None:
+    """`form8n-time-poll.nmea` is six polls and six replies, taken on this bench.
+
+    **The first capture here containing something this application sent.** Everything else is a
+    receiver talking unprompted; D8 traded away the guarantee that made that true, and 18 seconds
+    is what it was traded for.
+    """
+    statuses = _replay("form8n-time-poll")
+
+    offsets = {s.gps_utc_offset_seconds for s in statuses if s.gps_utc_offset_seconds is not None}
+
+    assert offsets == {18}, "both bench modules answered 18, a firmware generation apart"
+    assert not any(s.gps_utc_is_default for s in statuses), "decoded from satellites, not a default"
+
+
+def test_the_offset_survives_the_cycles_between_polls() -> None:
+    """Asked on the slow tier, so most cycles carry no reply and the last answer still holds.
+
+    Without the carry-forward §10.14 would flicker between a figure and a dash once a second, which
+    is the same defect `apply_fast` was written to avoid on the other family.
+    """
+    statuses = _replay("form8n-time-poll")
+    after_first = statuses[len(statuses) // 2 :]
+
+    assert all(s.gps_utc_offset_seconds == 18 for s in after_first), (
+        "the offset disappeared on a cycle that carried no reply"
+    )
+
+
+def test_a_firmware_default_is_marked_as_one() -> None:
+    """**Synthetic.** Neither bench module produced a `D` suffix — both had been tracking for hours.
+
+    It matters because a default is a *guess the receiver is making* about a value a timing
+    application displays as fact, and the two must not render the same.
+    """
+    from smartclock_device.drivers.nmea.driver import _gps_utc
+
+    body = "PUBX,04,213835.00,130926,77915.00,2436,18D,-296402,-68.588,21"
+    parsed = sentences.parse(f"${body}*{sentences.checksum_of(body):02X}")
+    assert parsed is not None
+
+    offset, is_default = _gps_utc(parsed)
+
+    assert offset == 18
+    assert is_default is True

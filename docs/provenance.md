@@ -133,10 +133,17 @@ no hardware — and it applies more urgently, because four of the ten record a r
 something no one had predicted: sending `GNS` and never `GGA`, advertising a constellation it
 cannot see, losing a fix and regaining it, and crossing UTC midnight.
 
-**Two captures were taken here**, with `tools/capture_talker.py` — the port of upstream's
+**Three captures were taken here**, with `tools/capture_talker.py` — the port of upstream's
 `Capture-Talker.ps1` — from the same two module families on this bench, reached through
 `usbipd`. They are not carried from anywhere and belong upstream if that repository wants them.
 Their value is the cross-check: the same silicon, a different harness, five days later.
+
+**One of the three is unlike everything else in this repository: it contains something this
+application sent.** `form8n-time-poll.nmea` is six `$PUBX,04` polls and six replies, and every
+other capture here — in every corpus — is a receiver talking unprompted. D8 traded away the
+structural guarantee that made that true, and that file is the evidence for the reading it was
+traded for: GPS − UTC, answered as **18** by both bench modules, a firmware generation apart, in
+the same second.
 
 The replay is `tests/test_nmea_captures.py`, and **three of its assertions are expected failures
 by design** — the fixture assertions for #57 and #58, written before the parsing that will fix

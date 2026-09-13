@@ -366,6 +366,7 @@ def test_a_smartclock_declines_exactly_what_a_status_screen_has_no_field_for() -
         ReceiverReading.POSITION_UNCERTAINTY,
         ReceiverReading.CONSTELLATION_INTEGRITY,
         ReceiverReading.FIX_QUALITY,
+        ReceiverReading.GPS_UTC_OFFSET,
     }
 
 
@@ -386,6 +387,7 @@ def test_the_seam_runs_both_ways() -> None:
         ReceiverReading.POSITION_UNCERTAINTY,
         ReceiverReading.CONSTELLATION_INTEGRITY,
         ReceiverReading.FIX_QUALITY,
+        ReceiverReading.GPS_UTC_OFFSET,
     }
 
 

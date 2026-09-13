@@ -315,6 +315,12 @@ class NmeaDriver:
         banner = _banner(by_kind.get(sentences.TXT, ())) or (
             previous.banner if previous is not None else ()
         )
+        # The poll's answer arrives in the stream like everything else, and is carried forward:
+        # it is asked on the slow tier, so most cycles have none and the last answer still holds.
+        polled = by_kind.get(sentences.TIME_POLL_KEY, ())
+        offset, from_default = _gps_utc(polled[0] if polled else None)
+        if offset is None and previous is not None:
+            offset, from_default = previous.gps_utc_offset_seconds, previous.gps_utc_is_default
 
         return ReceiverStatus(
             captured_at=self.clock.utc_now(),
@@ -339,6 +345,8 @@ class NmeaDriver:
             height_datum=HeightDatum.MSL if _position(fix) is not None else HeightDatum.UNKNOWN,
             health_ok=_has_fix(fix),
             fix_quality=_fix_quality(fix),
+            gps_utc_offset_seconds=offset,
+            gps_utc_is_default=from_default,
             banner=banner,
             uncertainty=_uncertainty(gst[0] if gst else None),
             integrity=_integrity(gbs[0] if gbs else None),
@@ -517,6 +525,31 @@ def _fix_quality(fix: sentences.Sentence | None) -> FixQuality:
 
     code = sentences.parse_int(fix.field(5))
     return FixQuality.UNKNOWN if code is None else GGA_QUALITIES.get(code, FixQuality.UNKNOWN)
+
+
+def _gps_utc(poll: sentences.Sentence | None) -> tuple[int | None, bool]:
+    """GPS − UTC from ``$PUBX,04``'s field 5, and whether it is a firmware default.
+
+    Measured rather than read off a datasheet: `tests/fixtures/nmea/form8n-time-poll.nmea` is six
+    polls and six replies from this bench, every one reporting **18**, which the u-blox 7 on the
+    other port answered independently in the same second.
+
+    The field may carry a trailing ``D`` — ``18D`` — meaning the firmware's built-in value rather
+    than one decoded from the satellites. That is a **guess the receiver is making**, and a timing
+    application should say which it has, so the flag is returned beside the number rather than
+    folded into it. Neither bench module produced one; the test that covers it says it is synthetic.
+    """
+    if poll is None:
+        return None, False
+
+    raw = poll.field(5)
+    if raw is None:
+        return None, False
+
+    text = raw.strip().upper()
+    is_default = text.endswith("D")
+    value = sentences.parse_int(text[:-1] if is_default else text)
+    return (None, False) if value is None else (value, is_default)
 
 
 def _banner(txt: Sequence[sentences.Sentence]) -> tuple[str, ...]:

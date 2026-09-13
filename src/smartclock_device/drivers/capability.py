@@ -209,6 +209,13 @@ class ReceiverReading(Enum):
     #: §10.6's receiver-autonomous integrity check, from ``GBS``.
     CONSTELLATION_INTEGRITY = "the constellation's integrity check"
 
+    #: §10.14's accumulated GPS − UTC offset **as a talker reports it**, from the time poll.
+    #:
+    #: Distinct from :attr:`LEAP_SECOND`, which is the SmartClock's own query and covers the
+    #: announcement as well as the offset. This is the one figure a broadcast family can produce,
+    #: and only because D8 gave it a way to ask.
+    GPS_UTC_OFFSET = "the GPS − UTC offset"
+
     #: §10.6's *kind* of fix — standalone, differential, RTK — as distinct from whether there is
     #: one. A status screen reports a disciplining mode, which is a different question entirely.
     FIX_QUALITY = "what kind of fix it has"
@@ -256,4 +263,5 @@ STATUS_FIELDS: dict[ReceiverReading, tuple[str, ...]] = {
     ReceiverReading.POSITION_UNCERTAINTY: ("uncertainty",),
     ReceiverReading.CONSTELLATION_INTEGRITY: ("integrity",),
     ReceiverReading.FIX_QUALITY: ("fix_quality",),
+    ReceiverReading.GPS_UTC_OFFSET: ("gps_utc_offset_seconds", "gps_utc_is_default"),
 }

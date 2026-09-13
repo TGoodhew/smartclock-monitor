@@ -24,6 +24,9 @@ from typing import Final
 
 from smartclock_device.models.satellite import Constellation
 
+#: NMEA's talker for a proprietary sentence: one character, where a standard talker is two.
+PROPRIETARY_TALKER: Final = "P"
+
 #: The sentences this driver understands, keyed as plan entries.
 GGA: Final = "GGA"
 GNS: Final = "GNS"
@@ -56,7 +59,16 @@ TXT: Final = "TXT"
 FIX_KINDS: Final[tuple[str, ...]] = (GGA, GNS)
 
 #: Every key the plan may name.
-KEYS: Final[tuple[str, ...]] = (GGA, GNS, GBS, GSA, GST, GSV, RMC, TXT)
+# ---- The one sentence this family sends (D8, #64) ----------------------------------------------
+
+#: The plan key for the time poll. A **key**, not wire text: §12 says a broadcast family's
+#: catalogue entry is a key and the driver maps it to bytes, which is what keeps §8.1's property —
+#: *no text can be sent for which there is no catalogue entry* — true on a link where the mnemonic
+#: is not the thing sent.
+TIME_POLL_KEY: Final = "UBX"
+
+
+KEYS: Final[tuple[str, ...]] = (GGA, GNS, GBS, GSA, GST, GSV, RMC, TXT, TIME_POLL_KEY)
 
 
 @dataclass(frozen=True, slots=True)
@@ -124,7 +136,17 @@ def parse(line: str | None) -> Sentence | None:
 
     parts = body.split(",")
     header = parts[0]
-    if len(header) < 5:
+
+    # **A standard header is five characters; a proprietary one is four.** NMEA gives a standard
+    # sentence a two-letter talker and a three-letter type — `GPGGA`. A proprietary sentence has a
+    # one-letter talker, `P`, followed by a three-letter manufacturer mnemonic — `PUBX`. A flat
+    # minimum of five rejected every proprietary sentence, which was invisible while none was ever
+    # sent or read, and refused the one poll's reply the moment D8 made it reachable.
+    #
+    # The checksum above has already validated the line, so this length is about *shape* rather
+    # than about trust.
+    smallest = 4 if header.upper().startswith(PROPRIETARY_TALKER) else 5
+    if len(header) < smallest:
         return None
 
     return Sentence(talker=header[:-3].upper(), kind=header[-3:].upper(), fields=tuple(parts[1:]))
@@ -218,13 +240,19 @@ def constellation_for(talker: str | None, prn: int) -> Constellation:
     }.get(talker or "", Constellation.UNKNOWN)
 
 
-# ---- The one sentence this family sends (D8, #64) ----------------------------------------------
+def is_the_time_poll(text: str | None) -> bool:
+    """Whether this is *exactly* the one sentence, terminator and casing aside.
 
-#: The plan key for the time poll. A **key**, not wire text: §12 says a broadcast family's
-#: catalogue entry is a key and the driver maps it to bytes, which is what keeps §8.1's property —
-#: *no text can be sent for which there is no catalogue entry* — true on a link where the mnemonic
-#: is not the thing sent.
-TIME_POLL_KEY: Final = "UBX"
+    **Exact rather than a prefix**, which is stricter than the sibling's rule and deliberately so.
+    A prefix test accepts ``$PUBX,04,SOMETHING`` as readily as the poll itself, and §7.2's
+    verification note warns in the other direction — *"a prefix rule that accepted a truncation
+    would accept far more than one sentence"*. Both holes close with an equality test, and there is
+    exactly one sentence to compare against, so nothing is lost by it.
+    """
+    if text is None:
+        return False
+    return text.strip().upper() == TIME_POLL.upper()
+
 
 #: u-blox's ``$PUBX,04``, the only sentence this port ever transmits.
 #:
@@ -238,17 +266,3 @@ TIME_POLL: Final = f"${TIME_POLL_BODY}*{checksum_of(TIME_POLL_BODY):02X}"
 #: guess about names. Standard sentences are not this predicate's business: they are broadcast,
 #: nothing ever sends one, and §10.11's picker offers only the catalogue.
 PROPRIETARY_PREFIX: Final = "$P"
-
-
-def is_the_time_poll(text: str | None) -> bool:
-    """Whether this is *exactly* the one sentence, terminator and casing aside.
-
-    **Exact rather than a prefix**, which is stricter than the sibling's rule and deliberately so.
-    A prefix test accepts ``$PUBX,04,SOMETHING`` as readily as the poll itself, and §7.2's
-    verification note warns in the other direction — *"a prefix rule that accepted a truncation
-    would accept far more than one sentence"*. Both holes close with an equality test, and there is
-    exactly one sentence to compare against, so nothing is lost by it.
-    """
-    if text is None:
-        return False
-    return text.strip().upper() == TIME_POLL.upper()
