@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import datetime
+from typing import ClassVar
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QKeySequence, QResizeEvent, QShortcut, QShowEvent
@@ -36,6 +37,7 @@ from PySide6.QtWidgets import (
 )
 
 from smartclock_device.drivers.base import ReceiverDriver
+from smartclock_device.drivers.capability import ReceiverReading
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import (
     OutputValidity,
@@ -209,6 +211,8 @@ class MainWindow(QMainWindow):
         self._details: DetailsWindow | None = None
         #: The connected family, so a details window opened later starts in the right state.
         self._driver: ReceiverDriver | None = None
+        #: Whether the connected family can fill none of the four readouts (§11, #60).
+        self._readouts_declined = False
         # Held here rather than in the details window because the details window is created on
         # demand and the store is opened at startup — and because a run whose store failed to open
         # must reach the page as None rather than as an absent attribute.
@@ -604,6 +608,18 @@ class MainWindow(QMainWindow):
         self._details.raise_()
         self._details.activateWindow()
 
+    #: Which reading fills each of §10.3's four readouts.
+    #:
+    #: All four rest on a disciplined oscillator, which is why a talker declines every one of them
+    #: and the card goes entirely — the one case where §11's *declined outright* removes a whole
+    #: surface rather than a row.
+    _READOUT_READINGS: ClassVar[dict[str, ReceiverReading]] = {
+        "tfom": ReceiverReading.TFOM,
+        "ffom": ReceiverReading.FFOM,
+        "interval": ReceiverReading.ONE_PPS_INTERVAL,
+        "efc": ReceiverReading.OSCILLATOR_CONTROL,
+    }
+
     def set_driver(self, driver: ReceiverDriver | None) -> None:
         """Tell the surfaces which family is connected, so §11's declines can be applied (#60).
 
@@ -612,8 +628,35 @@ class MainWindow(QMainWindow):
         next connection.
         """
         self._driver = driver
+        self._apply_declined_readouts(driver)
         if self._details is not None:
             self._details.apply_driver(driver)
+
+    def _apply_declined_readouts(self, driver: ReceiverDriver | None) -> None:
+        """§11: a reading a family can never supply is declined outright rather than dashed.
+
+        **This was left alone when the details pages were done**, and deliberately: the card's
+        visibility already has two owners — compact mode and §9.6.2's height budget — and a
+        history of defects (#20, #21, #30) that all came from something else deciding its size.
+        So a third owner is not added. The individual readouts are hidden, the card goes only when
+        every one of them has, and the height budget is then **re-measured** rather than
+        second-guessed: it asks the layout what it needs, so a shorter card is simply a shorter
+        answer.
+        """
+        for key, readout in self.readouts.items():
+            declined = driver is not None and not driver.reports(self._READOUT_READINGS[key])
+            readout.setVisible(not declined)
+
+        self._readouts_declined = all(
+            not readout.isVisibleTo(self._readouts) for readout in self.readouts.values()
+        )
+
+        # Re-measure, because the card is a different height now. Only once the window has been
+        # shown: before that the layout has never run and the answer would be a guess.
+        if self._settled:
+            self._measure_height_budget()
+            self._size_minimum_height()
+            self._apply_height_budget()
 
     @property
     def preferences(self) -> Preferences:
@@ -736,7 +779,9 @@ class MainWindow(QMainWindow):
         if self._compact or self._full_height is None:
             return
 
-        fits = self.height() >= self._full_height
+        # A family that can fill none of the four gets no card at any height. §11's decline is
+        # about what the receiver can never say, so it does not become sayable on a taller window.
+        fits = self.height() >= self._full_height and not self._readouts_declined
         if fits is not self._readouts.isVisible():
             self._readouts.setVisible(fits)
 

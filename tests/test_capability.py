@@ -486,3 +486,69 @@ def test_disconnecting_restores_every_destination(application: QApplication) -> 
     for row in range(len(window.pages)):
         name = str(window.navigation.item(row).data(Qt.ItemDataRole.AccessibleTextRole))
         assert "unavailable" not in name
+
+
+# ---- #60's last surface: §10.3's four readouts --------------------------------------------------
+
+
+def test_a_talker_gets_no_readout_card_at_all(application: QApplication) -> None:
+    """All four rest on a disciplined oscillator, so a talker declines every one of them.
+
+    **The one case where §11's *declined outright* takes a whole surface rather than a row.** Four
+    dashes in a card headed with figures of merit says "any moment now" about readings that are
+    never coming.
+    """
+    del application
+    from smartclock_monitor.views.main_window import MainWindow
+
+    window = MainWindow(Theme.DARK)
+    window.show()
+
+    window.set_driver(NmeaDriver(clock=FixedClock(NOW)))
+
+    assert all(readout.isHidden() for readout in window.readouts.values())
+
+
+def test_a_smartclock_keeps_all_four(application: QApplication) -> None:
+    del application
+    from smartclock_monitor.views.main_window import MainWindow
+
+    window = MainWindow(Theme.DARK)
+    window.show()
+
+    window.set_driver(SmartClockDriver(clock=FixedClock(NOW)))
+
+    assert not any(readout.isHidden() for readout in window.readouts.values())
+
+
+def test_disconnecting_brings_them_back(application: QApplication) -> None:
+    """Nothing is known about a family that is not there, so nothing is declined."""
+    del application
+    from smartclock_monitor.views.main_window import MainWindow
+
+    window = MainWindow(Theme.DARK)
+    window.show()
+    window.set_driver(NmeaDriver(clock=FixedClock(NOW)))
+
+    window.set_driver(None)
+
+    assert not any(readout.isHidden() for readout in window.readouts.values())
+
+
+def test_the_height_budget_still_owns_the_card(application: QApplication) -> None:
+    """A third owner was **not** added. §9.6.2's budget and compact mode still decide the card;
+    this only decides the readouts inside it, and the budget is re-measured rather than
+    second-guessed — which is why a shorter card is simply a shorter answer.
+
+    #20, #21 and #30 were all defects that came from something else deciding this window's size.
+    """
+    del application
+    from smartclock_monitor.views.main_window import MainWindow
+
+    window = MainWindow(Theme.DARK)
+    window.show()
+    window.set_driver(SmartClockDriver(clock=FixedClock(NOW)))
+
+    window.set_compact(True)
+
+    assert window.readouts_card.isHidden(), "compact still collapses it, as §9.6.2 says"
