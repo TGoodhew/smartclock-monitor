@@ -286,6 +286,67 @@ than growing two. A parser fix found here is worth reporting there, and vice ver
 
 ---
 
+## D7 — A third receiver family, ported without a receiver
+
+**Status: Settled** (13 Sep 2026, [#63](https://github.com/TGoodhew/smartclock-monitor/issues/63)).
+**The UCCM driver is ported, and every surface that can name it says it has never met one.**
+
+WinZ3805A grew a third family after this port's copy was taken: the Trimble UCCM-P and its
+siblings, eight device-layer files backed by **seven bench sittings**. This port takes it, which
+raises the question this decision exists to answer — *on what evidence?*
+
+### The evidence is someone else's, and that is the whole difficulty
+
+There is no UCCM within reach of either bench here, and the only one that is reachable sits behind
+a machine that cannot run WSL. So a driver written here is written entirely against upstream's
+captures, and upstream's own history says what that is worth: of the seven sittings, **three
+corrected a guess that only a receiver could correct** — the variant that had to be read from the
+prompt because asking does not work, the lock byte that cannot answer for holdover, and the two
+states the driver still cannot tell apart. A fourth thing of that kind would not be found here.
+
+This repository's standard is that *"done" means checked on the bench or a clean install.* A UCCM
+driver here **cannot reach done**, and pretending otherwise by leaving it unlabelled would be the
+failure mode — not the absence of hardware, but a user discovering the absence by being told a
+wrong figure by a confident window.
+
+### What was decided
+
+**Port it, and label it.** The alternative considered and rejected was to decline the family and
+record it as a reduction beside D3 and D5. That was the recommendation in the issue, on the
+grounds that a lightweight port is entitled to two families. It was overruled for a reason the
+recommendation had underweighted: a driver that exists and says it is unverified is more useful to
+the one person who owns a UCCM than no driver at all, and the labelling is what makes it honest
+rather than the verification.
+
+**The label is not a comment.** It is user-visible, in three places:
+
+- the connection dialog names the family and says no one here has connected to one;
+- the identity card repeats it while a UCCM is the connected family, because a user who did not
+  open the dialog has not read the dialog;
+- `docs/divergences.md` and `docs/driver-contract.md` say which members were implemented from
+  captures rather than from a receiver.
+
+**Every assertion is traceable to a capture, or it is not made.** A reading upstream measured is
+implemented; a reading upstream inferred is implemented and marked; a reading neither of them has
+seen is left absent under §11.1's rule rather than guessed at. The two states upstream's driver
+cannot tell apart are not to be told apart here either — reproducing a known limitation is correct,
+and quietly resolving it would be the guess this decision is trying to prevent.
+
+### What would change the answer
+
+A UCCM on a bench that this port can reach. At that point the labels come off the members the
+sitting confirms, one by one, and `docs/divergences.md` records which sitting did it. Nothing else
+changes — the driver does not need rewriting to become verified, only exercising.
+
+### What it costs to have taken it
+
+If the captures turn out to mislead, the failure is a receiver that connects and reports wrongly,
+which is worse than one that does not connect. That is the risk being accepted, and the label is
+what makes it survivable: a user who has been told the path is untested can distrust a reading,
+where a user who has not cannot.
+
+---
+
 ## Part 7's mechanical consequences
 
 These follow from the platform rather than from a judgement, and are recorded so nobody
@@ -325,6 +386,7 @@ was someone trying to use the application.
 | D4 | Typeface — **Noto Sans** + Cascadia Mono | **Settled** | [#4](https://github.com/TGoodhew/smartclock-monitor/issues/4) | — |
 | D5 | Tray and notifications — **not shipped** | **Settled** | [#6](https://github.com/TGoodhew/smartclock-monitor/issues/6) | — |
 | D6 | Relationship — §8.4 sync | **Settled** (safety half) | — | Not reversible. See above. |
+| D7 | Third family — **UCCM ported, labelled untested** | **Settled** | [#63](https://github.com/TGoodhew/smartclock-monitor/issues/63) | Cheap: the labels come off as sittings confirm members. |
 
 **Every provisional row was chosen to be cheap to reverse**, which is the only honest way to take a
 decision on someone else's behalf — and all five were reviewed on 1 Sep 2026. Two were reversed

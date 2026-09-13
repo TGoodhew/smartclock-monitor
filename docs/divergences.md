@@ -22,7 +22,7 @@ its reasoning in [`platform-decisions.md`](platform-decisions.md) and its argume
 | **Device-literal typeface** | Cascadia Mono | Cascadia Mono | **Same** — D4 |
 | **Packaging** | MSIX, Microsoft Store | **AppImage**, built from PyInstaller | Different — D2, #27 |
 | **Platforms** | Windows | Linux, Windows, macOS | *Addition* |
-| **Receiver families** | SmartClock | SmartClock **and NMEA 0183** | *Addition* |
+| **Receiver families** | SmartClock, NMEA 0183, UCCM | SmartClock, NMEA 0183, **UCCM (untested)** | Same set — D7 |
 | **How pages name commands** | SCPI mnemonics | `Capability` enum | Different — see below |
 | **System accent colour (P1-11)** | Opt-in | Not offered | Neutral — nothing to read |
 | **Sequential ramp on Dark** | One ramp, both themes | Derived per surface | *Fix* — see below |
@@ -143,6 +143,32 @@ fixed there, and `build/palette/` is byte-identical again in both directions —
 [#372](https://github.com/TGoodhew/WinZ3805A/pull/372) for the diverging one, whose derivation was
 written upstream and carried here. The colours agree; what this section now records is where two
 defects were found rather than where two repositories differ.
+
+---
+
+## The UCCM family is here, and has never been connected to
+
+Upstream's UCCM driver is the product of seven bench sittings. This port's is the product of
+reading them. There is no UCCM within reach of either bench here, so every assertion it makes was
+measured by somebody else, on somebody else's receiver.
+
+That is not a reason to leave the family out — the one person who owns a UCCM is better served by a
+driver that says it is unverified than by no driver — but it is a reason to say so **where a user
+will see it and not only where a maintainer will**. The connection dialog names it, and the
+identity card repeats it while a UCCM is connected, because a user who did not open the dialog has
+not read the dialog.
+
+Three specific things follow, and they are deliberate rather than unfinished:
+
+- **The two states upstream's driver cannot tell apart are not told apart here either.** Reproducing
+  a known limitation is correct; resolving it without a receiver would be a guess wearing the
+  clothes of a fix.
+- **A reading neither repository has measured is absent**, under §11.1's rule, rather than inferred
+  from a datasheet.
+- **Nothing about the UCCM is claimed in the guide** beyond that the family is recognised.
+
+D7 in [`platform-decisions.md`](platform-decisions.md) carries the full argument, including the
+option that was rejected. The labels come off member by member if a sitting ever confirms them.
 
 ---
 
