@@ -620,6 +620,13 @@ class MainWindow(QMainWindow):
         "efc": ReceiverReading.OSCILLATOR_CONTROL,
     }
 
+    def set_receiver_key(self, key: str | None) -> None:
+        """Tell the trend store whose readings it is filing and reading back (#71)."""
+        if self._store is not None:
+            self._store.set_receiver(key)
+        if self._details is not None:
+            self._details.refresh_current()
+
     def set_driver(self, driver: ReceiverDriver | None) -> None:
         """Tell the surfaces which family is connected, so §11's declines can be applied (#60).
 
