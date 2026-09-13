@@ -20,6 +20,7 @@ no driver's business.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Final
@@ -30,7 +31,14 @@ from smartclock_device.drivers.base import WHOLE_CYCLE, Cadence, LinkStyle, Poll
 from smartclock_device.drivers.capability import Capability, CommandGroup, ReceiverReading
 from smartclock_device.drivers.nmea import sentences
 from smartclock_device.models.device_identity import DeviceIdentity
-from smartclock_device.models.fix_quality import ConstellationIntegrity, PositionUncertainty
+from smartclock_device.models.fix_quality import (
+    GGA_QUALITIES,
+    GNS_MODES,
+    ConstellationIntegrity,
+    FixQuality,
+    PositionUncertainty,
+    best_of,
+)
 from smartclock_device.models.position import GeoPosition, HeightDatum, PositionMode
 from smartclock_device.models.receiver_status import (
     OutputValidity,
@@ -258,6 +266,9 @@ class NmeaDriver:
         moment = _timestamp(by_kind.get(sentences.RMC, []), fix)
         gst = by_kind.get(sentences.GST, ())
         gbs = by_kind.get(sentences.GBS, ())
+        banner = _banner(by_kind.get(sentences.TXT, ())) or (
+            previous.banner if previous is not None else ()
+        )
 
         return ReceiverStatus(
             captured_at=self.clock.utc_now(),
@@ -281,6 +292,8 @@ class NmeaDriver:
             # §10.6 records for the SmartClock's own height field.
             height_datum=HeightDatum.MSL if _position(fix) is not None else HeightDatum.UNKNOWN,
             health_ok=_has_fix(fix),
+            fix_quality=_fix_quality(fix),
+            banner=banner,
             uncertainty=_uncertainty(gst[0] if gst else None),
             integrity=_integrity(gbs[0] if gbs else None),
         )
@@ -431,6 +444,41 @@ def _gsa_constellation(sentence: sentences.Sentence, prn: int) -> Constellation:
     if system is not None and system in sentences.SYSTEM_IDS:
         return sentences.SYSTEM_IDS[system]
     return sentences.constellation_for(sentence.talker, prn)
+
+
+def _fix_quality(fix: sentences.Sentence | None) -> FixQuality:
+    """What kind of fix, from whichever sentence reported it.
+
+    `GGA`'s field 5 is an integer code; `GNS`'s is **one character per constellation**, and the fix
+    as a whole is the best any of them managed — a receiver contributing a differential solution on
+    GPS and nothing on GLONASS has produced a differential fix.
+
+    An unrecognised code is `UNKNOWN` rather than `NONE`. The two are different claims: *"this
+    receiver told us something we do not understand"* and *"this receiver has no fix"* would both
+    be drawn as a problem, and only one of them is.
+    """
+    if fix is None:
+        return FixQuality.UNKNOWN
+
+    if fix.kind == sentences.GNS:
+        mode = fix.field(5)
+        if mode is None:
+            return FixQuality.UNKNOWN
+        return best_of(GNS_MODES[c] for c in mode if c in GNS_MODES)
+
+    code = sentences.parse_int(fix.field(5))
+    return FixQuality.UNKNOWN if code is None else GGA_QUALITIES.get(code, FixQuality.UNKNOWN)
+
+
+def _banner(txt: Sequence[sentences.Sentence]) -> tuple[str, ...]:
+    """The text of each `TXT` sentence in this cycle, in order.
+
+    Field 3 is the message; the three before it are the sentence count, the sentence number and a
+    severity. **Empty is the ordinary case** — a talker prints its banner once, in its first
+    second, and never again — so an empty answer means *nothing new this cycle*, not *no banner*,
+    and the caller carries the previous one forward.
+    """
+    return tuple(text for sentence in txt if (text := sentence.field(3)) is not None)
 
 
 def _uncertainty(gst: sentences.Sentence | None) -> PositionUncertainty | None:

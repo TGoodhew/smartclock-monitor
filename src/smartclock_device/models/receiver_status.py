@@ -19,7 +19,11 @@ from datetime import datetime, timedelta
 from enum import Enum
 from types import MappingProxyType
 
-from smartclock_device.models.fix_quality import ConstellationIntegrity, PositionUncertainty
+from smartclock_device.models.fix_quality import (
+    ConstellationIntegrity,
+    FixQuality,
+    PositionUncertainty,
+)
 from smartclock_device.models.position import (
     GeoPosition,
     HeightDatum,
@@ -312,6 +316,19 @@ class ReceiverStatus:
 
     #: Which datum :attr:`GeoPosition.height_metres` is measured against.
     height_datum: HeightDatum = HeightDatum.UNKNOWN
+
+    #: What kind of fix this is — standalone, differential, RTK — as distinct from whether there
+    #: is one (#62).
+    fix_quality: FixQuality = FixQuality.UNKNOWN
+
+    #: The identifying banner the receiver printed at power-on, in the order it printed it.
+    #:
+    #: **A once-only reading.** A talker prints this in its first second and never again, so
+    #: whether it is here at all depends on whether the application was listening at the time.
+    #: Carried forward from the previous status rather than re-read, which is why it survives the
+    #: thousands of cycles that do not repeat it — and why it is on the *status* rather than on the
+    #: driver, which is a singleton that would otherwise hand one receiver's banner to the next.
+    banner: tuple[str, ...] = ()
 
     #: One-sigma position error from ``GST``, or ``None`` where the family cannot report one.
     #:

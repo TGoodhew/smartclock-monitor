@@ -26,7 +26,11 @@ from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_device.drivers.capability import Capability
 from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.models import status_register_map as registers
-from smartclock_device.models.fix_quality import ConstellationIntegrity, PositionUncertainty
+from smartclock_device.models.fix_quality import (
+    ConstellationIntegrity,
+    FixQuality,
+    PositionUncertainty,
+)
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
 from smartclock_device.models.satellite import Constellation, SatelliteId
 from smartclock_device.transport.transaction import Transaction, TransactionOutcome
@@ -36,7 +40,7 @@ from smartclock_monitor.services.session import CommandOutcome, Refusal
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.views.diagnostics_page import DiagnosticsPage
 from smartclock_monitor.views.holdover_page import HoldoverPage
-from smartclock_monitor.views.pages import DASH, PositionPage, TimingPage
+from smartclock_monitor.views.pages import DASH, OverviewPage, PositionPage, TimingPage
 from smartclock_monitor.views.registers_page import StatusRegistersPage
 
 DEAF = object()
@@ -799,3 +803,38 @@ def test_a_faulted_satellite_is_named_with_its_constellation(application: QAppli
     )
 
     assert page.fields.value_of("Integrity") == "G03 excluded, bias -21.4 m"
+
+
+def test_the_overview_shows_a_banner_only_when_one_arrived(application: QApplication) -> None:
+    """#62's once-only reading, and the reason it is hidden rather than dashed.
+
+    "No banner" and "we were not listening when it was printed" are the same picture, and neither
+    is worth a row of dashes. The page is shown first because `isVisible` is false for every child
+    of an unshown widget, which would make this pass for the wrong reason.
+    """
+    del application
+    page = OverviewPage()
+    page.show()
+
+    page.show_reading(
+        Reading(status=ReceiverStatus(captured_at=NOW, banner=("u-blox AG", "HW UBX-M8130")))
+    )
+    assert page.banner.isVisible()
+    assert "UBX-M8130" in page.banner.text()
+
+    page.show_reading(Reading(status=ReceiverStatus(captured_at=NOW)))
+    assert not page.banner.isVisible(), "a family with no banner shows no row at all"
+
+
+def test_the_position_page_names_the_kind_of_fix(application: QApplication) -> None:
+    """§10.6's row. `UNKNOWN` is §11.1's dash, because "cannot report" and "not yet" both are."""
+    del application
+    page = PositionPage()
+
+    page.show_reading(
+        Reading(status=ReceiverStatus(captured_at=NOW, fix_quality=FixQuality.DIFFERENTIAL))
+    )
+    assert page.fields.value_of("Fix quality") == "Differential"
+
+    page.show_reading(Reading(status=ReceiverStatus(captured_at=NOW)))
+    assert page.fields.value_of("Fix quality") == DASH

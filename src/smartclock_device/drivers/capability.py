@@ -199,6 +199,10 @@ class ReceiverReading(Enum):
     #: §10.6's receiver-autonomous integrity check, from ``GBS``.
     CONSTELLATION_INTEGRITY = "the constellation's integrity check"
 
+    #: §10.6's *kind* of fix — standalone, differential, RTK — as distinct from whether there is
+    #: one. A status screen reports a disciplining mode, which is a different question entirely.
+    FIX_QUALITY = "what kind of fix it has"
+
 
 #: Every reading. Named so a gate can walk them without the enum being iterated at a call site,
 #: where iterating would be the scatter of conditionals the driver seam exists to prevent.
@@ -241,4 +245,5 @@ STATUS_FIELDS: dict[ReceiverReading, tuple[str, ...]] = {
     ),
     ReceiverReading.POSITION_UNCERTAINTY: ("uncertainty",),
     ReceiverReading.CONSTELLATION_INTEGRITY: ("integrity",),
+    ReceiverReading.FIX_QUALITY: ("fix_quality",),
 }

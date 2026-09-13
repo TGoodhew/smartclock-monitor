@@ -343,7 +343,7 @@ def test_a_talker_still_reports_what_it_actually_broadcasts() -> None:
     assert SmartClockDriver(clock=FixedClock(NOW)).reports(ReceiverReading.HOLDOVER) is True
 
 
-def test_a_smartclock_declines_exactly_the_two_a_status_screen_has_no_field_for() -> None:
+def test_a_smartclock_declines_exactly_what_a_status_screen_has_no_field_for() -> None:
     """This test was written to fail on the day the enum grew a reading a SmartClock lacks.
 
     It said so: *"when those are added, this test is what will need changing, and that is the point
@@ -360,6 +360,7 @@ def test_a_smartclock_declines_exactly_the_two_a_status_screen_has_no_field_for(
     assert declined == {
         ReceiverReading.POSITION_UNCERTAINTY,
         ReceiverReading.CONSTELLATION_INTEGRITY,
+        ReceiverReading.FIX_QUALITY,
     }
 
 
@@ -379,6 +380,7 @@ def test_the_seam_runs_both_ways() -> None:
     assert talker_only == {
         ReceiverReading.POSITION_UNCERTAINTY,
         ReceiverReading.CONSTELLATION_INTEGRITY,
+        ReceiverReading.FIX_QUALITY,
     }
 
 

@@ -32,6 +32,7 @@ GSA: Final = "GSA"
 GST: Final = "GST"
 GSV: Final = "GSV"
 RMC: Final = "RMC"
+TXT: Final = "TXT"
 
 #: **The fix sentence, however this talker spells it** — and there are two spellings.
 #:
@@ -55,7 +56,7 @@ RMC: Final = "RMC"
 FIX_KINDS: Final[tuple[str, ...]] = (GGA, GNS)
 
 #: Every key the plan may name.
-KEYS: Final[tuple[str, ...]] = (GGA, GNS, GBS, GSA, GST, GSV, RMC)
+KEYS: Final[tuple[str, ...]] = (GGA, GNS, GBS, GSA, GST, GSV, RMC, TXT)
 
 
 @dataclass(frozen=True, slots=True)
