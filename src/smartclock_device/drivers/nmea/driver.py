@@ -71,11 +71,13 @@ def _key_command(key: str) -> ScpiCommand:
     )
 
 
-#: GGA first, because §12 requires the plan's first fast-tier entry to delimit a cycle and GGA is
-#: the sentence every talker emits exactly once per cycle.
+#: **The boundaries are declared rather than implied.** §12's default is the first fast-tier entry,
+#: which is the same thing as naming GGA only while a family has one spelling of its fix sentence.
+#: This one has two — see `sentences.FIX_KINDS` — and a receiver sending the other read as silence.
 PLAN: Final = PollPlan(
     fast=tuple(_key_command(key) for key in sentences.KEYS),
     full=_key_command(WHOLE_CYCLE),
+    boundaries=sentences.FIX_KINDS,
 )
 
 
@@ -127,7 +129,9 @@ class NmeaDriver:
             if parsed is None or parsed.kind not in sentences.KEYS:
                 continue
             seen += 1
-            if parsed.kind == sentences.GGA:
+            # Either spelling claims the link. Requiring GGA meant a GNS talker was never claimed
+            # at all, so auto-detect walked past a working receiver (#58).
+            if parsed.kind in sentences.FIX_KINDS:
                 fix = True
                 self._identified = parsed.talker
 
@@ -222,8 +226,7 @@ class NmeaDriver:
             if parsed is not None and parsed.kind in sentences.KEYS:
                 by_kind.setdefault(parsed.kind, []).append(parsed)
 
-        found = by_kind.get(sentences.GGA, ())
-        gga = found[0] if found else None
+        fix = _fix_sentence(by_kind)
         used = _satellites_in_use(by_kind.get(sentences.GSA, []))
         visible = _visible(by_kind.get(sentences.GSV, []))
 
@@ -239,13 +242,13 @@ class NmeaDriver:
             if prn not in used
         )
 
-        moment = _timestamp(by_kind.get(sentences.RMC, []), gga)
+        moment = _timestamp(by_kind.get(sentences.RMC, []), fix)
 
         return ReceiverStatus(
             captured_at=self.clock.utc_now(),
-            mode=_mode(gga),
-            outputs=OutputValidity.VALID if _has_fix(gga) else OutputValidity.UNKNOWN,
-            gps_one_pps_valid=_has_fix(gga),
+            mode=_mode(fix),
+            outputs=OutputValidity.VALID if _has_fix(fix) else OutputValidity.UNKNOWN,
+            gps_one_pps_valid=_has_fix(fix),
             tracked=tracked,
             not_tracked=not_tracked,
             # GSV reports carrier-to-noise density in dB-Hz, which is the C/N scale §11.1 names —
@@ -256,13 +259,13 @@ class NmeaDriver:
             time_scale=TimeScale.UTC,
             device_date_time=moment,
             corrected_date_time=moment,
-            position=_position(gga),
+            position=_position(fix),
             position_mode=PositionMode.UNKNOWN,
             # GGA's altitude is above mean sea level and the sentence carries the geoid separation
             # separately, so the datum is knowable rather than assumed — which is the same care
             # §10.6 records for the SmartClock's own height field.
-            height_datum=HeightDatum.MSL if _position(gga) is not None else HeightDatum.UNKNOWN,
-            health_ok=_has_fix(gga),
+            height_datum=HeightDatum.MSL if _position(fix) is not None else HeightDatum.UNKNOWN,
+            health_ok=_has_fix(fix),
         )
 
     def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
@@ -278,12 +281,43 @@ class NmeaDriver:
 # ---- The mapping decisions, each one this driver's --------------------------------------------
 
 
-def _has_fix(gga: sentences.Sentence | None) -> bool:
-    quality = sentences.parse_int(gga.field(5)) if gga is not None else None
+#: The GNS mode character for a constellation that contributed nothing.
+#:
+#: The field is **one character per constellation**, not a fixed code — `DN` from a VK-162 with two
+#: and `ANNN` from a forM8N with four. So the question "is there a fix" is *"is any character not
+#: this one"*, and a reader expecting a fixed-width code would get the wrong answer on one of the
+#: two receivers in the corpus.
+NO_CONSTELLATION_FIX: Final = "N"
+
+
+def _fix_sentence(by_kind: dict[str, list[sentences.Sentence]]) -> sentences.Sentence | None:
+    """Whichever fix sentence this talker sends, in the order `FIX_KINDS` gives them.
+
+    A receiver sends GGA or GNS, and twelve captures say never both. Where both did arrive this
+    prefers GGA, because its quality field is an integer with a defined meaning and GNS's mode
+    string has to be interpreted — given a choice, take the reading that needs no interpreting.
+    """
+    for kind in sentences.FIX_KINDS:
+        found = by_kind.get(kind, ())
+        if found:
+            return found[0]
+    return None
+
+
+def _has_fix(fix: sentences.Sentence | None) -> bool:
+    """Whether the fix sentence reports one, in whichever way its spelling reports it."""
+    if fix is None:
+        return False
+
+    if fix.kind == sentences.GNS:
+        mode = fix.field(5)
+        return mode is not None and any(c != NO_CONSTELLATION_FIX for c in mode)
+
+    quality = sentences.parse_int(fix.field(5))
     return quality is not None and quality > 0
 
 
-def _mode(gga: sentences.Sentence | None) -> SmartClockMode:
+def _mode(fix: sentences.Sentence | None) -> SmartClockMode:
     """§12's #304 item 3: the mode is the driver's.
 
     "Locked" means a disciplined oscillator to a SmartClock and a position fix to a talker, and
@@ -291,24 +325,30 @@ def _mode(gga: sentences.Sentence | None) -> SmartClockMode:
     no fix is *searching*, which is RECOVERY's shape — it is not in holdover, because it has no
     oscillator to hold over on.
     """
-    if gga is None:
+    if fix is None:
         return SmartClockMode.UNKNOWN
-    return SmartClockMode.LOCKED if _has_fix(gga) else SmartClockMode.RECOVERY
+    return SmartClockMode.LOCKED if _has_fix(fix) else SmartClockMode.RECOVERY
 
 
-def _position(gga: sentences.Sentence | None) -> GeoPosition | None:
-    if gga is None:
+def _position(fix: sentences.Sentence | None) -> GeoPosition | None:
+    """Latitude, longitude and height, from either spelling.
+
+    The three fields sit at the same indices in both sentences, which is why this needs no branch
+    where :func:`_has_fix` does. What differs is the field *after* the height: GGA puts the unit
+    there and GNS the geoid separation — neither of which is read here, so neither matters yet.
+    """
+    if fix is None:
         return None
 
-    latitude = sentences.parse_degrees(gga.field(1), gga.field(2))
-    longitude = sentences.parse_degrees(gga.field(3), gga.field(4))
+    latitude = sentences.parse_degrees(fix.field(1), fix.field(2))
+    longitude = sentences.parse_degrees(fix.field(3), fix.field(4))
     if latitude is None or longitude is None:
         return None
 
     return GeoPosition(
         latitude_degrees=latitude,
         longitude_degrees=longitude,
-        height_metres=sentences.parse_float(gga.field(8)),
+        height_metres=sentences.parse_float(fix.field(8)),
     )
 
 

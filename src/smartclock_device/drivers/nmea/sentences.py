@@ -23,17 +23,35 @@ from dataclasses import dataclass
 from typing import Final
 
 #: The sentences this driver understands, keyed as plan entries.
-#:
-#: **GGA is the boundary.** §12 requires the plan's first fast-tier entry to be a line the talker
-#: sends exactly once per cycle, every cycle — GGA is the fix sentence and is the one every talker
-#: emits, which is why it is the discriminator as well as the boundary.
 GGA: Final = "GGA"
+GNS: Final = "GNS"
 GSA: Final = "GSA"
 GSV: Final = "GSV"
 RMC: Final = "RMC"
 
+#: **The fix sentence, however this talker spells it** — and there are two spellings.
+#:
+#: §12 requires a cycle to be delimited by a line the talker sends exactly once per cycle, every
+#: cycle, and this comment used to say that line is GGA because *"GGA is the fix sentence and is
+#: the one every talker emits"*. **Two receivers in `tests/fixtures/nmea/` do not emit it at all**
+#: — a VK-162 and a forM8N, each configured for GNS — and against those the boundary never came
+#: round, no cycle ever closed, and the application showed nothing while connected to a talker
+#: reporting a good fix every second (#58).
+#:
+#: A multi-constellation talker sends GNS where a GPS-only one sends GGA. The two carry the fix at
+#: the same field positions and disagree about exactly one: GGA's field 5 is an integer quality,
+#: GNS's is a **mode string with one character per constellation** — `DN` on the VK-162, `ANNN` on
+#: the forM8N — where `N` is that constellation contributing nothing.
+#:
+#: Both are boundaries rather than one being folded into the other, so a talker that sent both
+#: would still close one cycle per second: the listener closes when a boundary key repeats *its
+#: own* key, so GGA,GNS,…,GGA closes on the second GGA with the GNS inside it. No receiver in the
+#: corpus does that — twelve captures, every one strictly GGA or strictly GNS — but the cost of
+#: being right about it was one tuple rather than one string.
+FIX_KINDS: Final[tuple[str, ...]] = (GGA, GNS)
+
 #: Every key the plan may name.
-KEYS: Final[tuple[str, ...]] = (GGA, GSA, GSV, RMC)
+KEYS: Final[tuple[str, ...]] = (GGA, GNS, GSA, GSV, RMC)
 
 
 @dataclass(frozen=True, slots=True)

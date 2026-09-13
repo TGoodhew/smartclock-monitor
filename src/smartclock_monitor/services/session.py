@@ -451,9 +451,11 @@ class DeviceSession:
         """
         self._listener = BroadcastListener(
             clock=self._clock,
-            # §12: the plan's first fast-tier entry delimits a cycle. The driver names it; nothing
-            # here knows which sentence that is, which is the whole point of the seam.
-            boundary=self._driver.plan.fast[0].mnemonic,
+            # §12: the plan delimits its own cycle. The driver names the keys; nothing here knows
+            # which sentences those are, which is the whole point of the seam — and #58 is what it
+            # bought: a family that spells its boundary two ways said so in its plan, and this line
+            # did not change.
+            boundaries=self._driver.plan.cycle_boundaries,
         )
 
         # **Seeded with what was overheard**, and both halves matter. Those sentences are real data

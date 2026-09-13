@@ -87,6 +87,25 @@ class PollPlan:
     #: The query whose answer keys the §7.3.1 suppression, or ``None``.
     state_query: ScpiCommand | None = None
 
+    #: The plan keys that delimit a cycle on a broadcast link, or empty for the default.
+    #:
+    #: §12 says the plan's *first fast-tier entry* delimits a cycle, and for one sentence that is
+    #: the same thing as naming it — which is why this was `fast[0]` and unwritten. It stops being
+    #: the same thing the moment a family has **two** spellings of its boundary sentence: an NMEA
+    #: talker sends GGA or GNS depending on how it is configured, and a listener that knew only the
+    #: first read nothing at all from a receiver sending the second (#58).
+    #:
+    #: Empty means *"the first fast-tier entry"*, so a query/response family says nothing and is
+    #: unaffected. Read it through :attr:`cycle_boundaries` rather than directly.
+    boundaries: tuple[str, ...] = ()
+
+    @property
+    def cycle_boundaries(self) -> tuple[str, ...]:
+        """The keys that close a cycle — what the plan declared, or §12's default."""
+        if self.boundaries:
+            return self.boundaries
+        return (self.fast[0].mnemonic,) if self.fast else ()
+
 
 @runtime_checkable
 class ReceiverDriver(Protocol):

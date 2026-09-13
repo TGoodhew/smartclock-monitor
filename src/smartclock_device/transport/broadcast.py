@@ -33,8 +33,12 @@ class BroadcastListener:
 
     clock: Clock
 
-    #: The plan key that delimits a cycle — the driver's first fast-tier entry.
-    boundary: str
+    #: The plan keys that delimit a cycle — whatever the driver's plan declared.
+    #:
+    #: Plural because a family may spell its boundary sentence more than one way: an NMEA talker
+    #: sends GGA or GNS depending on configuration, and a listener that knew only one read nothing
+    #: at all from a receiver sending the other (#58).
+    boundaries: tuple[str, ...]
 
     #: How long a talker may be silent before the listener reports a timeout. Generous relative to
     #: a 1 Hz talker: a missed sentence is ordinary and a missed *second* is not.
@@ -56,8 +60,13 @@ class BroadcastListener:
         if key is None:
             return
 
-        if key == self.boundary and self.boundary in self._current:
-            # The boundary has come round again: what we have is a complete cycle.
+        if key in self.boundaries and key in self._current:
+            # A boundary has come round again: what we have is a complete cycle.
+            #
+            # Keyed on **its own** key rather than on any boundary, which is what keeps a talker
+            # sending both spellings honest: GGA, GNS, …, GGA closes on the second GGA with the
+            # GNS inside it, one cycle per second. Closing on "any boundary while any boundary is
+            # present" would have cut that cycle in half at the GNS.
             self._close()
 
         self._current.setdefault(key, []).append(line)
