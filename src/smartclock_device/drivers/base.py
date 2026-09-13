@@ -16,7 +16,7 @@ from enum import Enum
 from typing import Final, Protocol, runtime_checkable
 
 from smartclock_device.commands.scpi_command import ScpiCommand
-from smartclock_device.drivers.capability import Capability, CommandGroup
+from smartclock_device.drivers.capability import Capability, CommandGroup, Reading
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.transport.settings import SerialSettings
@@ -280,6 +280,22 @@ class ReceiverDriver(Protocol):
 
     def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
         """Fold the fast-tier answers into the status the full tier last produced."""
+        ...
+
+    def reports(self, reading: Reading) -> bool:
+        """Whether this family can **ever** supply a reading (§11, #60).
+
+        ``False`` is a structural claim, not a report on this poll: it means no firmware revision
+        and no amount of waiting will fill the field, so §11 has the interface decline it outright
+        rather than draw §11.1's em dash — which means *did not parse* and, to a reader, *not yet*.
+
+        **Every family answers for itself, and there is no default.** A `Protocol` cannot default
+        anything for a structural implementer — the reason `QueryResponseDefaults` below exists —
+        so making this a required member is what forces a new family to think about it rather than
+        inheriting "knows everything" and showing a row of dashes, which is where this started.
+
+        The gate is `test_capability.py`, which walks every reading for every registered driver.
+        """
         ...
 
 

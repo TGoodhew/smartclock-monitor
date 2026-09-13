@@ -16,7 +16,7 @@ from smartclock_device.commands import catalog
 from smartclock_device.commands.blocked import is_blocked as _is_blocked
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import Cadence, PollPlan, QueryResponseDefaults
-from smartclock_device.drivers.capability import Capability, CommandGroup
+from smartclock_device.drivers.capability import Capability, CommandGroup, Reading
 from smartclock_device.models.device_identity import DeviceIdentity, ReceiverModel
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.parsing.scalars import (
@@ -126,6 +126,22 @@ class SmartClockDriver(QueryResponseDefaults):
         full read is incremental would use it.
         """
         return StatusScreenParser(self.clock).parse(transaction.text)
+
+    def reports(self, reading: Reading) -> bool:
+        """**Everything in :class:`Reading` today**, and that is a statement about the enum.
+
+        Every entry there is a reading the status screen or a §8.1 query supplies, because this is
+        the family the specification was written against. It is not a claim that a SmartClock knows
+        everything: dilution of precision, the geoid separation and the satellites *used* in a fix
+        are all things a talker broadcasts and a status screen has no field for, and when those are
+        added — they are the other half of #58 — **this is the method that declines them.**
+
+        Written out rather than inherited. `ReceiverDriver` is a `Protocol`, and a Protocol cannot
+        default anything for a structural implementer; the same reason `QueryResponseDefaults`
+        exists a few lines below it.
+        """
+        del reading
+        return True
 
     def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
         """Fold the fast-tier answers into the status the full tier last produced.

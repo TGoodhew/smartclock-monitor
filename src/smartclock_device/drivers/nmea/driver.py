@@ -27,7 +27,7 @@ from typing import Final
 from smartclock_device.clock import Clock
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import WHOLE_CYCLE, Cadence, LinkStyle, PollPlan
-from smartclock_device.drivers.capability import Capability, CommandGroup
+from smartclock_device.drivers.capability import Capability, CommandGroup, Reading
 from smartclock_device.drivers.nmea import sentences
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.position import GeoPosition, HeightDatum, PositionMode
@@ -275,6 +275,45 @@ class NmeaDriver:
             height_datum=HeightDatum.MSL if _position(fix) is not None else HeightDatum.UNKNOWN,
             health_ok=_has_fix(fix),
         )
+
+    #: What a GNSS talker has no way of ever supplying (§11, #60).
+    #:
+    #: **This list was in the class docstring and nowhere else.** It said "no oscillator EFC, no
+    #: TFOM or FFOM, no holdover — those are disciplined-oscillator concepts and a GNSS talker has
+    #: none of them", which was true, unreachable, and therefore rendered as a row of em dashes
+    #: that a user could not distinguish from a slow read.
+    #:
+    #: Everything here follows from one fact: **a talker has no disciplined oscillator and no
+    #: command parser.** It reports where it is and what it can hear, once a second, unprompted.
+    NEVER_REPORTS: Final[frozenset[Reading]] = frozenset(
+        {
+            # No oscillator, so nothing that measures or steers one.
+            Reading.TFOM,
+            Reading.FFOM,
+            Reading.ONE_PPS_INTERVAL,
+            Reading.OSCILLATOR_CONTROL,
+            Reading.HOLDOVER,
+            Reading.ANTENNA_DELAY,
+            Reading.OUTPUT_VALIDITY,
+            # No command parser, so nothing that has to be asked for.
+            Reading.DEVICE_IDENTITY,
+            Reading.LEAP_SECOND,
+            Reading.TIME_CODE_FORMAT,
+            Reading.POWER_ON_HOURS,
+            Reading.HEALTH_MONITOR,
+            Reading.STATUS_REGISTERS,
+            Reading.DIAGNOSTIC_LOG,
+            Reading.ERROR_QUEUE,
+            Reading.ELEVATION_MASK,
+            Reading.POSITION_HOLD,
+            # And no status screen, so §11.1's parse-health line is about nothing.
+            Reading.STATUS_SCREEN,
+        }
+    )
+
+    def reports(self, reading: Reading) -> bool:
+        """§11: what a talker can never supply is declined, not dashed."""
+        return reading not in self.NEVER_REPORTS
 
     def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
         """A broadcast family's tiers read the same cycle, so the full parse has already done it.

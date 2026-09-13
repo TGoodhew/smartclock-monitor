@@ -31,7 +31,14 @@ from smartclock_device.drivers.base import (
     QueryResponseDefaults,
     ReceiverDriver,
 )
-from smartclock_device.drivers.capability import Capability, CommandGroup
+from smartclock_device.drivers.capability import (
+    ALL_READINGS,
+    Capability,
+    CommandGroup,
+    Reading,
+)
+from smartclock_device.drivers.nmea.driver import NmeaDriver
+from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.models.receiver_status import ReceiverStatus
 from smartclock_device.transport.settings import SerialSettings
@@ -60,6 +67,13 @@ class TalkerDriver(QueryResponseDefaults):
     #: Which capabilities this double claims. Empty by default — the point of the double is a
     #: family that offers nothing — and a partial set is what tests §9.11's "every, not any".
     supported: frozenset[Capability] = field(default_factory=frozenset)
+
+    #: Which readings it declines (#60). Empty by default for the same reason as `supported`: a
+    #: test says what it is about, and a double that pre-declined things would hide it.
+    declines: frozenset[Reading] = field(default_factory=frozenset)
+
+    def reports(self, reading: Reading) -> bool:
+        return reading not in self.declines
 
     @property
     def cadence(self) -> Cadence:
@@ -276,3 +290,75 @@ def test_the_smartclock_still_has_everything_enabled() -> None:
     assert page._force.isEnabled() is True
     assert page._recover.isEnabled() is True
     assert page.apply_button.isEnabled() is True
+
+
+# ---- #60: what a family can never know ---------------------------------------------------------
+
+
+def test_every_registered_driver_answers_every_reading() -> None:
+    """The contract is only worth having if nothing can quietly not implement it.
+
+    `ReceiverDriver` is a `Protocol`, so a driver that omitted `reports` would fail `mypy` — but
+    only where something assigns it to the Protocol type. This asks the question the interface
+    asks, of every family that ships, for every reading there is.
+    """
+    clock = FixedClock(NOW)
+    for driver in (SmartClockDriver(clock=clock), NmeaDriver(clock=clock)):
+        for reading in ALL_READINGS:
+            answer = driver.reports(reading)
+            assert isinstance(answer, bool), f"{driver.name} gave {answer!r} for {reading}"
+
+
+def test_a_talker_declines_the_readings_its_docstring_always_claimed_it_lacked() -> None:
+    """The list was prose in a class docstring, and prose is not reachable.
+
+    "No oscillator EFC, no TFOM or FFOM, no holdover" was true, unreachable, and therefore drawn
+    as a row of em dashes indistinguishable from a slow read.
+    """
+    talker = NmeaDriver(clock=FixedClock(NOW))
+
+    for reading in (
+        Reading.TFOM,
+        Reading.FFOM,
+        Reading.ONE_PPS_INTERVAL,
+        Reading.OSCILLATOR_CONTROL,
+        Reading.HOLDOVER,
+        Reading.STATUS_SCREEN,
+    ):
+        assert talker.reports(reading) is False, f"a talker cannot supply {reading.value}"
+
+
+def test_a_talker_still_reports_what_it_actually_broadcasts() -> None:
+    """The other direction, which is the one an over-eager decline would break.
+
+    A talker has no oscillator; it does have a position, a time and satellites in view. Declining
+    those would replace a row of dashes with a row of absences, which is worse — it would say the
+    receiver cannot do something it does once a second.
+    """
+    talker = NmeaDriver(clock=FixedClock(NOW))
+
+    assert talker.reports(Reading.POSITION_HOLD) is False, "it has no survey or hold"
+    assert SmartClockDriver(clock=FixedClock(NOW)).reports(Reading.HOLDOVER) is True
+
+
+def test_a_smartclock_declines_nothing_in_the_list_as_it_stands() -> None:
+    """And that is a statement about the list, not a claim that a SmartClock knows everything.
+
+    Every entry is a reading the status screen or a §8.1 query supplies, because this is the family
+    the specification was written against. Dilution of precision, the geoid separation and the
+    satellites *used* in a fix are all broadcast by a talker and absent from a status screen — when
+    those are added, this test is what will need changing, and that is the point of pinning it.
+    """
+    smartclock = SmartClockDriver(clock=FixedClock(NOW))
+
+    declined = [r for r in ALL_READINGS if not smartclock.reports(r)]
+
+    assert declined == [], f"the enum has grown a reading a SmartClock lacks: {declined}"
+
+
+def test_the_gate_catches_a_family_that_declines_something_it_broadcasts() -> None:
+    """`CLAUDE.md`: a rule that matches nothing enforces nothing."""
+    double = TalkerDriver(declines=frozenset({Reading.TFOM}))
+
+    assert double.reports(Reading.TFOM) is False
+    assert double.reports(Reading.HOLDOVER) is True
