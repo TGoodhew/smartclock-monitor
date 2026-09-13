@@ -31,8 +31,20 @@ from smartclock_device.transport import frames
 _CR: Final = 0x0D
 _LF: Final = 0x0A
 
-#: The word the ordinary prompt is built from.
+#: The word the SmartClock's ordinary prompt is built from.
 _PROMPT_WORD: Final = "scpi"
+
+#: The prompt words a family may use, when nobody has said which family it is.
+#:
+#: **The probe phase belongs to no driver** (§12), so the prompt has to be recognisable before a
+#: family is chosen — which means the union, not one family's. `DeviceSession` narrows it to the
+#: selected driver's afterwards, so a Z3805A cannot end a transaction on a UCCM's prompt.
+#:
+#: A word rather than a literal because §7.2's grammar puts the spacing and the bracket around it:
+#: `scpi > `, `UCCM-P >`. Making it a constant was what the sibling corrected in #470, and the
+#: reason is visible in the corpus — the two families' prompts differ in the word *and* the
+#: spacing, so no single literal matches both.
+DEFAULT_PROMPT_WORDS: Final[tuple[str, ...]] = ("scpi",)
 
 #: What the prompt shows instead of the word while the error queue is not empty (§7.2).
 _ERROR_PROMPT_PREFIX: Final = "E-"
@@ -56,7 +68,7 @@ class PromptMatch:
     status: str | None
 
 
-def match_prompt(tail: str) -> PromptMatch | None:
+def match_prompt(tail: str, words: tuple[str, ...] = DEFAULT_PROMPT_WORDS) -> PromptMatch | None:
     """Match a complete prompt at the start of ``tail``, which contains no line ending.
 
     §7.2's prompt grammar has two forms, both observed on a Z3805A running firmware 1.01.03-A —
@@ -78,8 +90,12 @@ def match_prompt(tail: str) -> PromptMatch | None:
 
     token_start = index
 
-    if tail.startswith(_PROMPT_WORD, index):
-        index += len(_PROMPT_WORD)
+    # Longest first, so a family whose word is a prefix of another's cannot shadow it.
+    matched = next(
+        (w for w in sorted(words, key=len, reverse=True) if tail.startswith(w, index)), None
+    )
+    if matched is not None:
+        index += len(matched)
     elif tail.startswith(_ERROR_PROMPT_PREFIX, index):
         index += len(_ERROR_PROMPT_PREFIX)
         digits_start = index
@@ -105,7 +121,7 @@ def match_prompt(tail: str) -> PromptMatch | None:
         index += 1
 
     token = tail[token_start:token_end]
-    return PromptMatch(length=index, status=None if token == _PROMPT_WORD else token)
+    return PromptMatch(length=index, status=None if token in words else token)
 
 
 def _decode(data: bytes | bytearray) -> str:
@@ -125,11 +141,18 @@ class ResponseBuffer:
     carries the prompt's error token.
     """
 
-    def __init__(self, *, detect_prompt: bool = True, separate_frames: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        detect_prompt: bool = True,
+        separate_frames: bool = False,
+        prompt_words: tuple[str, ...] = DEFAULT_PROMPT_WORDS,
+    ) -> None:
         # **Off for a broadcast link.** A talker sends no prompt, and a sentence fragment that
         # happened to match one would mark the buffer complete and freeze the stream for good —
         # a failure that needs the exact bytes to reproduce. Nothing to look for, so nothing looks.
         self._detect_prompt = detect_prompt
+        self._prompt_words = prompt_words
         self._buffer = bytearray()
         self._lines: list[str] = []
         self._prompt: PromptMatch | None = None
@@ -193,7 +216,7 @@ class ResponseBuffer:
         if not self._detect_prompt or not tail or len(tail) > MAX_PROMPT_LENGTH:
             return False
 
-        match = match_prompt(_decode(tail))
+        match = match_prompt(_decode(tail), self._prompt_words)
         if match is None:
             return False
 

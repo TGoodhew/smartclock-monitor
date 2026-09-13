@@ -157,7 +157,9 @@ code and concludes the code is right.
 |---|---|---|---|
 | **§11** | A reading a family can never supply is **declined outright**; a destination it cannot fill is **dimmed, not disabled** | Built | **Closed** — [#60](https://github.com/TGoodhew/smartclock-monitor/issues/60) |
 | **§7.2** | A broadcast family may be written to, through one member and three gates | **Accepted**, and being built | **Decided** — D8, [#64](https://github.com/TGoodhew/smartclock-monitor/issues/64) |
-| **§7.1 / §10.12** | Auto-detect walks **eleven** combinations | Walks **ten** | *Pending* — the eleventh is the UCCM's, D7 |
+| **§7.1 / §10.12** | Auto-detect walks **eleven** combinations | Walks **eleven** | **Closed** — the eleventh arrived with the UCCM, D7 |
+
+**All three are now closed**, the last of them by registering a family this port cannot test.
 
 **§7.2 is the one worth reading the decision for rather than the row.** A structural guarantee —
 there was no send path anywhere, so a port-reconfiguring sentence was excluded by there being

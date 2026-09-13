@@ -30,6 +30,7 @@ from smartclock_device.clock import Clock, SystemClock
 from smartclock_device.drivers.nmea import NmeaDriver
 from smartclock_device.drivers.registry import Registry
 from smartclock_device.drivers.smartclock import SmartClockDriver
+from smartclock_device.drivers.uccm import UccmDriver
 from smartclock_device.transport.base import Transport
 from smartclock_device.transport.faults import TransportError
 from smartclock_device.transport.settings import (
@@ -213,7 +214,13 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
     # by what it said before anything was asked, is never written to, and fills only the fields
     # NMEA carries. Adding it is one line here rather than an edit everywhere, which was the whole
     # claim the seam made.
-    registry = Registry([SmartClockDriver(clock=clock), NmeaDriver(clock=clock)])
+    # Registration order is priority order. The UCCM goes **last**: it is recognised by a vendor
+    # token, and `SYMMETRICOM` is a token the SmartClock family also answers with — so the family
+    # that has met hardware gets first refusal, and the one written entirely from somebody else's
+    # captures (D7) only serves a receiver nobody else claimed.
+    registry = Registry(
+        [SmartClockDriver(clock=clock), NmeaDriver(clock=clock), UccmDriver(clock=clock)]
+    )
     driver = registry.drivers[0]
 
     # #127: the writer starts before anything is opened, so the port opening is the first line.
