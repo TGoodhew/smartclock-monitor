@@ -83,6 +83,10 @@ PLAN: Final = PollPlan(
     fast=tuple(_key_command(key) for key in sentences.KEYS),
     full=_key_command(WHOLE_CYCLE),
     boundaries=sentences.FIX_KINDS,
+    # **Nothing**, and that is the honest answer rather than an omission (#61). Both of this
+    # family's tiers read the same cycle, so the fast sweep is answerable for nothing the full
+    # read has not already done — which is exactly why `apply_fast` returns the status unchanged.
+    fast_readings=(),
 )
 
 

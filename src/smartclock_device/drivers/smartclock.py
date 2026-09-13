@@ -41,6 +41,19 @@ PLAN: Final = PollPlan(
     full=catalog.STATUS_SCREEN,
     refusable=catalog.REFUSABLE,
     state_query=catalog.SYNC_STATE,
+    # What the sweep above is answerable for. The tier also reads the sync state, which keys
+    # §7.3.1's suppression rather than filling anything, and the tracked count, which is a
+    # satellite figure rather than one of these readings.
+    #
+    # OSCILLATOR_CONTROL is here and is **not** folded by `apply_fast`: the electronic frequency
+    # control has no field on a status screen's model, so `PollingService` carries it on the
+    # Reading instead. The tier is still responsible for it, which is what this tuple records.
+    fast_readings=(
+        ReceiverReading.TFOM,
+        ReceiverReading.FFOM,
+        ReceiverReading.ONE_PPS_INTERVAL,
+        ReceiverReading.OSCILLATOR_CONTROL,
+    ),
 )
 
 

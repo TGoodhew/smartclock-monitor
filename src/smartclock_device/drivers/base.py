@@ -87,6 +87,22 @@ class PollPlan:
     #: The query whose answer keys the §7.3.1 suppression, or ``None``.
     state_query: ScpiCommand | None = None
 
+    #: What the **fast tier carries** — the readings it is responsible for keeping fresh (#61).
+    #:
+    #: §7.3 splits the poll in two and §7.3.1 governs what happens when the receiver refuses one of
+    #: them, but nothing said *which readings* the fast half is answerable for. Two things need
+    #: that stated rather than inferred:
+    #:
+    #: - the tier rule is only checkable against a declaration. `apply_fast` must fold the readings
+    #:   its plan claims and leave every other field where the full read put it; without this there
+    #:   is no way to ask whether it did, and the answer was a comment.
+    #: - a page cannot be aged by the tier that fills it until something says which tier that is,
+    #:   which is the rest of #61.
+    #:
+    #: Empty is the honest answer for a **broadcast** family: both of its tiers read the same cycle,
+    #: so the fast sweep is responsible for nothing the full read did not already do.
+    fast_readings: tuple[ReceiverReading, ...] = ()
+
     #: The plan keys that delimit a cycle on a broadcast link, or empty for the default.
     #:
     #: §12 says the plan's *first fast-tier entry* delimits a cycle, and for one sentence that is
