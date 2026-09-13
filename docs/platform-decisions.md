@@ -347,6 +347,80 @@ where a user who has not cannot.
 
 ---
 
+## D8 — A broadcast family may transmit, under three gates
+
+**Status: Settled** (13 Sep 2026, [#64](https://github.com/TGoodhew/smartclock-monitor/issues/64)).
+**This port takes §7.2's amended write rule.** It was decided against the recommendation in the
+issue, which said decline; that recommendation is withdrawn and the reasoning for both sides is
+kept below, because a safety decision that loses its argument is one nobody can revisit.
+
+### What is being given up
+
+The specification used to say, in bold, that a broadcast family **is never written to after
+recognition**. That was not a policy — it was a **structural** guarantee. There was no send path
+anywhere in the application, so a port-reconfiguring proprietary sentence was excluded by there
+being nowhere to express one. `drivers/nmea/driver.py` still says so in as many words.
+
+Upstream's own amendment puts the trade plainly: *"a rule enforced by code is weaker than a
+property enforced by absence."* Taking it converts a guarantee into three gates.
+
+### What it buys
+
+The accumulated GPS − UTC offset, which **no standard NMEA sentence carries**. A timing
+application that cannot say how far GPS has run ahead of UTC is missing something a user of this
+particular application needs — §10.14 exists for it, and the talker family answers it with a dash
+for ever otherwise.
+
+### The three gates, and why they are independent
+
+A broadcast family may be written to **only** through one driver member, and all three of these
+must hold before a byte leaves:
+
+1. **The mnemonic is a catalogued §8.1 entry for that family.** For a query/response family the
+   mnemonic *is* the wire text; for a broadcast family the entry is a key and the member maps it to
+   bytes. The property preserved is that **no text can be sent for which there is no catalogue
+   entry.**
+2. **The member returns non-null for it, and defaults to null.** The default is the safety
+   property: a family that has not considered transmitting cannot acquire a send path by
+   inheriting one, so returning text is an explicit claim about that family's character.
+3. **The returned text passes that driver's own exclusion predicate at the point of send.** A
+   driver whose two methods disagree is a programming error: the text is **not sent**, and the
+   disagreement is logged.
+
+They are independent by design and each gets its own test rather than being covered incidentally
+by an end-to-end one, **including the truncation case** — a prefix rule that accepted a partial
+sentence would accept far more than one.
+
+### The fourth precondition is deliberately not the driver's
+
+Whether *this particular module* understands the sentence belongs to whatever holds the evidence,
+which for a talker is the power-on banner. A driver is a singleton, and one that remembered a
+banner would carry one receiver's answer to the next — which is the defect
+[#61](https://github.com/TGoodhew/smartclock-monitor/issues/61) was about and
+[#62](https://github.com/TGoodhew/smartclock-monitor/issues/62) built the banner for. Two guards
+answering two questions: *is this driver willing to transmit at all*, and *will this module
+understand it*. Either alone would be wrong.
+
+### Two corrections this forces inside §8
+
+§8.1 and §8.4 both say the exclusion predicate has **no production caller**. That stops being true
+the moment gate 3 exists: the session asks it about every piece of outgoing text and logs a driver
+contradicting itself. The half that remains true is narrower and worth keeping stated — **no
+production path feeds the predicate text a user typed**, because §10.11's Advanced Console is a
+picker over the allowlist and there is still nowhere to type.
+
+### What has not changed
+
+**Nothing is ever sent to configure a receiver.** §8.4's categorical exclusion binds every family,
+and the talker driver's own predicate refuses every proprietary sentence but the one poll.
+
+### What would reverse it
+
+A receiver made unreachable by something this port sent. The gates are what make that a reportable
+defect rather than a silent one, and the logging in gate 3 is the only evidence that would exist.
+
+---
+
 ## Part 7's mechanical consequences
 
 These follow from the platform rather than from a judgement, and are recorded so nobody
@@ -387,6 +461,7 @@ was someone trying to use the application.
 | D5 | Tray and notifications — **not shipped** | **Settled** | [#6](https://github.com/TGoodhew/smartclock-monitor/issues/6) | — |
 | D6 | Relationship — §8.4 sync | **Settled** (safety half) | — | Not reversible. See above. |
 | D7 | Third family — **UCCM ported, labelled untested** | **Settled** | [#63](https://github.com/TGoodhew/smartclock-monitor/issues/63) | Cheap: the labels come off as sittings confirm members. |
+| D8 | Broadcast transmit — **taken, under three gates** | **Settled** | [#64](https://github.com/TGoodhew/smartclock-monitor/issues/64) | Expensive: a structural guarantee was traded for a rule, and it cannot be traded back without removing the send path. |
 
 **Every provisional row was chosen to be cheap to reverse**, which is the only honest way to take a
 decision on someone else's behalf — and all five were reviewed on 1 Sep 2026. Two were reversed
