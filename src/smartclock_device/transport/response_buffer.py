@@ -26,6 +26,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Final
 
+from smartclock_device.transport import frames
+
 _CR: Final = 0x0D
 _LF: Final = 0x0A
 
@@ -123,7 +125,7 @@ class ResponseBuffer:
     carries the prompt's error token.
     """
 
-    def __init__(self, *, detect_prompt: bool = True) -> None:
+    def __init__(self, *, detect_prompt: bool = True, separate_frames: bool = False) -> None:
         # **Off for a broadcast link.** A talker sends no prompt, and a sentence fragment that
         # happened to match one would mark the buffer complete and freeze the stream for good —
         # a failure that needs the exact bytes to reproduce. Nothing to look for, so nothing looks.
@@ -131,6 +133,13 @@ class ResponseBuffer:
         self._buffer = bytearray()
         self._lines: list[str] = []
         self._prompt: PromptMatch | None = None
+
+        # **Off by default, and on only for a family that broadcasts them.** A receiver that sends
+        # no binary frames must not pay a scan per chunk for the possibility, and a `0xC5` in its
+        # ordinary text must not be examined at all.
+        self._separate_frames = separate_frames
+        self._frames: list[bytes] = []
+        self._partial_frame = b""
 
         # Set when a read ends on a CR whose LF has not arrived yet. Without it the pair is counted
         # as two line endings and a blank line appears between two real ones.
@@ -165,6 +174,16 @@ class ResponseBuffer:
         if self._prompt is not None:
             return True
 
+        if self._separate_frames:
+            # **Frames first, then lines** (#59). A binary time code arriving among the text
+            # contains CR, LF and NUL bytes that are data rather than terminators, and splitting
+            # on them first shreds the frame and leaves its NULs inside the text. Whatever may be
+            # a half-arrived frame is held back and re-fed in front of the next chunk.
+            separated = frames.separate(self._partial_frame + chunk)
+            self._frames.extend(separated.frames)
+            self._partial_frame = separated.partial
+            chunk = separated.text
+
         self._buffer.extend(chunk)
         self._extract_lines()
 
@@ -181,6 +200,16 @@ class ResponseBuffer:
         self._prompt = match
         del self._buffer[: match.length]
         return True
+
+    def drain_frames(self) -> tuple[bytes, ...]:
+        """Take the binary frames out and forget them, as `drain_lines` does for text.
+
+        Empty for every family but the one that broadcasts them, which is why `separate_frames`
+        defaults off: a receiver that sends no frames must not pay a scan per chunk for it.
+        """
+        taken = tuple(self._frames)
+        self._frames.clear()
+        return taken
 
     def drain_lines(self) -> tuple[str, ...]:
         """Take the complete lines out and forget them.

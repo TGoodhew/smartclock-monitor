@@ -18,6 +18,7 @@ re-pin brought across*, below.
 | `docs/how-to-use.md` and `docs/images/how-to-use/` | same | **Forked.** It was carried verbatim and is not any more — see *The one document that had to fork*, below. Do not diff the two expecting them to agree. |
 | `docs/adding-a-receiver.md` | same | Verbatim. Describes the C# driver model. Kept because the *architecture* it teaches is what this port reproduces, not because the code samples compile here. **`docs/driver-contract.md` is this port's member-by-member mapping** — written here rather than by editing the inherited file, which would fork it. |
 | `tests/fixtures/` | `tests/WinZ3805A.Tests/Fixtures/` | Verbatim, including `capture-log.md`. Marked `-text`: these are device output and their exact bytes, line endings included, are the point. |
+| `tests/fixtures/uccm/` | `tests/WinZ3805A.Tests/Uccm/Captures/` | **Verbatim, all seven sittings and their notes**, carried 13 Sep 2026 for D7 — every blob hash matches. Nobody here has a UCCM, so this corpus is the *only* evidence the driver in Phase 5 is written against. |
 | `tests/fixtures/nmea/` | `tests/WinZ3805A.Tests/Nmea/Captures/` | **Verbatim, all ten sittings and their notes** (#56), carried 13 Sep 2026 — every blob hash matches. Two captures taken on this bench sit beside them; see below. |
 | `build/palette/` | same | **Byte-identical, directory included.** Already Python, runs unchanged. Two files were added since the fork — `sequential.py` here, `diverging.py` upstream — and both have been carried the other way, so the copies agree again. See below. |
 
@@ -140,6 +141,25 @@ Their value is the cross-check: the same silicon, a different harness, five days
 The replay is `tests/test_nmea_captures.py`, and **three of its assertions are expected failures
 by design** — the fixture assertions for #57 and #58, written before the parsing that will fix
 them. They are `strict`, so the markers cannot outlive the defects.
+
+---
+
+## The UCCM corpus, which is the whole of the evidence
+
+`tests/fixtures/uccm/` is seven sittings with a Trimble UCCM-P, taken in WinZ3805A between 10 and
+13 September 2026. **D7 takes this family without a receiver to test it against**, so unlike every
+other corpus here these captures are not a cross-check on hardware we have — they *are* the
+hardware, as far as this repository is concerned.
+
+That makes the rule stricter rather than looser. Every assertion the UCCM driver makes must trace
+to a line in this directory or it is not made, and the two states upstream's driver cannot tell
+apart stay untold-apart here — reproducing a known limitation is correct where quietly resolving
+it would be the guess D7 exists to prevent.
+
+**The format is not the NMEA corpus's.** These are annotated transcripts rather than raw byte
+streams: a header, then one block per command with the reply as a hex dump *and* as decoded lines.
+The hex is what makes them usable as a byte-level oracle — `frames-13sep2026.txt` is 150 binary
+time-code frames written one per line as hex, which is what `transport/frames.py` is tested on.
 
 ---
 

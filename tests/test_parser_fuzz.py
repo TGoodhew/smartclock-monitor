@@ -47,7 +47,19 @@ NOW = datetime(2026, 8, 31, 12, 0, 0, tzinfo=UTC)
 
 
 def fixture_paths() -> list[Path]:
-    return sorted(FIXTURES.rglob("*.txt"))
+    """The SmartClock status screens, and only those.
+
+    **Scoped rather than recursive**, and the guard below is what forced it. This was
+    ``FIXTURES.rglob("*.txt")``, which was right while `tests/fixtures/` held one corpus. The NMEA
+    captures did not disturb it — they are `.nmea` — but the UCCM sittings carried in for D7 are
+    `.txt`, so the glob quietly grew from ten files to twenty and the fuzz began corrupting a
+    115 KB transcript of annotated hex, which is not a status screen and takes minutes to chew.
+
+    The count assertion caught it in the same breath. A glob that matches nothing leaves a file
+    passing while testing nothing; a glob that matches too much is the same defect wearing the
+    other hat, and only a pinned count notices either.
+    """
+    return sorted((FIXTURES / "captured").glob("*.txt")) + sorted(FIXTURES.glob("*.txt"))
 
 
 def read_bytes_as_text(path: Path) -> str:
