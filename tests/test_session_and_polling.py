@@ -12,6 +12,7 @@ the page drained it. Real errors were being discarded to make room for poll nois
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import timedelta
 from pathlib import Path
 
@@ -20,15 +21,20 @@ import pytest
 from conftest import NOW
 from smartclock_device.clock import FixedClock
 from smartclock_device.commands import catalog
+from smartclock_device.drivers.capability import STATUS_FIELDS
+from smartclock_device.drivers.nmea.driver import NmeaDriver
 from smartclock_device.models.device_identity import ReceiverModel
-from smartclock_device.models.receiver_status import SmartClockMode
+from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
 from smartclock_device.transport.fake import FakeTransport, error_prompt
-from smartclock_device.transport.transaction import Transaction
+from smartclock_device.transport.transaction import Transaction, TransactionOutcome
 from smartclock_monitor.services.polling import PollingService, Reading
 from smartclock_monitor.services.replay import DEMO_SEQUENCE, ReplayTransport
 from smartclock_monitor.services.session import ConnectionState, DeviceSession, Refusal
 
 from smartclock_device.drivers.smartclock import SmartClockDriver  # isort: skip
+
+#: Every ReceiverStatus field any reading maps to, so the gate below can ask what moved.
+STATUS_FIELDS_ALL = tuple(name for names in STATUS_FIELDS.values() for name in names)
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 IDENTITY = "SYMMETRICOM,Z3805A,3625A02931,1.01.03-A"
@@ -523,3 +529,96 @@ def test_a_missing_screen_set_says_so_rather_than_starting_empty() -> None:
     # "/nonexistent/fixtures" this passed here and failed on Windows, where a Path renders with
     # backslashes — the message was right and the assertion was not.
     assert str(absent) in message, "the message does not name the other place"
+
+
+# ---- #61: the tier rule, both halves, each against a deliberate violation -----------------------
+
+
+def test_a_plan_only_claims_readings_its_family_supplies() -> None:
+    """A fast tier cannot be answerable for a reading the family says it can never produce.
+
+    The two declarations are written in different files by different people at different times,
+    and nothing but this notices when they disagree.
+    """
+    clock = FixedClock(NOW)
+    for driver in (SmartClockDriver(clock=clock), NmeaDriver(clock=clock)):
+        for reading in driver.plan.fast_readings:
+            assert driver.reports(reading), (
+                f"{driver.name}'s fast tier claims {reading.value}, which it says it never supplies"
+            )
+
+
+def test_the_fast_sweep_folds_only_what_its_plan_claims() -> None:
+    """§7.3's tiers share one status object, so the fast half must not write the slow half's work.
+
+    Builds a status with every field filled, hands `apply_fast` a sweep that answers *everything*
+    the fast tier could ask, and asserts the only fields that moved are the ones the plan declared.
+    A driver that folded a reading it had not claimed would be quietly overwriting a value the full
+    read owns — which, on a tier that runs once a second against a screen read once a minute, is
+    a field that flickers for reasons nobody can reproduce.
+    """
+    clock = FixedClock(NOW)
+    driver = SmartClockDriver(clock=clock)
+    before = ReceiverStatus(
+        captured_at=NOW,
+        tfom=1,
+        ffom=2,
+        one_pps_ti_nanoseconds=3,
+        elevation_mask_degrees=10,
+        antenna_delay_nanoseconds=77,
+    )
+
+    after = driver.apply_fast(
+        before,
+        {
+            catalog.TIME_FIGURE_OF_MERIT.mnemonic: _answered("+9"),
+            catalog.FREQUENCY_FIGURE_OF_MERIT.mnemonic: _answered("+8"),
+            catalog.TIME_INTERVAL.mnemonic: _answered("-5.4E-009"),
+            catalog.OSCILLATOR_EFC.mnemonic: _answered("-1.68528E+001"),
+            catalog.ELEVATION_MASK.mnemonic: _answered("+42"),
+        },
+    )
+
+    allowed: set[str] = set()
+    for reading in driver.plan.fast_readings:
+        allowed.update(STATUS_FIELDS.get(reading, ()))
+
+    moved = {
+        name
+        for name in STATUS_FIELDS_ALL
+        if getattr(before, name, None) != getattr(after, name, None)
+    }
+
+    assert moved <= allowed, (
+        f"the fast sweep wrote fields its plan does not claim: {moved - allowed}"
+    )
+    assert "tfom" in moved, "and it must still fold the ones it does claim"
+
+
+def test_the_gate_notices_a_sweep_that_folds_an_unclaimed_reading() -> None:
+    """`CLAUDE.md`: a rule that matches nothing enforces nothing.
+
+    Stands in for a driver that folds the elevation mask — a full-tier reading — on the fast sweep.
+    """
+    before = ReceiverStatus(captured_at=NOW, elevation_mask_degrees=10)
+    after = dataclasses.replace(before, elevation_mask_degrees=42)
+
+    allowed = {
+        name
+        for reading in SmartClockDriver(clock=FixedClock(NOW)).plan.fast_readings
+        for name in STATUS_FIELDS.get(reading, ())
+    }
+    moved = {
+        name
+        for name in STATUS_FIELDS_ALL
+        if getattr(before, name, None) != getattr(after, name, None)
+    }
+
+    assert moved, "the violation changed nothing, so this proves nothing"
+    assert not moved <= allowed, "the gate would not have caught an unclaimed fold"
+
+
+def _answered(line: str) -> Transaction:
+    return Transaction(
+        command="", outcome=TransactionOutcome.COMPLETED, lines=(line,), prompt_status="scpi >"
+    )

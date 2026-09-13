@@ -191,3 +191,40 @@ class ReceiverReading(Enum):
 #: Every reading. Named so a gate can walk them without the enum being iterated at a call site,
 #: where iterating would be the scatter of conditionals the driver seam exists to prevent.
 ALL_READINGS: tuple[ReceiverReading, ...] = tuple(ReceiverReading)
+
+
+#: Which :class:`~smartclock_device.models.receiver_status.ReceiverStatus` fields answer to each
+#: reading, for the readings that live on that model at all.
+#:
+#: **Deliberately partial, and the gaps are the interesting part.** A reading is a question a page
+#: asks, and several of them are answered from somewhere other than the status: the oscillator's
+#: control voltage is carried on ``services.polling.Reading`` because it has no place on a status
+#: screen's model, the diagnostic log and the error queue are read on demand rather than polled,
+#: and the status registers have a model of their own. Those map to nothing here, and a caller that
+#: needs them has to say which surface it means.
+#:
+#: This exists so the tier rule can be **checked** rather than asserted: `apply_fast` must fold
+#: only the readings its plan says the fast tier carries, and without a mapping from reading to
+#: field there is no way to ask whether it did.
+STATUS_FIELDS: dict[ReceiverReading, tuple[str, ...]] = {
+    ReceiverReading.TFOM: ("tfom",),
+    ReceiverReading.FFOM: ("ffom",),
+    ReceiverReading.ONE_PPS_INTERVAL: ("one_pps_ti_nanoseconds",),
+    ReceiverReading.HOLDOVER: (
+        "hold_threshold_seconds",
+        "holdover_predicted_seconds",
+        "holdover_present_seconds",
+        "holdover_duration",
+    ),
+    ReceiverReading.ANTENNA_DELAY: ("antenna_delay_nanoseconds",),
+    ReceiverReading.OUTPUT_VALIDITY: ("outputs",),
+    ReceiverReading.LEAP_SECOND: ("leap_pending",),
+    ReceiverReading.HEALTH_MONITOR: ("health_ok", "health_items"),
+    ReceiverReading.STATUS_SCREEN: ("parse_warnings",),
+    ReceiverReading.ELEVATION_MASK: ("elevation_mask_degrees",),
+    ReceiverReading.POSITION_HOLD: (
+        "position_mode",
+        "survey_percent_complete",
+        "survey_suspended_reason",
+    ),
+}
