@@ -8,6 +8,11 @@ signature in it is a `IReceiverDriver` method rather than a Python one.
 This document is the mapping. It says what the contract looks like here, which members exist, which
 do not yet, and where the difference is a decision rather than a gap.
 
+**Six members postdate the walkthrough entirely** — `reports`, `outgoing_text_for`, `prompt_words`,
+`plan.fast_readings`, `plan.cycle_boundaries` and `is_verified`. A driver author who reads only the
+inherited walkthrough will meet none of them, which is why they have a section of their own below
+rather than a row in a table.
+
 **Read the inherited walkthrough for the reasoning and this for the names.** Nothing here supersedes
 it; where they disagree about *why*, it is right.
 
@@ -33,17 +38,28 @@ it — there is no base class to inherit and nothing to register a subclass with
 | `Link` | `link` | `LinkStyle.QUERY_RESPONSE` or `LinkStyle.BROADCAST`. |
 | `Overhear(lines)` | `overhear(lines)` | Offered the synchronise step's lines, **before** `*IDN?` is asked. A claim here means the probe is never sent. |
 | `ClassifyLine(line)` | `classify(line)` | Which plan key a broadcast line belongs to, or `None`. |
+| `Reports(reading)` | `reports(reading)` | **Required.** Whether this family can *ever* supply a reading. `False` is a structural claim, not a report on this poll — see below. |
+| `OutgoingTextFor(mnemonic)` | `outgoing_text_for(mnemonic)` | **Required**, where the specification defaults it to null. §7.2's write rule, gate 2. |
+| — | `prompt_words` | New here. §7.2's prompt as a grammar rather than a constant: `scpi > ` and `UCCM-P >` differ in the word *and* the spacing. |
+| — | `plan.fast_readings` | New here. Which readings the fast tier is answerable for, so §7.3's tier rule is checkable and a page can be aged by the tier that fills it. |
+| — | `plan.cycle_boundaries` | New here. Which plan keys close a cycle on a broadcast link. §12's default is `fast[0]`, which is one spelling; a talker has two. |
+| — | `is_verified` | New here, and read by the interface. D7: whether this driver has ever met the receiver it claims to drive. |
 
-Query/response families get all four from the `QueryResponseDefaults` mixin and write none of them.
+Query/response families get the three broadcast members from the `QueryResponseDefaults` mixin and
+write none of them. **`reports` and `outgoing_text_for` are not among them**, and that is
+deliberate: a `Protocol` cannot default anything for a structural implementer — which is the whole
+reason that mixin exists — so making these required is what forces a new family to *answer* rather
+than inherit. The considered `return None` is written out, not assumed.
 
 ### Not here yet
 
 | C# member | Why not, and what it blocks |
 |---|---|
 | `TimeoutFor(mnemonic)` | §7.2's classes live in `transport/timeouts.py` and are not yet per-driver. Broadcast does not need them — it never waits on a reply — so nothing forces the issue yet. |
-| `AutoDetectSequence` | Lives in `transport/settings.py` as one sequence. §10.12's "union of every registered driver's sequence" is now genuinely a union to build: a talker's 4800 baud is not in the SmartClock's list. |
 
-Both are [issue #13](https://github.com/TGoodhew/smartclock-monitor/issues/13).
+`AutoDetectSequence` **is** here now, as `auto_detect_sequence` on each driver with the union built
+by `Registry`. §10.12's eleven combinations are eleven because three families contribute: the
+SmartClock's eight, a talker's two, and a UCCM's one.
 
 ---
 
@@ -135,6 +151,92 @@ confirmations exist to prevent.
 
 ---
 
+## The five members the contract grew, and what each one is for
+
+Everything in this section postdates the walkthrough. A driver author reading
+[`adding-a-receiver.md`](adding-a-receiver.md) alone will not meet any of it.
+
+### `reports(reading)` — what this family can never know
+
+The read-side counterpart of the command catalogue. That one answers *what may I send*; this
+answers *what may I ever know*.
+
+It exists because a field a family cannot carry rendered as an em dash — which §11.1 defines as
+*did not parse* and §9.11 as *has not arrived yet*. Structural absence and a slow read were drawn
+identically, so a user could not tell *"this receiver will never tell you"* from *"this has not
+come in"*. §11 settles it: a reading a family can never supply is **declined outright rather than
+dashed**, *"because the em dash means not yet and using it for never promises something that will
+not arrive"*.
+
+**An entry in `ReceiverReading` is a question a page asks, not a field of the status model.** One
+entry covers the 1 PPS interval, its trend, the Allan deviation and the drift fit, because a family
+that cannot measure the interval cannot produce any of them.
+
+**It runs both ways.** A talker has no disciplined oscillator; a status screen has no dilution of
+precision, no position error and no fix quality. Neither family is the default.
+
+**Declining is a claim, and some claims are weaker than others.** The UCCM declines the oscillator
+control on the strength of seven sittings not showing a field, which is a different kind of
+evidence from a receiver saying it has none — and the code says so where it does it.
+
+### `outgoing_text_for(mnemonic)` — §7.2's write rule
+
+A broadcast family may be written to **only** through this member. Three gates, independent by
+design, all of which must hold before a byte leaves:
+
+1. the mnemonic is a catalogued §8.1 entry for that family;
+2. this member returns non-`None` for it;
+3. the returned text passes that driver's own `is_blocked` **at the point of send**.
+
+Gates 1 and 3 are asked again by `DeviceSession`, because a driver checking its own homework is not
+a gate. A driver whose two methods disagree is a programming error: not sent, and logged.
+
+A **fourth** precondition — will *this particular module* understand the sentence — is deliberately
+not the driver's. It belongs to whatever holds the evidence, which for a talker is the power-on
+banner, and a driver is a singleton that would otherwise carry one receiver's answer to the next.
+
+D8 in [`platform-decisions.md`](platform-decisions.md) carries the argument, including the
+recommendation that was overruled, because this trades a structural guarantee for a rule.
+
+### `prompt_words` — the prompt as a grammar
+
+§7.2's prompt was a constant. Two families made that untenable: `scpi > ` and `UCCM-P >` differ in
+the word **and** the spacing, so no single literal matches both.
+
+The **probe phase takes the union**, because §12 says that phase belongs to no driver — the prompt
+has to be recognisable before a family is chosen. The session narrows it to the selected driver's
+afterwards, so one family cannot end a transaction on another's prompt.
+
+### `plan.fast_readings` — which tier owns which reading
+
+§7.3 splits the poll in two and §7.3.1 governs refusals, but nothing said which readings the fast
+half is *answerable for*. Two things needed that stated rather than inferred: the tier rule is only
+checkable against a declaration, and a page cannot be aged by the tier that fills it until
+something says which tier that is.
+
+**Empty is the honest answer for a broadcast family** — both its tiers read the same cycle.
+
+A subtlety worth knowing: the SmartClock's plan claims `OSCILLATOR_CONTROL` although `apply_fast`
+does not fold it. The tier *reads* it and the poller folds it, because the control voltage has no
+field on a status screen's model. The tuple records **responsibility**, not mechanism.
+
+### `plan.cycle_boundaries` — which lines close a cycle
+
+§12's default is the plan's first fast-tier entry, which is the same thing as naming one sentence
+while a family has one spelling of its boundary. A talker has two — `GGA` and `GNS` — and against
+a receiver sending the second this port read **nothing at all**.
+
+The listener closes when a boundary key repeats **its own** key, so a talker sending both still
+closes one cycle a second.
+
+### `is_verified` — whether this driver has met a receiver
+
+D7's condition, and a property the interface reads rather than a docstring. The UCCM driver answers
+`False`: it is written entirely against captures taken elsewhere, and §10.4's identity card says so
+in words a user can act on.
+
+---
+
 ## What a new driver has to do
 
 1. Satisfy the Protocol. `isinstance(YourDriver(), ReceiverDriver)` is a real check — the Protocol
@@ -142,8 +244,21 @@ confirmations exist to prevent.
 2. Return `False` from `recognises` for anything that is not yours, including `None`.
 3. Answer `supports` honestly. A family that cannot set the antenna delay says so, and the page
    greys the control with your family's name in the tooltip.
-4. Never raise from `parse_full` or `apply_fast`. §11.1 is not scoped to one family.
-5. Register in `__main__`'s `Registry([...])`, in priority order.
+4. **Answer `reports` for every reading.** Decline what your family can never supply, and *only*
+   that — an over-eager decline says a receiver cannot do something it does once a second, which
+   is worse than the dash it replaced.
+5. **Return `None` from `outgoing_text_for` unless your family genuinely transmits.** If it does,
+   read D8 first: the three gates are not negotiable and the fourth is not yours.
+6. **Declare `prompt_words`** if your prompt is not the SmartClock's, and `plan.cycle_boundaries`
+   if your link is broadcast and your cycle is delimited by more than one spelling.
+7. **Declare `plan.fast_readings`** — empty is a real answer for a family whose tiers read the
+   same thing.
+8. Never raise from `parse_full` or `apply_fast`. §11.1 is not scoped to one family.
+9. **Say whether you have met a receiver.** `is_verified` is `True` by omission, so a driver
+   written from somebody else's captures has to say so — see D7.
+10. Register in `__main__`'s `Registry([...])`, in priority order. **Order matters**: the UCCM is
+    registered last because `SYMMETRICOM` is a vendor token the SmartClock also answers with, and
+    the family that has met hardware gets first refusal.
 
 The exclusions rule is the one that binds hardest and is already enforced against the interface:
 §8.4's patterns live in one file, reach the application only as an `is_blocked` verdict, and

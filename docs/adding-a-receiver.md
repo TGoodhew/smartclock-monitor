@@ -1,9 +1,12 @@
 ﻿# Adding a receiver to WinZ3805A
 
-WinZ3805A ships speaking to two families of hardware — the HP/Symmetricom
-SmartClock GPS-disciplined oscillators it was written for, and any NMEA 0183
-GNSS talker (proven against the simulator under `tools/`; no real talker has
-been captured yet, #309 having been deferred) — because every piece of
+WinZ3805A ships speaking to three families of hardware — the HP/Symmetricom
+SmartClock GPS-disciplined oscillators it was written for; any NMEA 0183
+GNSS talker (proven against the simulator under `tools/` and, since 7 Sep
+2026, against ten captures from two real pucks, #420, #516); and the
+Symmetricom and Trimble UCCM telecom modules (#416, mostly written from a
+third-party implementation, with one Trimble UCCM-P on the bench since
+10 Sep 2026) — because every piece of
 device-specific knowledge sits behind one
 interface, `IReceiverDriver`, so that supporting another receiver means
 **writing a driver, not modifying the application**. This document is the
@@ -12,7 +15,11 @@ safety obligations, the development process in order, and — because a promise
 like that is only worth what it excludes — an honest account of where the
 boundary currently sits. [`tutorial-nmea-driver.md`](tutorial-nmea-driver.md)
 is this process followed to the end for the second family, with the files that
-resulted and every finding along the way; read the two together.
+resulted and every finding along the way; read the two together. The third
+family is the same process with its most important step missing — it was
+written before any such module could be found, and
+[the captures' README](../tests/WinZ3805A.Tests/Uccm/Captures/README.md)
+records what that cost and what a module then settled.
 
 It replaces the shorter walkthrough that used to live in the README, and it is
 written for a developer who has the repository building and a receiver on the
@@ -84,10 +91,12 @@ exercise every member — and a third, fictional and test-only, is
 | Member | What it decides | Authority |
 |---|---|---|
 | `Family` | A short name for logs and diagnostics — `"SmartClock"`, `"NMEA 0183"` | — |
-| `Link` | Whether this family answers what it is asked (`QueryResponse`, the default) or talks unprompted and is never written to (`Broadcast`) | §12, #310 |
+| `Link` | Whether this family answers what it is asked (`QueryResponse`, the default) or talks unprompted (`Broadcast`) | §12, #310 |
+| `OutgoingTextFor(mnemonic)` | For a broadcast family, the one piece of text it may transmit for a plan entry, or `null`. **Defaults to `null`, and that default is the design**: a family that has not thought about transmitting cannot acquire a send path by inheritance, so returning non-null here is a claim about your family's character rather than a detail. Whatever you return is passed to your own `IsBlocked` before it goes out — §8.1's guarantee is that *every* command sent passes the allowlist, and a driver whose two methods disagree is caught and logged rather than trusted. **A precondition about a particular module — will *this* receiver understand it — is not yours to hold**: it belongs wherever the evidence lives, which for the NMEA family is the poller and the remembered banner | **§7.2's write rule**, §12, #508, #543 |
 | `Recognises(identity)` | Whether this driver serves the receiver whose identity was read — by `*IDN?`, or by `Overhear` | §12 |
 | `Overhear(lines)` | Whether the lines the receiver sent *before being asked anything* are this family's, and who it is. Defaults to "no"; a talker is recognised here and `*IDN?` is never sent to it | §12, #310 |
 | `ClassifyLine(line)` | For a broadcast family, which plan key a heard line belongs to; `null` for a line that is not yours. Defaults to `null` | §12, #310 |
+| `Prompt` | What ends a transaction on your link. Defaults to the SmartClock's `scpi > ` / `E-nnn> `. **Override it from a measurement, never from a guess** — a grammar that omits the prompt your receiver actually sends makes every transaction run to its full timeout and reports as "no receiver answered" | §7.2, #470 |
 | `Commands` | The **allowlist** of everything this receiver may be sent | §8.1 |
 | `Find(mnemonic)` | One command by name, or `null` if this receiver has none | §8.1 |
 | `IsBlocked(header)` | Whether a header is one of this receiver's §8.4 exclusions — a verdict, never a list | §8.4 |
@@ -132,6 +141,40 @@ Notes that do not fit in a table:
   query re-asked every second overflows the error queue and buries real faults.
   The poller stops asking it until the discriminator's answer changes. The
   index must never be `0` — the discriminator itself is read unconditionally.
+- **`Plan.FastTierCarries` names the fields your sweep answers, and there is no
+  default.** A null in `FastReadings` means *"asked, and the receiver did not
+  answer"*, and the store blanks the display on it — rightly, because a reading
+  the receiver has stopped giving must not go on standing. It cannot also mean
+  *"this family never asks here"*. So say which of the six your sweep covers;
+  whatever you leave out is the full screen's to supply, and `UpdateFull` fills
+  it from what your `Parse` returned. The obvious default would be
+  `FastFields.All` — true of the SmartClock, and exactly the assumption that
+  cost the UCCM driver three readings: a locked UCCM-P showed `TFOM —`,
+  `FFOM —` and no satellite count permanently, its sweep nulling ten times
+  between screens what each screen had just supplied (#475). One consequence
+  worth knowing before you split a plan: a screen-borne reading ages against
+  the full cadence, while the primary window shows a single page age taken from
+  the fast one, so its staleness is understated. Per-reading staleness is a
+  §9.11 question and is not answered today.
+- **Set `Constellation` on a satellite only if your receiver says which, and
+  leave it `Unknown` if it does not.** A satellite number is unique only
+  *within* a constellation, so the identity the application keys on is
+  `SatelliteId` — the pair. Leave it `Unknown` and the satellite renders
+  exactly as it always has, a bare number spoken as "PRN 17", which is right
+  for any single-constellation family: a SmartClock's acquisition table and a
+  UCCM's status screen both print a number and mean GPS by it. Fill it in and
+  the tables show the RINEX designation instead — `G04`, `C04` — and the
+  spoken sentence names the constellation.
+
+  **Do not infer it from the number.** The NMEA driver reads it from the GSV
+  page's talker and answers `Unknown` for `GN`, which means "combined": a
+  receiver that numbers per constellation makes any range-based guess wrong,
+  and those are the only receivers where it matters. The one number-based rule
+  there is the standard's own reservation of 33–64 for augmentation inside the
+  GPS talker, and it earns its place by being observed — four VK-162 captures
+  in the corpus carry `$GPGSV` satellites 46 and 48, which are WAAS. If your
+  family has nothing as definite as a talker, `Unknown` is the honest answer
+  and costs nothing (#424).
 - **`InterpretSweep` returns readings *and* a verdict, and the readings come
   back even when rejected.** The poller's state-change log records what was
   seen whether or not it stores it, and a rejection carries a sentence naming
@@ -183,7 +226,9 @@ making the probe belong to no driver:
    for the family already shipped. At each candidate setting the session first
    **listens** for the probe timeout (§7.2's synchronise step, which absorbs
    the SmartClock's banner) and hands whatever it heard to every driver's
-   `Overhear`; a family that talks is claimed here, and nothing is sent to it.
+   `Overhear`; a family that talks is claimed here, and nothing is sent to it
+   *to recognise it* — whether it is written to afterwards is
+   `OutgoingTextFor`'s business, which defaults to never.
    Only when nobody claims the lines does the session send a neutral `*IDN?`
    on its own timeout and apply IEEE 488.2's four-field shape test to the
    answer (#310).
@@ -256,11 +301,11 @@ needs them.
 | Time page | `:PTIM:LEAP:*`, HP time-code formats | Queries fail politely (null lookups), features show em dashes |
 | Diagnostics page | `:DIAG:*` self-test keywords, HP log-entry grammar | Same |
 | Timing page | Antenna-cable presets, EFC hardware-condition bit meanings | Same |
-| Line protocol | Two link styles now (#310): an `scpi >` prompt grammar with `E-` error tokens for a family that answers, and a line-oriented listener for one that talks | A **binary protocol** (TSIP, UBX…) still cannot be driven — `Parse(string)` and `ClassifyLine(string)` are that assumption surfacing in the contract (item 5). A text protocol with a *different prompt* is nearer than it was: the listener shows how a second framing is served, but the prompt grammar itself is still `LineProtocol`'s |
+| Line protocol | Two link styles (#310), and since #470 the prompt within the answering one is the driver's: `Prompt` supplies the vocabulary, and auto-detect walks the union of every registered driver's, because the prompt must be recognised before the answer that selects a driver can be read | A **binary protocol** (TSIP, UBX…) still cannot be driven — `Parse(string)` and `ClassifyLine(string)` are that assumption surfacing in the contract (item 5). What #470 bought is a text protocol with a *different prompt*, and tolerance for a family that also emits unsolicited bytes between a reply and its prompt; what it did not buy is a family whose framing is not lines at all |
 | The connect sequence | Listens, then sends `*CLS`, then asks `*IDN?` | A talker is recognised from what it says and never asked — but the `*CLS` still goes out before the session knows what it is talking to. Harmless to every talker met so far; the end-to-end test pins that it is the *only* write |
 | Control lines on open | DTR and RTS asserted, unconditionally, by the transport (§7.1) | A receiver that uses a control line as an *input* has no way to say so — the BG7TBL went silent with DTR asserted ([#309](https://github.com/TGoodhew/WinZ3805A/issues/309), closed unbuilt). Control-line policy on open is on **no open issue**; raise one if your receiver needs a line deasserted |
 | Mode vocabulary | None, since [#304](https://github.com/TGoodhew/WinZ3805A/issues/304) | Say whatever your receiver says and map it in `InterpretSyncState`. The token is also what `trend.db` stores, so a history spanning a swap between families is read in the vocabulary of whichever driver is connected — the honest limit of colouring a chart by mode. The NMEA driver still says `LOCK`/`POW` because the common words happen to fit a talker, and it now maps them itself |
-| Advanced Console | *"Will send"*, then the transcript's `>` line | Over a broadcast link nothing is sent: picking a key shows the latest of what was heard, and the label is a query/response word |
+| Advanced Console | *"Will send"*, then the transcript's `>` line | Over a broadcast link **most** entries send nothing: picking a key shows the latest of what was heard, and the label is a query/response word. Since #508 one entry in one catalog really does send, so two rows in the same picker now mean different things by that label — worse rather than better, and unaddressed |
 | Capture harness | `Capture-Fixtures.ps1` sends `:SYST:STAT?` and strips echo and prompt; `FixtureCorpusTests` assumes every `*.txt` under `Fixtures/` is a status screen | A talker's capture is a timed listen, and belongs beside its tests rather than in the corpus folder until the corpus test can tell families apart |
 | Transport | Serial only | A network transport is item 7, sketched in [`lady-heather-comparison.md`](lady-heather-comparison.md) |
 | The specification | §7, §8, §11 describe the SmartClock as *the* behaviour | Raise amendments; never absorb the divergence silently — see [What to raise rather than absorb](#what-to-raise-rather-than-absorb) |
@@ -367,14 +412,54 @@ Save the bytes verbatim. Do not tidy whitespace: column positions carry
 meaning, and trailing spaces are often significant. The fixtures directory is
 marked `-text` in `.gitattributes` so line endings survive.
 
-**A talker is captured by listening**, not by asking: open the port at the
-rate you believe in and save a minute of what arrives. Keep the file beside
-your driver's tests rather than under `Fixtures/` — `FixtureCorpusTests`
-asserts every `*.txt` there is a status screen. With no hardware,
+**A talker is captured by listening**, not by asking, which is why
+`Capture-Fixtures.ps1` cannot do it: that script sends a mnemonic and strips
+the echoed command, and a talker answers nothing. Use
+`build/Capture-Talker.ps1`, which writes bytes rather than lines and a
+provenance note beside them. Keep the file beside your driver's tests rather
+than under `Fixtures/` — `FixtureCorpusTests` asserts every `*.txt` there is a
+status screen. With no hardware,
 `dotnet run --project tools\NmeaSimulator -- --stdout` gives a capture in the
-shape a real talker's will take; the tutorial's tests are written against it,
-and no real talker has been captured yet — #309 was deferred when the bench
-unit turned out to put no NMEA on the port the application can reach.
+shape a real talker's will take.
+
+**Do both.** The VK-162 captured on 7 Sep 2026 (#420) differed from the
+simulator in five ways that mattered, and the one that mattered most was a
+sentence the simulator sends every cycle and the receiver never sends at all —
+see the end of the tutorial. A simulator only emits what its author thought of.
+
+**There are three capture harnesses, because there are three link shapes**, and
+picking the wrong one destroys the evidence rather than merely failing:
+
+| Shape | Script | What it does with the echo |
+|---|---|---|
+| Query/response with a prompt (SmartClock) | `Capture-Fixtures.ps1` | **Strips** it, and the `scpi > ` prompt, to leave a status screen |
+| Broadcast talker (NMEA) | `Capture-Talker.ps1` | Nothing to strip: a talker is never asked |
+| Query/response, **first sitting** (UCCM) | `Capture-Uccm.ps1` | **Keeps** everything — the echo and the prompt are the evidence |
+
+That last row is the one worth reading twice, and it has since proved its own
+point. A UCCM was *believed* to echo each command before answering, so
+`Capture-Fixtures.ps1` — which strips the echo and the prompt to leave a clean
+screen — would have removed exactly the thing the first sitting existed to
+confirm. **It does not echo**: nought of eight replies on 10 Sep 2026 and nought
+of nine on 12 Sep. That is a finding the script could only produce because it
+kept what the other one throws away.
+
+The same sitting corrected the other half. This row said "no prompt" until
+13 Sep 2026, and a UCCM-P prints `UCCM-P >` — which is not the SmartClock's
+`scpi > `, and is why every transaction with one timed out while holding the
+answer until #470 gave the driver its own grammar. The belief that it had no
+prompt and the belief that it echoed were both wrong, and both were written down
+as facts.
+
+**If your family is a fourth shape, write a fourth script rather than bending one
+of these** — and give it a `-SelfTest` that runs in CI, because a capture harness
+is used perhaps once a season and a bug in it is found the day the hardware has
+gone home.
+
+**Report your protocol beliefs as counts, never assume them.** `Capture-Uccm.ps1`
+is built around this: it states the echo, the interleaved time code and the
+terminator as measurements out of *n* replies, because a harness that assumes a
+hypothesis confirms it by construction — which is the one result worth nothing.
 
 ### Step 2 — decide what `ReceiverStatus` can hold
 
@@ -451,7 +536,43 @@ Covered in [the safety model](#the-safety-model--obligations-that-bind-your-driv
 above; implement them exactly that way, and run
 `pwsh build/Test-NoBlockedCommands.ps1` before you push anything.
 
-### Step 6 — timeouts and cadence
+### Step 6 — timeouts, cadence, and what the transport does between commands
+
+**Before the numbers, one behaviour of the shared transport that a driver
+author will otherwise meet as a surprise.** `LineProtocol` realigns the stream
+between transactions, and since #395 it does so in two distinct ways:
+
+| | when | cost |
+|---|---|---|
+| **Drain the pipe** | before every command | nothing — it reads what the pump has already collected |
+| **Purge the driver buffer** (`DiscardInBuffer`) | only when the previous transaction did **not** end on a prompt, and on the first command of a link | aborts the read the pump has in flight |
+
+**Why the purge is conditional.** Purging aborts the in-flight read, which
+raises an `OperationCanceledException` that `SerialTransport`'s pump catches and
+carries on from. Doing it before every command made that **one exception per
+command — eight a second** on an idle connected receiver, none of them logged.
+That is not a fault, but it is invisible cost, and it read as a runaway retry
+loop to everyone who met it in #385's counters.
+
+**What this means for your driver.** The transport assumes a receiver that
+answers when asked and is silent otherwise: after a transaction that ended on a
+prompt, nothing more is expected, so nothing is purged.
+
+- **A command-response receiver needs nothing from you here.** This is the
+  SmartClock family's shape and the assumption holds.
+- **A receiver that emits unsolicited output between commands** — a status line
+  on an alarm, a keep-alive, anything the application did not ask for — will
+  have that output *drained into the next transaction's read* rather than
+  purged. `LineProtocol` discards what it drains, so the practical effect is
+  that unsolicited bytes are dropped rather than misread; but if your receiver
+  says something between commands that **matters**, a driver that expects the
+  transport to catch it will not see it. Say so in your driver's remarks, and
+  raise it (Step 11) rather than working around it.
+- **A talker that streams continuously does not use this path at all.** NMEA
+  and its family read through `BroadcastListener`, which never sends a command
+  and never purges anything.
+
+#### The numbers
 
 **These are measurements, not conventions.** Copying another receiver's figures
 gives numbers that are either wastefully long or short enough to fail healthy
