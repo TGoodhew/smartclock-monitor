@@ -343,19 +343,43 @@ def test_a_talker_still_reports_what_it_actually_broadcasts() -> None:
     assert SmartClockDriver(clock=FixedClock(NOW)).reports(ReceiverReading.HOLDOVER) is True
 
 
-def test_a_smartclock_declines_nothing_in_the_list_as_it_stands() -> None:
-    """And that is a statement about the list, not a claim that a SmartClock knows everything.
+def test_a_smartclock_declines_exactly_the_two_a_status_screen_has_no_field_for() -> None:
+    """This test was written to fail on the day the enum grew a reading a SmartClock lacks.
 
-    Every entry is a reading the status screen or a §8.1 query supplies, because this is the family
-    the specification was written against. Dilution of precision, the geoid separation and the
-    satellites *used* in a fix are all broadcast by a talker and absent from a status screen — when
-    those are added, this test is what will need changing, and that is the point of pinning it.
+    It said so: *"when those are added, this test is what will need changing, and that is the point
+    of pinning it."* #58 added them — the position's error estimate and the constellation's
+    integrity check, both broadcast by a talker and both absent from a status screen — and this is
+    the test that noticed.
+
+    Pinned as an exact set rather than a floor, so the next one has to be argued for here too.
     """
     smartclock = SmartClockDriver(clock=FixedClock(NOW))
 
-    declined = [r for r in ALL_READINGS if not smartclock.reports(r)]
+    declined = {r for r in ALL_READINGS if not smartclock.reports(r)}
 
-    assert declined == [], f"the enum has grown a reading a SmartClock lacks: {declined}"
+    assert declined == {
+        ReceiverReading.POSITION_UNCERTAINTY,
+        ReceiverReading.CONSTELLATION_INTEGRITY,
+    }
+
+
+def test_the_seam_runs_both_ways() -> None:
+    """Until #58 every decline was a talker's. Now each family declines something the other has.
+
+    That is the property worth pinning: neither family is the default, and a reading absent from
+    one is not thereby a second-class reading.
+    """
+    clock = FixedClock(NOW)
+    smartclock, talker = SmartClockDriver(clock=clock), NmeaDriver(clock=clock)
+
+    smartclock_only = {r for r in ALL_READINGS if smartclock.reports(r) and not talker.reports(r)}
+    talker_only = {r for r in ALL_READINGS if talker.reports(r) and not smartclock.reports(r)}
+
+    assert smartclock_only, "a talker should lack readings a disciplined oscillator has"
+    assert talker_only == {
+        ReceiverReading.POSITION_UNCERTAINTY,
+        ReceiverReading.CONSTELLATION_INTEGRITY,
+    }
 
 
 def test_the_gate_catches_a_family_that_declines_something_it_broadcasts() -> None:

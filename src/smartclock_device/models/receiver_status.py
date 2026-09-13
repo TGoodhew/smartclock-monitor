@@ -19,6 +19,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from types import MappingProxyType
 
+from smartclock_device.models.fix_quality import ConstellationIntegrity, PositionUncertainty
 from smartclock_device.models.position import (
     GeoPosition,
     HeightDatum,
@@ -311,6 +312,19 @@ class ReceiverStatus:
 
     #: Which datum :attr:`GeoPosition.height_metres` is measured against.
     height_datum: HeightDatum = HeightDatum.UNKNOWN
+
+    #: One-sigma position error from ``GST``, or ``None`` where the family cannot report one.
+    #:
+    #: The first reading in this model that a **talker** supplies and a **SmartClock** cannot: a
+    #: status screen prints a position and has no field for how much to believe it (#58).
+    uncertainty: PositionUncertainty | None = None
+
+    #: ``GBS``'s integrity check, or ``None`` where the family cannot run one.
+    #:
+    #: ``None`` means *not asked*; an instance with no faulted satellite means *asked, and nothing
+    #: wrong*. Those are different facts and the wire cannot tell them apart, which is why this is
+    #: a nullable object rather than a flag.
+    integrity: ConstellationIntegrity | None = None
 
     # ---- HEALTH -----------------------------------------------------------------------------
 

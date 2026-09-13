@@ -187,6 +187,18 @@ class ReceiverReading(Enum):
     #: §10.6's position hold — surveyed, held or unknown, and any survey in progress.
     POSITION_HOLD = "whether the position is surveyed or held"
 
+    # -- What a talker broadcasts and a status screen has no field for ----------------------------
+
+    #: §10.6's one-sigma position error, from ``GST``.
+    #:
+    #: The first entry that runs the other way. Every reading above is one a SmartClock supplies
+    #: and a talker may not; this is one a talker supplies and a SmartClock cannot — it prints a
+    #: position and stops, so no firmware revision will ever add an error estimate to it.
+    POSITION_UNCERTAINTY = "the position's error estimate"
+
+    #: §10.6's receiver-autonomous integrity check, from ``GBS``.
+    CONSTELLATION_INTEGRITY = "the constellation's integrity check"
+
 
 #: Every reading. Named so a gate can walk them without the enum being iterated at a call site,
 #: where iterating would be the scatter of conditionals the driver seam exists to prevent.
@@ -227,4 +239,6 @@ STATUS_FIELDS: dict[ReceiverReading, tuple[str, ...]] = {
         "survey_percent_complete",
         "survey_suspended_reason",
     ),
+    ReceiverReading.POSITION_UNCERTAINTY: ("uncertainty",),
+    ReceiverReading.CONSTELLATION_INTEGRITY: ("integrity",),
 }

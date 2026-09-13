@@ -50,6 +50,7 @@ from smartclock_device.commands.position_argument import (
 from smartclock_device.drivers.capability import Capability, ReceiverReading
 from smartclock_device.models import antenna_cable, coordinates
 from smartclock_device.models.device_identity import DeviceIdentity
+from smartclock_device.models.fix_quality import ConstellationIntegrity, PositionUncertainty
 from smartclock_device.models.position import GeoPosition
 from smartclock_device.models.receiver_status import (
     OutputValidity,
@@ -838,6 +839,37 @@ class _DegreesMinutesSeconds:
         self._seconds.setValue(seconds)
 
 
+def _horizontal_error(uncertainty: PositionUncertainty | None) -> str:
+    """§10.6's error in metres, from `GST`'s two horizontal deviations.
+
+    One decimal place. The receiver's own figures have two significant digits — 1.7 to 2.1 m across
+    the corpus — and a metre-level estimate printed to the centimetre would claim a precision the
+    sentence does not carry.
+    """
+    if uncertainty is None:
+        return DASH
+    horizontal = uncertainty.horizontal_metres
+    return DASH if horizontal is None else f"{horizontal:.1f} m"
+
+
+def _integrity_text(integrity: ConstellationIntegrity | None) -> str:
+    """What `GBS` found, in words.
+
+    Three states, not two, and the third is the one worth the code. ``None`` is *the family cannot
+    run this check*; clean is *it ran and found nothing*; and a faulted satellite names itself. A
+    receiver that was never asked and a receiver reporting perfect health are indistinguishable on
+    the wire, so a bare "OK" for both would be an invention.
+    """
+    if integrity is None:
+        return DASH
+    if integrity.is_clean:
+        return "No satellite faulted"
+    faulted = integrity.faulted
+    assert faulted is not None  # is_clean is exactly this being None
+    bias = "" if integrity.bias_metres is None else f", bias {integrity.bias_metres:.1f} m"
+    return f"{faulted.designation} excluded{bias}"
+
+
 def _whole_field(name: str, maximum: int, suffix: str) -> QSpinBox:
     box = QSpinBox()
     box.setRange(0, maximum)
@@ -862,7 +894,22 @@ class PositionPage(_FieldsExport, Page):
 
         frame, frame_layout = card("Position")
         self._fields = FieldGrid(
-            ("Latitude", "Longitude", "Height", "Datum", "Mode", "Qualifier", "Survey", "Suspended")
+            (
+                "Latitude",
+                "Longitude",
+                "Height",
+                "Datum",
+                "Mode",
+                "Qualifier",
+                # §10.6's two fix-quality rows (#58). Dashed on a family that cannot report them
+                # rather than hidden, because the Position card is otherwise identical between the
+                # two families and a card that changes shape on connect is harder to read than one
+                # with two dashes in it. The *page* is not declined — a talker fills the rest.
+                "Horizontal error",
+                "Integrity",
+                "Survey",
+                "Suspended",
+            )
         )
         frame_layout.addWidget(self._fields)
         layout.addWidget(frame)
@@ -1127,6 +1174,11 @@ class PositionPage(_FieldsExport, Page):
         else:
             self._survey_note.setText(error or "The receiver did not answer.")
 
+    @property
+    def fields(self) -> FieldGrid:
+        """§10.6's card, for a test to read. Matches `HoldoverPage.fields`."""
+        return self._fields
+
     def show_reading(self, reading: Reading) -> None:
         status = reading.status
         position = status.position
@@ -1153,6 +1205,8 @@ class PositionPage(_FieldsExport, Page):
             )
 
         self._last_position = status.position
+        self._fields.set("Horizontal error", _horizontal_error(status.uncertainty))
+        self._fields.set("Integrity", _integrity_text(status.integrity))
         self._fields.set("Datum", humanise(status.height_datum))
         self._fields.set("Mode", humanise(status.position_mode))
         self._fields.set("Qualifier", humanise(status.position_qualifier))
