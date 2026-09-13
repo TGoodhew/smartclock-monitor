@@ -32,6 +32,7 @@ from smartclock_device.drivers.base import WHOLE_CYCLE
 from smartclock_device.drivers.nmea import sentences
 from smartclock_device.drivers.nmea.driver import NmeaDriver
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
+from smartclock_device.models.satellite import Constellation, TrackedSatellite
 from smartclock_device.transport.broadcast import BroadcastListener
 from smartclock_device.transport.transaction import Transaction, TransactionOutcome
 
@@ -191,15 +192,12 @@ def test_a_talker_that_sends_gns_instead_of_gga_is_read(name: str, cycles: int) 
     )
 
 
-@pytest.mark.xfail(
-    strict=True, reason="#57: a satellite is a bare number, so two constellations collide"
-)
 def test_two_constellations_do_not_collide_on_one_number() -> None:
     """The forM8N outdoors, where BeiDou actually tracks.
 
-    Every cycle in this capture has at least one satellite number reported by two talkers, and
-    `TrackedSatellite` is keyed on the number alone — so `_visible` collapses the pair and the
-    count is short by however many collided.
+    Every cycle in this capture has at least one satellite number reported by two talkers. Keyed on
+    the number alone, `_visible` collapsed each pair and the count came up short — which reads as
+    poor reception rather than as a parsing choice, and sends someone onto the roof.
     """
     name = "form8n-gps-beidou-outdoors"
     talkers_by_number: dict[int, set[str]] = collections.defaultdict(set)
@@ -218,7 +216,24 @@ def test_two_constellations_do_not_collide_on_one_number() -> None:
     statuses = _replay(name)
     richest = max(statuses, key=lambda s: len(s.tracked))
 
-    assert len({(s.constellation, s.prn) for s in richest.tracked}) == len(richest.tracked)  # type: ignore[attr-defined]
+    assert len({s.identity for s in richest.tracked}) == len(richest.tracked)
+    assert len({(s.identity.constellation) for s in richest.tracked}) > 1, (
+        "the richest cycle should draw on both constellations"
+    )
+
+
+def test_a_smartclock_satellite_is_still_a_bare_number() -> None:
+    """#57 widened the identity for the family that needs it and left the other alone.
+
+    A SmartClock reports bare PRNs and its exclusion commands take bare PRNs, so its satellites are
+    `UNKNOWN` and every surface renders them exactly as §9.10.2 says — *"PRN 19, elevation 65
+    degrees…"*. If this ever fails, the change leaked into the family it was supposed not to touch.
+    """
+    satellite = TrackedSatellite(prn=19, elevation_degrees=65, azimuth_degrees=52)
+
+    assert satellite.constellation is Constellation.UNKNOWN
+    assert satellite.identity.designation == "19"
+    assert satellite.identity.spoken == "PRN 19"
 
 
 @pytest.mark.xfail(strict=True, reason="#58: GST and GBS are not in KEYS, so neither is read")
@@ -303,3 +318,61 @@ def test_the_banner_is_present_and_says_what_the_unit_is_programmed_for() -> Non
     assert "GPS;GLO;BDS" in text, "the supported-constellation line"
     assert "GNSS OTP=GPS;BDS" in text, "and the one that describes this unit"
     assert "GLGSV" not in text, "GLO is supported and not programmed, so nothing GLONASS arrives"
+
+
+def test_number_only_keying_loses_satellites_and_identity_keying_does_not() -> None:
+    """How much #57 was actually costing, measured rather than asserted.
+
+    Counts every satellite sighting in every GSV page two ways — by number alone, which is what
+    `_visible` used to key on, and by identity. The difference is what the sky plot and the
+    satellite count were dropping, and it is not small: **2,526 of 15,176** on this bench's own
+    forM8N capture.
+
+    The second half is the one that guards against over-correcting: on a single-constellation
+    talker the two keyings must agree **exactly**, because widening the identity must not change
+    what a receiver with one constellation reports.
+    """
+    multi, single = 0, 0
+    for name in (*CARRIED, *BENCH):
+        by_number: set[int] = set()
+        by_identity: set[tuple[Constellation, int]] = set()
+        for raw in (CAPTURES / f"{name}.nmea").read_bytes().decode("ascii", "replace").splitlines():
+            parsed = sentences.parse(raw.strip())
+            if parsed is None or parsed.kind != sentences.GSV:
+                continue
+            for index in range(3, len(parsed.fields), 4):
+                number = sentences.parse_int(parsed.fields[index])
+                if number is None:
+                    continue
+                by_number.add(number)
+                by_identity.add((sentences.constellation_for(parsed.talker, number), number))
+
+        lost = len(by_identity) - len(by_number)
+        if name.startswith("vk162"):
+            assert lost == 0, f"{name} has one constellation and must be unaffected"
+            single += 1
+        else:
+            assert lost > 0, f"{name} has two constellations and should have been losing some"
+            multi += 1
+
+    assert single >= 6, "the single-constellation half of the corpus went missing"
+    assert multi >= 5, "the multi-constellation half of the corpus went missing"
+
+
+def test_waas_is_sbas_in_both_sentences_or_it_is_dropped() -> None:
+    """The bug this change introduced on the way, and the reason it is gated.
+
+    NMEA numbers satellite-based augmentation **33–64 inside the GPS talker**, so one `$GPGSA` can
+    hold GPS and SBAS slots together. Deciding the constellation once per sentence made every WAAS
+    satellite GPS in GSA and SBAS in GSV; the two then never matched and the tracked list quietly
+    lost them — `vk162-steady-state` went from 12 tracked to 10.
+
+    A decrease is the one direction this change must never produce, so it is pinned.
+    """
+    statuses = _replay("vk162-steady-state")
+    richest = max(statuses, key=lambda s: len(s.tracked))
+
+    assert len(richest.tracked) == 12, "the SBAS satellites fell out of the tracked list"
+    assert any(s.constellation is Constellation.SBAS for s in richest.tracked), (
+        "this capture carries WAAS satellites 46 and 48; they should be recognised as SBAS"
+    )

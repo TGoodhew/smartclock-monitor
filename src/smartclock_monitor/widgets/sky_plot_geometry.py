@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from smartclock_device.models.receiver_status import SignalStrengthKind
+from smartclock_device.models.satellite import SatelliteId
 
 #: How large a marker can get, in pixels across.
 MAX_MARKER = 18.0
@@ -147,7 +148,7 @@ def sequential_step(
 
 
 def describe(
-    prn: int,
+    identity: SatelliteId,
     elevation: int | None,
     azimuth: int | None,
     strength: int | None,
@@ -160,10 +161,16 @@ def describe(
     carrier to noise 49, tracked."* An unreported field is **omitted rather than read as a dash**,
     because "elevation dash degrees" is noise where leaving it out is a fact.
 
+    **The opening is `SatelliteId.spoken`**, which is *"PRN 19"* exactly as above whenever the
+    constellation is unknown — so a SmartClock's satellite is spoken precisely as §9.10.2 says.
+    Where a talker did say, it becomes *"BeiDou 4"*: "PRN 4" spoken twice in one plot, for two
+    different satellites, is the failure #57 exists to prevent, and a screen reader has no shape or
+    colour to fall back on.
+
     The strength is named by its scale, not by a generic word, for the same reason the marker size
     takes the kind: the two are not interchangeable and a listener needs to know which they heard.
     """
-    parts = [f"PRN {prn}"]
+    parts = [identity.spoken]
 
     if elevation is not None:
         parts.append(f"elevation {elevation} degrees")

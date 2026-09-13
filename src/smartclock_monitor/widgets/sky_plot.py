@@ -24,7 +24,12 @@ from PySide6.QtGui import QColor, QFocusEvent, QKeyEvent, QMouseEvent, QPainter,
 from PySide6.QtWidgets import QWidget
 
 from smartclock_device.models.receiver_status import SignalStrengthKind
-from smartclock_device.models.satellite import PredictedSatellite, TrackedSatellite
+from smartclock_device.models.satellite import (
+    Constellation,
+    PredictedSatellite,
+    SatelliteId,
+    TrackedSatellite,
+)
 from smartclock_monitor.themes.spacing import SKY_PLOT_POINTER_TARGET, Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
 from smartclock_monitor.widgets.sky_plot_geometry import (
@@ -50,6 +55,12 @@ class Marker:
     azimuth: int | None
     strength: int | None
     tracked: bool
+    constellation: Constellation = Constellation.UNKNOWN
+
+    @property
+    def identity(self) -> SatelliteId:
+        """What actually names this marker. Two constellations share numbers (#57)."""
+        return SatelliteId(prn=self.prn, constellation=self.constellation)
 
     @property
     def is_placeable(self) -> bool:
@@ -71,20 +82,38 @@ def markers_from(
     structural difference the parser uses to tell the two groups apart, and it survives to here.
     """
     markers = [
-        Marker(s.prn, s.elevation_degrees, s.azimuth_degrees, s.signal_strength, tracked=True)
+        Marker(
+            s.prn,
+            s.elevation_degrees,
+            s.azimuth_degrees,
+            s.signal_strength,
+            tracked=True,
+            constellation=s.constellation,
+        )
         for s in tracked
     ]
     markers += [
-        Marker(s.prn, s.elevation_degrees, s.azimuth_degrees, None, tracked=False)
+        Marker(
+            s.prn,
+            s.elevation_degrees,
+            s.azimuth_degrees,
+            None,
+            tracked=False,
+            constellation=s.constellation,
+        )
         for s in not_tracked
     ]
-    return tuple(sorted(markers, key=lambda marker: marker.prn))
+    # Sorted by identity rather than by number, so two claimants of one number land next to each
+    # other instead of in an order that depends on which talker paged first.
+    return tuple(sorted(markers, key=lambda marker: marker.identity))
 
 
 class SatelliteMarker(QWidget):
     """One marker: a real widget, so the accessibility tree is correct by construction."""
 
-    selected = Signal(int)
+    #: Carries the satellite's designation — `G04`, `C04`, or a bare number for a SmartClock.
+    #: A number alone would select both claimants of it (#57).
+    selected = Signal(str)
 
     def __init__(
         self,
@@ -107,7 +136,7 @@ class SatelliteMarker(QWidget):
         self.setFixedSize(SKY_PLOT_POINTER_TARGET, SKY_PLOT_POINTER_TARGET)
         self.setAccessibleName(
             describe(
-                marker.prn,
+                marker.identity,
                 marker.elevation,
                 marker.azimuth,
                 marker.strength,
@@ -137,11 +166,11 @@ class SatelliteMarker(QWidget):
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802 - Qt's own casing
         del event
         self.setFocus(Qt.FocusReason.MouseFocusReason)
-        self.selected.emit(self._marker.prn)
+        self.selected.emit(self._marker.identity.designation)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 - Qt's own casing
         if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter, Qt.Key.Key_Space):
-            self.selected.emit(self._marker.prn)
+            self.selected.emit(self._marker.identity.designation)
             return
         # Arrow keys belong to the plot, which owns the PRN ordering.
         event.ignore()
@@ -198,7 +227,8 @@ class SatelliteMarker(QWidget):
 class SkyPlot(QWidget):
     """The polar plot, and the markers that live on it."""
 
-    satellite_selected = Signal(int)
+    #: The selected satellite's designation. A number alone would name two of them (#57).
+    satellite_selected = Signal(str)
 
     def __init__(self, palette: Palette = LIGHT, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -206,7 +236,7 @@ class SkyPlot(QWidget):
         self._markers: list[SatelliteMarker] = []
         self._kind = SignalStrengthKind.UNKNOWN
         self._mask_degrees: int | None = None
-        self._selected_prn: int | None = None
+        self._selected: str | None = None
 
         self.setMinimumSize(240, 240)
         # §9.6.1 caps it at 360 and stacks the table beneath rather than stretching it: an
@@ -258,8 +288,9 @@ class SkyPlot(QWidget):
         return tuple(self._markers)
 
     @property
-    def selected_prn(self) -> int | None:
-        return self._selected_prn
+    def selected_designation(self) -> str | None:
+        """The selected satellite's designation, or ``None``."""
+        return self._selected
 
     # -- Layout --------------------------------------------------------------------------------
 
@@ -284,11 +315,11 @@ class SkyPlot(QWidget):
 
     # -- Interaction ---------------------------------------------------------------------------
 
-    def _on_marker_selected(self, prn: int) -> None:
-        self._selected_prn = prn
+    def _on_marker_selected(self, designation: str) -> None:
+        self._selected = designation
         for widget in self._markers:
-            widget.set_selected(widget.marker.prn == prn)
-        self.satellite_selected.emit(prn)
+            widget.set_selected(widget.marker.identity.designation == designation)
+        self.satellite_selected.emit(designation)
 
     def keyPressEvent(self, event: QKeyEvent) -> None:  # noqa: N802 - Qt's own casing
         """Arrow keys walk the markers in PRN order.
@@ -313,12 +344,16 @@ class SkyPlot(QWidget):
             return
 
         current = next(
-            (index for index, w in enumerate(self._markers) if w.marker.prn == self._selected_prn),
+            (
+                index
+                for index, w in enumerate(self._markers)
+                if w.marker.identity.designation == self._selected
+            ),
             -1,
         )
         nxt = (current + step) % len(self._markers)
         self._markers[nxt].setFocus(Qt.FocusReason.OtherFocusReason)
-        self._on_marker_selected(self._markers[nxt].marker.prn)
+        self._on_marker_selected(self._markers[nxt].marker.identity.designation)
 
     # -- Painting ------------------------------------------------------------------------------
 

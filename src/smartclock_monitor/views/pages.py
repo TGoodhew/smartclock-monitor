@@ -505,20 +505,23 @@ class SatellitesPage(Page):
             f"{len(status.tracked)} tracked, {len(status.not_tracked)} predicted{mask}"
         )
 
+        # Keyed and labelled by identity, not by number: two constellations share numbers, and a
+        # table with two rows both headed "4" cannot be read (#57). `designation` is the bare
+        # number for a SmartClock, so that table is unchanged.
         rows = [
-            (s.prn, s.elevation_degrees, s.azimuth_degrees, s.signal_strength, "Tracked")
+            (s.identity, s.elevation_degrees, s.azimuth_degrees, s.signal_strength, "Tracked")
             for s in status.tracked
         ] + [
-            (s.prn, s.elevation_degrees, s.azimuth_degrees, None, "Predicted")
+            (s.identity, s.elevation_degrees, s.azimuth_degrees, None, "Predicted")
             for s in status.not_tracked
         ]
         rows.sort(key=lambda row: row[0])
 
         self._table.setRowCount(len(rows))
-        for index, (prn, elevation, azimuth, strength, state) in enumerate(rows):
+        for index, (identity, elevation, azimuth, strength, state) in enumerate(rows):
             for column, text in enumerate(
                 (
-                    str(prn),
+                    identity.designation,
                     _degrees(elevation),
                     _degrees(azimuth),
                     _signal(strength, status.signal_strength_kind),

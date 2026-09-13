@@ -38,7 +38,12 @@ from smartclock_device.models.receiver_status import (
     SmartClockMode,
     TimeScale,
 )
-from smartclock_device.models.satellite import PredictedSatellite, TrackedSatellite
+from smartclock_device.models.satellite import (
+    Constellation,
+    PredictedSatellite,
+    SatelliteId,
+    TrackedSatellite,
+)
 from smartclock_device.transport.settings import Parity, SerialSettings, StopBits
 from smartclock_device.transport.transaction import Transaction
 
@@ -230,16 +235,19 @@ class NmeaDriver:
         used = _satellites_in_use(by_kind.get(sentences.GSA, []))
         visible = _visible(by_kind.get(sentences.GSV, []))
 
-        tracked = tuple(sat for prn, sat in sorted(visible.items()) if prn in used)
+        tracked = tuple(
+            sat for identity, sat in sorted(visible.items()) if _is_used(identity, used)
+        )
         not_tracked = tuple(
             PredictedSatellite(
-                prn=prn,
+                prn=identity.prn,
                 elevation_degrees=sat.elevation_degrees,
                 azimuth_degrees=sat.azimuth_degrees,
                 attempting_to_track=False,
+                constellation=identity.constellation,
             )
-            for prn, sat in sorted(visible.items())
-            if prn not in used
+            for identity, sat in sorted(visible.items())
+            if not _is_used(identity, used)
         )
 
         moment = _timestamp(by_kind.get(sentences.RMC, []), fix)
@@ -352,33 +360,83 @@ def _position(fix: sentences.Sentence | None) -> GeoPosition | None:
     )
 
 
-def _satellites_in_use(gsa: list[sentences.Sentence]) -> set[int]:
-    """GSA's twelve PRN slots. Empty slots are empty fields, not zeros."""
-    used: set[int] = set()
+#: Where GSA puts NMEA 4.11's GNSS system id, when it carries one at all.
+GSA_SYSTEM_ID: Final = 17
+
+
+def _gsa_constellation(sentence: sentences.Sentence, prn: int) -> Constellation:
+    """Which system one of a GSA sentence's slots belongs to.
+
+    Two sources, and the corpus says exactly which applies when: a ``GN`` GSA always carries
+    NMEA 4.11's system id in its last field (7,976 of them across the fixtures, none missing), and a
+    single-constellation GSA never does but names the system in its talker instead. Neither case is
+    a guess.
+
+    **Per slot rather than per sentence**, and the number is passed through, because the talker is
+    not always the whole answer: NMEA numbers satellite-based augmentation 33–64 *inside* the GPS
+    talker, so one ``$GPGSA`` can hold both GPS and SBAS. Deciding once per sentence made every
+    WAAS satellite a GPS one here and an SBAS one in GSV, so the two never matched and the tracked
+    list quietly lost them — 12 tracked down to 10 in ``vk162-steady-state``, which is the very
+    symptom #57 exists to remove rather than introduce.
+    """
+    system = sentence.field(GSA_SYSTEM_ID)
+    if system is not None and system in sentences.SYSTEM_IDS:
+        return sentences.SYSTEM_IDS[system]
+    return sentences.constellation_for(sentence.talker, prn)
+
+
+def _satellites_in_use(gsa: list[sentences.Sentence]) -> set[SatelliteId]:
+    """GSA's twelve slots, as identities. Empty slots are empty fields, not zeros."""
+    used: set[SatelliteId] = set()
     for sentence in gsa:
         for index in range(2, 14):
             prn = sentences.parse_int(sentence.field(index))
             if prn:
-                used.add(prn)
+                used.add(SatelliteId(prn=prn, constellation=_gsa_constellation(sentence, prn)))
     return used
 
 
-def _visible(gsv: list[sentences.Sentence]) -> dict[int, TrackedSatellite]:
-    """GSV's four-satellite groups, across however many sentences the talker paged them into."""
-    found: dict[int, TrackedSatellite] = {}
+def _is_used(identity: SatelliteId, used: set[SatelliteId]) -> bool:
+    """Whether GSA offered this satellite to the solution.
+
+    Matched on the full identity, which is the point of #57. **The fallback matters more than the
+    match**: where GSA could not say which system its slots belong to — a ``GN`` talker with no
+    system id, which no receiver in the corpus is but the standard permits — the identity is
+    ``UNKNOWN`` and an exact match would find nothing, emptying the tracked list for a receiver
+    that had been working. So an unknown-constellation entry matches on the number alone, which is
+    the behaviour this had before and is strictly better than dropping every satellite.
+    """
+    if identity in used:
+        return True
+    return any(
+        other.constellation is Constellation.UNKNOWN and other.prn == identity.prn for other in used
+    )
+
+
+def _visible(gsv: list[sentences.Sentence]) -> dict[SatelliteId, TrackedSatellite]:
+    """GSV's four-satellite groups, across however many sentences the talker paged them into.
+
+    **Keyed by identity, not by number.** Keyed by number, the second claimant of a number was
+    silently dropped: every one of the 632 cycles in ``form8n-wsl-bench.nmea``, where GPS 4 and
+    BeiDou 4 are in view together.
+    """
+    found: dict[SatelliteId, TrackedSatellite] = {}
     for sentence in gsv:
         for group in range(4):
             base = 3 + group * 4
             prn = sentences.parse_int(sentence.field(base))
             if prn is None:
                 continue
-            found[prn] = TrackedSatellite(
+            constellation = sentences.constellation_for(sentence.talker, prn)
+            identity = SatelliteId(prn=prn, constellation=constellation)
+            found[identity] = TrackedSatellite(
                 prn=prn,
                 elevation_degrees=sentences.parse_int(sentence.field(base + 1)),
                 azimuth_degrees=sentences.parse_int(sentence.field(base + 2)),
                 # Absent where the talker sees a satellite it is not tracking, which is precisely
                 # the distinction §10.5's table draws — so it stays None rather than becoming 0.
                 signal_strength=sentences.parse_int(sentence.field(base + 3)),
+                constellation=constellation,
             )
     return found
 
