@@ -26,7 +26,9 @@ from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_device.drivers.capability import Capability
 from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.models import status_register_map as registers
+from smartclock_device.models.fix_quality import ConstellationIntegrity, PositionUncertainty
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
+from smartclock_device.models.satellite import Constellation, SatelliteId
 from smartclock_device.transport.transaction import Transaction, TransactionOutcome
 from smartclock_monitor.services.commands import Then
 from smartclock_monitor.services.polling import Reading
@@ -34,7 +36,7 @@ from smartclock_monitor.services.session import CommandOutcome, Refusal
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.views.diagnostics_page import DiagnosticsPage
 from smartclock_monitor.views.holdover_page import HoldoverPage
-from smartclock_monitor.views.pages import DASH, TimingPage
+from smartclock_monitor.views.pages import DASH, PositionPage, TimingPage
 from smartclock_monitor.views.registers_page import StatusRegistersPage
 
 DEAF = object()
@@ -740,3 +742,60 @@ def test_a_delay_the_model_will_not_accept_is_not_sent() -> None:
 
     assert antenna_cable.is_acceptable_delay(1e9) is False
     assert catalog.SET_ANTENNA_DELAY.rendered(1.0) is None, "and the bound refuses it too"
+
+
+# ---- #58: §10.6's two fix-quality rows ---------------------------------------------------------
+
+
+def test_the_position_page_shows_the_error_a_talker_reports(application: QApplication) -> None:
+    """A metre-level figure, to one decimal, from `GST`'s two horizontal deviations."""
+    del application
+    page = PositionPage()
+    page.show_reading(
+        Reading(
+            status=ReceiverStatus(
+                captured_at=NOW,
+                uncertainty=PositionUncertainty(
+                    latitude_metres=1.8, longitude_metres=1.6, altitude_metres=3.7
+                ),
+                integrity=ConstellationIntegrity(),
+            )
+        )
+    )
+
+    assert page.fields.value_of("Horizontal error") == "2.4 m"
+    assert page.fields.value_of("Integrity") == "No satellite faulted"
+
+
+def test_a_family_that_cannot_report_them_dashes_both(application: QApplication) -> None:
+    """§11.1's dash, and here it is the right symbol: a SmartClock's Position card is otherwise
+    identical, and a card that changes shape on connect is harder to read than two dashes.
+
+    The *page* is not declined — a talker fills the rest of it, so §11's rule does not apply to
+    the destination, only to these two values.
+    """
+    del application
+    page = PositionPage()
+    page.show_reading(Reading(status=ReceiverStatus(captured_at=NOW)))
+
+    assert page.fields.value_of("Horizontal error") == DASH
+    assert page.fields.value_of("Integrity") == DASH
+
+
+def test_a_faulted_satellite_is_named_with_its_constellation(application: QApplication) -> None:
+    """Synthetic — no receiver in the corpus has flagged one. See `test_nmea_captures.py`."""
+    del application
+    page = PositionPage()
+    page.show_reading(
+        Reading(
+            status=ReceiverStatus(
+                captured_at=NOW,
+                integrity=ConstellationIntegrity(
+                    faulted=SatelliteId(prn=3, constellation=Constellation.GPS),
+                    bias_metres=-21.4,
+                ),
+            )
+        )
+    )
+
+    assert page.fields.value_of("Integrity") == "G03 excluded, bias -21.4 m"

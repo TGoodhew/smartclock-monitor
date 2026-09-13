@@ -30,6 +30,7 @@ from smartclock_device.drivers.base import WHOLE_CYCLE, Cadence, LinkStyle, Poll
 from smartclock_device.drivers.capability import Capability, CommandGroup, ReceiverReading
 from smartclock_device.drivers.nmea import sentences
 from smartclock_device.models.device_identity import DeviceIdentity
+from smartclock_device.models.fix_quality import ConstellationIntegrity, PositionUncertainty
 from smartclock_device.models.position import GeoPosition, HeightDatum, PositionMode
 from smartclock_device.models.receiver_status import (
     OutputValidity,
@@ -255,6 +256,8 @@ class NmeaDriver:
         )
 
         moment = _timestamp(by_kind.get(sentences.RMC, []), fix)
+        gst = by_kind.get(sentences.GST, ())
+        gbs = by_kind.get(sentences.GBS, ())
 
         return ReceiverStatus(
             captured_at=self.clock.utc_now(),
@@ -278,6 +281,8 @@ class NmeaDriver:
             # §10.6 records for the SmartClock's own height field.
             height_datum=HeightDatum.MSL if _position(fix) is not None else HeightDatum.UNKNOWN,
             health_ok=_has_fix(fix),
+            uncertainty=_uncertainty(gst[0] if gst else None),
+            integrity=_integrity(gbs[0] if gbs else None),
         )
 
     #: What a GNSS talker has no way of ever supplying (§11, #60).
@@ -426,6 +431,62 @@ def _gsa_constellation(sentence: sentences.Sentence, prn: int) -> Constellation:
     if system is not None and system in sentences.SYSTEM_IDS:
         return sentences.SYSTEM_IDS[system]
     return sentences.constellation_for(sentence.talker, prn)
+
+
+def _uncertainty(gst: sentences.Sentence | None) -> PositionUncertainty | None:
+    """``GST``'s three per-axis standard deviations, in metres.
+
+    **Fields 5, 6 and 7, and nothing before them.** Field 1 is the total range residual RMS and is
+    deliberately unread: on the only receiver in the corpus that sends it, it runs from 17 to
+    3,179,277 across 300 sentences from a module sitting still on one unbroken fix, while the three
+    deviations in those very same sentences stay between 1.6 and 4.1 m. Reading it would put a
+    six-order-of-magnitude number on §10.6 once every dozen seconds.
+
+    ``None`` when the sentence is absent — the family was not asked, or cannot answer. An instance
+    with every field ``None`` cannot arise from a valid sentence, because a `GST` with no
+    deviations at all still parses to one and renders as §11.1's dashes, which is the right answer
+    for a receiver that sent the sentence and filled nothing in.
+    """
+    if gst is None:
+        return None
+    return PositionUncertainty(
+        latitude_metres=sentences.parse_float(gst.field(5)),
+        longitude_metres=sentences.parse_float(gst.field(6)),
+        altitude_metres=sentences.parse_float(gst.field(7)),
+    )
+
+
+def _integrity(gbs: sentences.Sentence | None) -> ConstellationIntegrity | None:
+    """``GBS``'s integrity check — which satellite the receiver would exclude, if any.
+
+    The satellite id is in field 4 and is **blank in every cycle of the corpus**, which is the
+    clean case rather than a missing one: the sentence arrived and the receiver flagged nothing.
+    That is why this returns an instance with no faulted satellite rather than ``None`` — ``None``
+    is reserved for a family that was never asked, and the two are different facts.
+
+    The system id in field 8 names the constellation the faulted number belongs to, on a receiver
+    that fills it. Where it is absent the number stands alone, which is the same honest
+    `UNKNOWN` a `$GNGSV` page gets.
+    """
+    if gbs is None:
+        return None
+
+    number = sentences.parse_int(gbs.field(4))
+    system = gbs.field(8)
+    faulted = (
+        SatelliteId(
+            prn=number,
+            constellation=sentences.SYSTEM_IDS.get(system or "", Constellation.UNKNOWN),
+        )
+        if number is not None
+        else None
+    )
+    return ConstellationIntegrity(
+        faulted=faulted,
+        miss_probability=sentences.parse_float(gbs.field(5)),
+        bias_metres=sentences.parse_float(gbs.field(6)),
+        bias_deviation_metres=sentences.parse_float(gbs.field(7)),
+    )
 
 
 def _satellites_in_use(gsa: list[sentences.Sentence]) -> set[SatelliteId]:

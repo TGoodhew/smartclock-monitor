@@ -27,7 +27,9 @@ from smartclock_device.models.satellite import Constellation
 #: The sentences this driver understands, keyed as plan entries.
 GGA: Final = "GGA"
 GNS: Final = "GNS"
+GBS: Final = "GBS"
 GSA: Final = "GSA"
+GST: Final = "GST"
 GSV: Final = "GSV"
 RMC: Final = "RMC"
 
@@ -53,7 +55,7 @@ RMC: Final = "RMC"
 FIX_KINDS: Final[tuple[str, ...]] = (GGA, GNS)
 
 #: Every key the plan may name.
-KEYS: Final[tuple[str, ...]] = (GGA, GNS, GSA, GSV, RMC)
+KEYS: Final[tuple[str, ...]] = (GGA, GNS, GBS, GSA, GST, GSV, RMC)
 
 
 @dataclass(frozen=True, slots=True)

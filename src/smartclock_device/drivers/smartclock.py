@@ -140,21 +140,27 @@ class SmartClockDriver(QueryResponseDefaults):
         """
         return StatusScreenParser(self.clock).parse(transaction.text)
 
-    def reports(self, reading: ReceiverReading) -> bool:
-        """**Everything in :class:`ReceiverReading` today**, and that is a statement about the enum.
+    #: What a status screen has no field for, however long you wait.
+    #:
+    #: The prediction in the first version of :meth:`reports` — *"when those are added, this is the
+    #: method that declines them"* — collected on the first try. A SmartClock prints a position and
+    #: stops: there is no error estimate beside it and no integrity check behind it, and no firmware
+    #: revision is going to add one to an 80-column screen.
+    NEVER_REPORTS: Final[frozenset[ReceiverReading]] = frozenset(
+        {
+            ReceiverReading.POSITION_UNCERTAINTY,
+            ReceiverReading.CONSTELLATION_INTEGRITY,
+        }
+    )
 
-        Every entry there is a reading the status screen or a §8.1 query supplies, because this is
-        the family the specification was written against. It is not a claim that a SmartClock knows
-        everything: dilution of precision, the geoid separation and the satellites *used* in a fix
-        are all things a talker broadcasts and a status screen has no field for, and when those are
-        added — they are the other half of #58 — **this is the method that declines them.**
+    def reports(self, reading: ReceiverReading) -> bool:
+        """Everything the status screen or a §8.1 query supplies, which is most of the enum.
 
         Written out rather than inherited. `ReceiverDriver` is a `Protocol`, and a Protocol cannot
         default anything for a structural implementer; the same reason `QueryResponseDefaults`
         exists a few lines below it.
         """
-        del reading
-        return True
+        return reading not in self.NEVER_REPORTS
 
     def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
         """Fold the fast-tier answers into the status the full tier last produced.

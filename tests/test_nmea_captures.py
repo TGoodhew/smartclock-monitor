@@ -27,8 +27,10 @@ from typing import Final
 
 import pytest
 
+from conftest import NOW
 from smartclock_device.clock import FixedClock
 from smartclock_device.drivers.base import WHOLE_CYCLE
+from smartclock_device.drivers.capability import ReceiverReading
 from smartclock_device.drivers.nmea import sentences
 from smartclock_device.drivers.nmea.driver import NmeaDriver
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
@@ -236,17 +238,105 @@ def test_a_smartclock_satellite_is_still_a_bare_number() -> None:
     assert satellite.identity.spoken == "PRN 19"
 
 
-@pytest.mark.xfail(strict=True, reason="#58: GST and GBS are not in KEYS, so neither is read")
 def test_the_fix_reports_its_own_error() -> None:
     """The only capture carrying `GST` or `GBS` — 300 of each, enabled deliberately (#516).
 
     §10.6 has a row for the position's error in metres, and this is the sitting that can fill it.
+    Written as an expected failure before the parsing existed; the marker came off when `strict`
+    turned its unexpected pass into a failure.
     """
     headers = _headers("form8n-gst-gbs")
     assert headers["GNGST"] == 300, "this capture should carry 300 GST"
+    assert headers["GNGBS"] == 300, "and 300 GBS"
 
-    assert sentences.GST in sentences.KEYS  # type: ignore[attr-defined]
-    assert sentences.GBS in sentences.KEYS  # type: ignore[attr-defined]
+    statuses = _replay("form8n-gst-gbs")
+
+    assert all(s.uncertainty is not None for s in statuses), "every cycle carries a GST"
+    horizontals = [s.uncertainty.horizontal_metres for s in statuses if s.uncertainty is not None]
+    assert all(h is not None and 2.4 <= h <= 2.9 for h in horizontals), (
+        "the horizontal error should sit near 2.7 m throughout this sitting"
+    )
+
+
+def test_the_range_rms_is_never_read_because_it_cannot_be_believed() -> None:
+    """`GST` field 1 from this module runs from 17 to 3,179,277 on one unbroken fix.
+
+    Measured here rather than taken on trust from the capture's note — which says *"34 of the 300
+    are in the millions"* where 34 is the count above ten thousand and 23 are above a million.
+    Either way the field is unusable, and nothing in the application displays it.
+    """
+    values = []
+    for raw in (CAPTURES / "form8n-gst-gbs.nmea").read_bytes().decode("ascii").splitlines():
+        parsed = sentences.parse(raw.strip())
+        if parsed is not None and parsed.kind == sentences.GST:
+            rms = sentences.parse_float(parsed.field(1))
+            if rms is not None:
+                values.append(rms)
+
+    assert min(values) < 20 and max(values) > 1e6, "the field is as wild as the sitting recorded"
+
+    statuses = _replay("form8n-gst-gbs")
+    for status in statuses:
+        assert status.uncertainty is not None
+        # Nothing on the model can carry it, which is the point: there is no field to put it in.
+        assert not hasattr(status.uncertainty, "range_rms_metres")
+
+
+def test_an_integrity_check_that_found_nothing_is_not_the_same_as_no_check() -> None:
+    """A clean `GBS` and an absent one look identical on the wire, and must not read the same.
+
+    Every cycle in the corpus is clean — no satellite was ever flagged — so the faulted branch has
+    **never met a receiver**. It is covered below by a sentence written here, and that test says so.
+    """
+    with_gbs = _replay("form8n-gst-gbs")
+    without_gbs = _replay("vk162-steady-state")
+
+    assert all(s.integrity is not None and s.integrity.is_clean for s in with_gbs), (
+        "asked, and nothing wrong"
+    )
+    assert all(s.integrity is None for s in without_gbs), "never asked"
+
+
+def test_a_faulted_satellite_is_read_from_a_synthetic_sentence() -> None:
+    """**Synthetic, and deliberately so.** No receiver in the corpus has ever flagged a satellite.
+
+    RAIM needs redundancy and an excluded satellite to exclude; five minutes of a good indoor fix
+    produced neither. This pins the parse of a branch the hardware has not exercised, and is
+    labelled so nobody reads it as evidence that one did.
+    """
+    from smartclock_device.drivers.nmea.driver import _integrity
+
+    # The checksum is computed rather than typed. Hand-written NMEA has now failed twice in this
+    # suite for a wrong checksum, which `parse` correctly refuses — and a test that fails because
+    # its fixture is malformed says nothing about the code it was written for.
+    body = "GNGBS,015509.00,-0.3,-0.2,3.0,03,0.0,-21.4,3.8,1,0"
+    parsed = sentences.parse(f"${body}*{sentences.checksum_of(body):02X}")
+    assert parsed is not None, "the synthetic sentence must be checksum-valid to prove anything"
+
+    integrity = _integrity(parsed)
+
+    assert integrity is not None
+    assert integrity.is_clean is False
+    assert integrity.faulted is not None
+    assert integrity.faulted.prn == 3
+    assert integrity.faulted.constellation is Constellation.GPS, "system id 1 is GPS"
+    assert integrity.bias_metres == pytest.approx(-21.4)
+
+
+def test_a_smartclock_declines_both_of_them() -> None:
+    """The seam running the other way, for the first time.
+
+    Every other reading is one a SmartClock supplies and a talker may not. These are two a talker
+    supplies and a SmartClock cannot: it prints a position and stops, and no firmware revision is
+    going to add an error estimate to an 80-column screen.
+    """
+    from smartclock_device.drivers.smartclock import SmartClockDriver
+
+    smartclock = SmartClockDriver(clock=FixedClock(NOW))
+
+    assert smartclock.reports(ReceiverReading.POSITION_UNCERTAINTY) is False
+    assert smartclock.reports(ReceiverReading.CONSTELLATION_INTEGRITY) is False
+    assert NmeaDriver(clock=FixedClock(NOW)).reports(ReceiverReading.POSITION_UNCERTAINTY) is True
 
 
 # ---- The two taken on this bench ---------------------------------------------------------------
