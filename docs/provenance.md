@@ -18,6 +18,7 @@ re-pin brought across*, below.
 | `docs/how-to-use.md` and `docs/images/how-to-use/` | same | **Forked.** It was carried verbatim and is not any more — see *The one document that had to fork*, below. Do not diff the two expecting them to agree. |
 | `docs/adding-a-receiver.md` | same | Verbatim. Describes the C# driver model. Kept because the *architecture* it teaches is what this port reproduces, not because the code samples compile here. **`docs/driver-contract.md` is this port's member-by-member mapping** — written here rather than by editing the inherited file, which would fork it. |
 | `tests/fixtures/` | `tests/WinZ3805A.Tests/Fixtures/` | Verbatim, including `capture-log.md`. Marked `-text`: these are device output and their exact bytes, line endings included, are the point. |
+| `tests/fixtures/nmea/` | `tests/WinZ3805A.Tests/Nmea/Captures/` | **Verbatim, all ten sittings and their notes** (#56), carried 13 Sep 2026 — every blob hash matches. Two captures taken on this bench sit beside them; see below. |
 | `build/palette/` | same | **Byte-identical, directory included.** Already Python, runs unchanged. Two files were added since the fork — `sequential.py` here, `diverging.py` upstream — and both have been carried the other way, so the copies agree again. See below. |
 
 Nothing else was taken. No C# was translated mechanically; the source tree here is new.
@@ -115,6 +116,30 @@ the scope note as §7.1 throughout and it is in §7.2.
 **The specification is the authority, so where the table above says "not built", the specification is
 right and this port is behind** — not the other way round. `divergences.md` records each as a gap
 with an issue, rather than as a decision, until it is one.
+
+---
+
+## The talker corpus, and why it came across whole
+
+`tests/fixtures/nmea/` is ten sittings from two receivers — a VK-162 (u-blox 7) and an RCmall
+forM8N (u-blox M8) — captured in WinZ3805A between 7 and 11 September 2026. Until they arrived
+here, **everything this port's NMEA driver had ever been tested against came from
+`tools/nmea_simulator.py`**, which can only produce what we already believed a talker sends.
+
+The rule for the status screens applies unchanged: *a capture belongs in both repositories.* It
+applies more cheaply here — NMEA is text, the files are a few megabytes, and replaying one needs
+no hardware — and it applies more urgently, because four of the ten record a receiver doing
+something no one had predicted: sending `GNS` and never `GGA`, advertising a constellation it
+cannot see, losing a fix and regaining it, and crossing UTC midnight.
+
+**Two captures were taken here**, with `tools/capture_talker.py` — the port of upstream's
+`Capture-Talker.ps1` — from the same two module families on this bench, reached through
+`usbipd`. They are not carried from anywhere and belong upstream if that repository wants them.
+Their value is the cross-check: the same silicon, a different harness, five days later.
+
+The replay is `tests/test_nmea_captures.py`, and **three of its assertions are expected failures
+by design** — the fixture assertions for #57 and #58, written before the parsing that will fix
+them. They are `strict`, so the markers cannot outlive the defects.
 
 ---
 

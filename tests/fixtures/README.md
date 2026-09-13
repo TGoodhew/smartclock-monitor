@@ -1,5 +1,10 @@
 # Captured status screens
 
+**The SmartClock family's corpus. The NMEA family's is in [`nmea/`](nmea/)** — ten sittings
+carried from WinZ3805A plus two taken on this bench, with its own README describing each.
+They are the same kind of artefact for a different family: device output, byte-exact, marked
+`-text`, and the oracle a driver is written against.
+
 Device output, reproduced verbatim. These are the assertion corpus for `StatusScreenParser`
 (§11.1, P0-4, issue #4), and their exact bytes are the point: the parser derives satellite
 columns from the position of the tokens in the header row, so a stray trimmed trailing space
@@ -80,3 +85,19 @@ holdover, survey in progress, position hold and the week-rollover date. One is n
 Two modes the application distinguishes have no capture either, because neither happened during
 the sitting and §11.1 does not ask for them: *Waiting to recover* — a holdover screen carrying a
 wait reason — and *Diagnostic / off*. The harness will take either the first time it sees one.
+
+
+---
+
+# The NMEA corpus, in one paragraph
+
+`nmea/` holds raw talker output rather than status screens, and `tests/test_nmea_captures.py`
+replays every file in it through the real `NmeaDriver` and `BroadcastListener`. Ten of the
+sittings came from WinZ3805A, where the NMEA driver met hardware first (#56); two were taken here
+with `tools/capture_talker.py` from the receivers on this bench.
+
+**Three of that file's assertions are expected failures and are meant to be.** They are the
+fixture assertions for defects the corpus found, written before the parsing that fixes them, as
+`CLAUDE.md` requires: a talker sending `GNS` instead of `GGA` yields no cycles at all (#58), two
+constellations collide on one satellite number (#57), and `GST`/`GBS` go unread (#58). They are
+`strict`, so none can be quietly left behind once its fix lands.
