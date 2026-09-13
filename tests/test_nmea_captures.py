@@ -33,6 +33,7 @@ from smartclock_device.drivers.base import WHOLE_CYCLE
 from smartclock_device.drivers.capability import ReceiverReading
 from smartclock_device.drivers.nmea import sentences
 from smartclock_device.drivers.nmea.driver import NmeaDriver
+from smartclock_device.models.fix_quality import FixQuality
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
 from smartclock_device.models.satellite import Constellation, TrackedSatellite
 from smartclock_device.transport.broadcast import BroadcastListener
@@ -466,3 +467,97 @@ def test_waas_is_sbas_in_both_sentences_or_it_is_dropped() -> None:
     assert any(s.constellation is Constellation.SBAS for s in richest.tracked), (
         "this capture carries WAAS satellites 46 and 48; they should be recognised as SBAS"
     )
+
+
+# ---- #62: what kind of fix, and the banner ------------------------------------------------------
+
+
+def test_a_cold_start_walks_the_fix_ladder() -> None:
+    """`vk162-cold-start` carries all three qualities, in order, as the receiver acquires.
+
+    This port read `GGA` field 5 as a single bit — `quality > 0` — and threw the rest away, so
+    a standalone fix and a differential one were the same picture.
+    """
+    qualities = [s.fix_quality for s in _replay("vk162-cold-start")]
+
+    assert qualities[0] is FixQuality.NONE
+    assert set(qualities) == {FixQuality.NONE, FixQuality.AUTONOMOUS, FixQuality.DIFFERENTIAL}
+    assert qualities.index(FixQuality.AUTONOMOUS) < qualities.index(FixQuality.DIFFERENTIAL)
+
+
+def test_the_same_module_five_days_apart_reports_two_different_qualities() -> None:
+    """Which is what says the field is being read rather than assumed.
+
+    `vk162-steady-state` is differential in all 1,799 cycles; `vk162-wsl-bench` is the same
+    silicon on the same desk, standalone in all 632. A parser that hard-coded either would pass
+    against one capture and fail against the other.
+    """
+    assert {s.fix_quality for s in _replay("vk162-steady-state")} == {FixQuality.DIFFERENTIAL}
+    assert {s.fix_quality for s in _replay("vk162-wsl-bench")} == {FixQuality.AUTONOMOUS}
+
+
+@pytest.mark.parametrize(
+    ("name", "expected"),
+    [
+        ("vk162-gns-no-gga", FixQuality.DIFFERENTIAL),
+        ("form8n-gns-without-gga", FixQuality.AUTONOMOUS),
+    ],
+)
+def test_a_gns_talker_reports_quality_from_its_mode_string(name: str, expected: FixQuality) -> None:
+    """`GNS` has no integer code — the quality is one character per constellation.
+
+    `DN` from the VK-162 is differential on GPS and nothing on the second system; `ANNN` from the
+    forM8N is autonomous on GPS and nothing on three others. The fix as a whole is the **best** any
+    constellation managed, because a receiver with a differential solution on one has produced a
+    differential fix.
+    """
+    assert {s.fix_quality for s in _replay(name)} == {expected}
+
+
+def test_the_banner_survives_the_cycles_that_do_not_repeat_it() -> None:
+    """A talker prints it in its first second and never again (#62).
+
+    Carried forward from the previous status rather than re-read, which is why the last cycle of a
+    thirty-minute sitting still has it. It lives on the status rather than the driver because a
+    driver is a singleton that would hand one receiver's banner to the next.
+    """
+    statuses = _replay("form8n-wsl-bench")
+
+    assert len(statuses[-1].banner) == 12, "the forM8N prints twelve TXT lines"
+    assert "GNSS OTP=GPS;BDS" in statuses[-1].banner, (
+        "and the line that says what this unit is programmed for, not merely what it supports"
+    )
+    assert statuses[0].banner == statuses[-1].banner, "unchanged across 632 cycles"
+
+
+def test_a_session_that_joined_late_simply_has_no_banner() -> None:
+    """Not an error, and not worth a dash: whether it is there depends on whether we were listening.
+
+    Replaying a capture from the middle is the same situation as attaching to a receiver that has
+    been running for an hour.
+    """
+    clock = FixedClock(datetime(2026, 9, 13, tzinfo=UTC))
+    driver = NmeaDriver(clock)
+    listener = BroadcastListener(clock=clock, boundaries=driver.plan.cycle_boundaries)
+
+    raw = (CAPTURES / "form8n-wsl-bench.nmea").read_bytes().decode("ascii", "replace")
+    previous: ReceiverStatus | None = None
+    # Start a third of the way in, long after the banner has gone by.
+    for line in raw.splitlines()[3000:4000]:
+        line = line.strip()
+        if not line:
+            continue
+        before = listener.cycles
+        listener.feed(driver.classify(line), line)
+        if listener.cycles > before:
+            previous = driver.parse_full(
+                Transaction(
+                    command=WHOLE_CYCLE,
+                    outcome=TransactionOutcome.COMPLETED,
+                    lines=listener.whole_cycle(),
+                ),
+                previous,
+            )
+
+    assert previous is not None, "the slice should still close cycles"
+    assert previous.banner == (), "no banner, and nothing pretending there is one"

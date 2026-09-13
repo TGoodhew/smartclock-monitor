@@ -50,7 +50,11 @@ from smartclock_device.commands.position_argument import (
 from smartclock_device.drivers.capability import Capability, ReceiverReading
 from smartclock_device.models import antenna_cable, coordinates
 from smartclock_device.models.device_identity import DeviceIdentity
-from smartclock_device.models.fix_quality import ConstellationIntegrity, PositionUncertainty
+from smartclock_device.models.fix_quality import (
+    ConstellationIntegrity,
+    FixQuality,
+    PositionUncertainty,
+)
 from smartclock_device.models.position import GeoPosition
 from smartclock_device.models.receiver_status import (
     OutputValidity,
@@ -354,6 +358,7 @@ class OverviewPage(_FieldsExport, Page):
             "Warnings", "; ".join(status.parse_warnings) if status.parse_warnings else "None"
         )
         self._rebuild_health(status)
+        self._show_banner(status.banner)
 
     def _build_receiver(self) -> QFrame:
         """§10.4's *Receiver* card: the four ``*IDN?`` fields.
@@ -367,6 +372,15 @@ class OverviewPage(_FieldsExport, Page):
         self._identity = FieldGrid(("Manufacturer", "Model", "Serial number", "Firmware"))
         holder_layout.addWidget(self._identity)
 
+        # §10.4, #62: the banner a talker prints once at power-on and never again. Hidden until
+        # one arrives rather than shown empty, because "no banner" and "we were not listening when
+        # it was printed" are the same picture and neither is worth a row of dashes.
+        self._banner = label("", "caption", self)
+        self._banner.setWordWrap(True)
+        self._banner.setAccessibleName("Power-on banner")
+        self._banner.setVisible(False)
+        holder_layout.addWidget(self._banner)
+
         # Shown *instead* where the answer is not four comma-separated fields. Four dashes would
         # say "nothing is connected", which is a different statement from "a model this build has
         # not seen" — and §11.1's rule is that what could not be parsed keeps its evidence.
@@ -376,6 +390,22 @@ class OverviewPage(_FieldsExport, Page):
         self._identity_raw.setVisible(False)
         holder_layout.addWidget(self._identity_raw)
         return holder
+
+    @property
+    def banner(self) -> QLabel:
+        """§10.4's power-on banner, for a test to read."""
+        return self._banner
+
+    def _show_banner(self, lines: tuple[str, ...]) -> None:
+        """The power-on banner, if this session ever saw one.
+
+        **Whether it is here depends on whether the application was listening**, not on the
+        receiver — a talker prints it in its first second and never again. Under `usbipd` every
+        attach re-enumerates the device, so a capture taken that way always has it; a session that
+        joined a receiver already running never will.
+        """
+        self._banner.setText("\n".join(lines))
+        self._banner.setVisible(bool(lines))
 
     def set_identity(self, identity: DeviceIdentity | None, raw: str | None) -> None:
         """§10.4: re-read on every connection change, because a reconnect can find a different
@@ -839,6 +869,16 @@ class _DegreesMinutesSeconds:
         self._seconds.setValue(seconds)
 
 
+def _fix_quality_text(quality: FixQuality) -> str:
+    """§10.6's kind-of-fix row.
+
+    `UNKNOWN` is §11.1's dash rather than the word "unknown": the family either cannot report this
+    or has not yet, and both are what the dash means. Every other value is the enum's own wording,
+    which is the receiver's claim about its method rather than a judgement on it.
+    """
+    return DASH if quality is FixQuality.UNKNOWN else quality.value.capitalize()
+
+
 def _horizontal_error(uncertainty: PositionUncertainty | None) -> str:
     """§10.6's error in metres, from `GST`'s two horizontal deviations.
 
@@ -901,10 +941,12 @@ class PositionPage(_FieldsExport, Page):
                 "Datum",
                 "Mode",
                 "Qualifier",
-                # §10.6's two fix-quality rows (#58). Dashed on a family that cannot report them
+                # §10.6's kind-of-fix row (#62) and two error rows (#58). Dashed on a family that
+                # cannot report them
                 # rather than hidden, because the Position card is otherwise identical between the
                 # two families and a card that changes shape on connect is harder to read than one
                 # with two dashes in it. The *page* is not declined — a talker fills the rest.
+                "Fix quality",
                 "Horizontal error",
                 "Integrity",
                 "Survey",
@@ -1205,6 +1247,7 @@ class PositionPage(_FieldsExport, Page):
             )
 
         self._last_position = status.position
+        self._fields.set("Fix quality", _fix_quality_text(status.fix_quality))
         self._fields.set("Horizontal error", _horizontal_error(status.uncertainty))
         self._fields.set("Integrity", _integrity_text(status.integrity))
         self._fields.set("Datum", humanise(status.height_datum))

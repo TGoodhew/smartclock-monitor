@@ -14,10 +14,98 @@ is exactly the disagreement a user needs to see rather than have averaged away.
 
 from __future__ import annotations
 
+import enum
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
+from typing import Final
 
 from smartclock_device.models.satellite import SatelliteId
+
+
+class FixQuality(enum.Enum):
+    """*What kind* of fix this is, as distinct from whether there is one.
+
+    `GGA` field 5 distinguishes a standalone fix from a differential one from an RTK one, and this
+    port read it as a single bit — ``quality > 0`` — and threw the rest away. §10.6 has a row for
+    it. All three of the values below appear in `vk162-cold-start.nmea`, in order, as the receiver
+    acquires; `vk162-steady-state` is differential throughout and `vk162-wsl-bench`, the same
+    module on the same desk five days later, is standalone throughout.
+
+    **This is the receiver's claim about its own method**, and it pairs with — rather than
+    duplicates — :class:`PositionUncertainty`. Quality says *what kind* of fix; the uncertainty
+    says *how good*. The corpus has a sitting where the geometry is excellent and the ranging is
+    not, which is exactly the disagreement neither field can express alone.
+    """
+
+    #: The receiver did not say, or the family has no such notion.
+    UNKNOWN = "unknown"
+
+    #: No fix. `GGA` quality 0, or a `GNS` mode of `N` on every constellation.
+    NONE = "no fix"
+
+    #: A standalone fix from the constellation alone. `GGA` quality 1, `GNS` mode `A`.
+    AUTONOMOUS = "autonomous"
+
+    #: Corrected against a reference station or SBAS. `GGA` quality 2, `GNS` mode `D`.
+    DIFFERENTIAL = "differential"
+
+    #: Real-time kinematic, integers resolved. `GGA` quality 4, `GNS` mode `R`.
+    RTK_FIXED = "RTK fixed"
+
+    #: Real-time kinematic, integers not resolved. `GGA` quality 5, `GNS` mode `F`.
+    RTK_FLOAT = "RTK float"
+
+    #: Propagated from the last fix rather than measured. `GGA` quality 6, `GNS` mode `E`.
+    DEAD_RECKONING = "dead reckoning"
+
+
+#: `GGA`'s field 5, which is an integer code.
+GGA_QUALITIES: Final[dict[int, FixQuality]] = {
+    0: FixQuality.NONE,
+    1: FixQuality.AUTONOMOUS,
+    2: FixQuality.DIFFERENTIAL,
+    4: FixQuality.RTK_FIXED,
+    5: FixQuality.RTK_FLOAT,
+    6: FixQuality.DEAD_RECKONING,
+}
+
+#: `GNS`'s field 5, which is **one character per constellation** rather than a code.
+#:
+#: `DN` from a VK-162 with two systems, `ANNN` from a forM8N with four. The fix as a whole is the
+#: best any constellation managed, because a receiver contributing a differential solution on GPS
+#: and nothing on GLONASS has produced a differential fix.
+GNS_MODES: Final[dict[str, FixQuality]] = {
+    "N": FixQuality.NONE,
+    "A": FixQuality.AUTONOMOUS,
+    "D": FixQuality.DIFFERENTIAL,
+    "R": FixQuality.RTK_FIXED,
+    "F": FixQuality.RTK_FLOAT,
+    "E": FixQuality.DEAD_RECKONING,
+}
+
+#: Best first, so a mixed `GNS` mode string resolves to the best any constellation managed.
+_BEST_FIRST: Final[tuple[FixQuality, ...]] = (
+    FixQuality.RTK_FIXED,
+    FixQuality.RTK_FLOAT,
+    FixQuality.DIFFERENTIAL,
+    FixQuality.AUTONOMOUS,
+    FixQuality.DEAD_RECKONING,
+    FixQuality.NONE,
+)
+
+
+def best_of(qualities: Iterable[FixQuality]) -> FixQuality:
+    """The best of several per-constellation qualities, or ``UNKNOWN`` if there are none.
+
+    A receiver contributing a differential solution on GPS and nothing on GLONASS has produced a
+    differential fix, so the whole is the best of its parts rather than the worst or the first.
+    """
+    found = set(qualities)
+    for candidate in _BEST_FIRST:
+        if candidate in found:
+            return candidate
+    return FixQuality.UNKNOWN
 
 
 @dataclass(frozen=True, slots=True)

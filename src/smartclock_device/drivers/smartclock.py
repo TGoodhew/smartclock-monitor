@@ -150,6 +150,10 @@ class SmartClockDriver(QueryResponseDefaults):
         {
             ReceiverReading.POSITION_UNCERTAINTY,
             ReceiverReading.CONSTELLATION_INTEGRITY,
+            # A status screen reports a *disciplining* mode — locked, holdover, recovery — which
+            # is a different question from what kind of position fix produced it. There is no
+            # standalone-versus-differential field on it at all.
+            ReceiverReading.FIX_QUALITY,
         }
     )
 
