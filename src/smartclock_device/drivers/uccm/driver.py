@@ -23,6 +23,7 @@ not.
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import timedelta
@@ -32,6 +33,7 @@ from smartclock_device.clock import Clock
 from smartclock_device.commands.scpi_command import ResponseFormat, ScpiCommand
 from smartclock_device.drivers.base import Cadence, LinkStyle, PollPlan, QueryResponseDefaults
 from smartclock_device.drivers.capability import Capability, CommandGroup, ReceiverReading
+from smartclock_device.drivers.uccm import time_code
 from smartclock_device.drivers.uccm.profile import (
     PROMPTS,
     VENDOR_TOKENS,
@@ -40,7 +42,7 @@ from smartclock_device.drivers.uccm.profile import (
     UccmVendor,
 )
 from smartclock_device.models.device_identity import DeviceIdentity
-from smartclock_device.models.receiver_status import ReceiverStatus
+from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode, TimeScale
 from smartclock_device.parsing.uccm_screen import UccmScreenParser
 from smartclock_device.transport.settings import Parity, SerialSettings, StopBits
 from smartclock_device.transport.transaction import Transaction
@@ -84,6 +86,20 @@ COMMANDS: Final[tuple[ScpiCommand, ...]] = (IDENTITY, STATUS_SCREEN)
 CADENCE: Final = Cadence(fast=timedelta(seconds=2), full=timedelta(seconds=10))
 
 PLAN: Final = PollPlan(fast=(STATUS_SCREEN,), full=STATUS_SCREEN)
+
+
+#: What each decoded state means in §11.2's vocabulary.
+#:
+#: `COLD` and `ACQUIRING` both map to RECOVERY — a module searching for a fix is what that shape
+#: describes — and they are kept apart in :class:`UccmState` rather than here, because the
+#: distinction is real on the wire even where §11.2 has one word for both.
+_MODES: Final[dict[time_code.UccmState, SmartClockMode]] = {
+    time_code.UccmState.LOCKED: SmartClockMode.LOCKED,
+    time_code.UccmState.HOLDOVER: SmartClockMode.HOLDOVER,
+    time_code.UccmState.ACQUIRING: SmartClockMode.RECOVERY,
+    time_code.UccmState.COLD: SmartClockMode.RECOVERY,
+    time_code.UccmState.UNKNOWN: SmartClockMode.UNKNOWN,
+}
 
 
 @dataclass(slots=True)
@@ -269,6 +285,27 @@ class UccmDriver(QueryResponseDefaults):
         """One status screen, read by `parsing/uccm_screen.py`. **Never raises** (§11.1)."""
         del previous
         return UccmScreenParser(self.clock).parse(transaction.text)
+
+    def apply_time_code(self, status: ReceiverStatus, frame: bytes) -> ReceiverStatus:
+        """Fold one broadcast time code into the status the screen produced.
+
+        **This is where holdover comes from**, and it comes from nowhere else. The text screen is
+        silent about it: through fourteen minutes with no antenna the module never degraded TFOM or
+        FFOM past 2 and never moved off `UCCM A Status[ACTIVE]`. The five state bytes say it
+        outright, which is why `parse_full` alone leaves the mode `UNKNOWN` and this fills it in.
+        """
+        code = time_code.decode(frame)
+        if code is None:
+            return status
+
+        return dataclasses.replace(
+            status,
+            mode=_MODES[code.state],
+            gps_one_pps_valid=code.state is time_code.UccmState.LOCKED,
+            device_date_time=code.utc_time,
+            corrected_date_time=code.utc_time,
+            time_scale=TimeScale.UTC if code.utc_time is not None else status.time_scale,
+        )
 
     def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
         del results
