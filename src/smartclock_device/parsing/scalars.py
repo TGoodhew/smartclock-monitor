@@ -140,6 +140,29 @@ def parse_first_of_list(response: str | None) -> float | None:
     return parse_decimal(head)
 
 
+def parse_flagged_value(response: str | None) -> tuple[float | None, bool | None]:
+    """Parse a ``value,flag`` answer into both of its halves.
+
+    **Two commands answer in this shape and the bench confirms both** (#111, 13 Sep 2026):
+    ``:SYNC:HOLD:DUR?`` answers ``+1.44800E+003,0`` and ``:ROSC:HOLD:TUNC:PRED?`` answers
+    ``+1.4E-006,0``. The flag says whether the value describes *now* — a holdover in progress — or
+    the last one to have happened.
+
+    :func:`parse_first_of_list` reads the same answers and returns the value alone. It stays, for
+    the callers that only want the number; this exists because a reading whose meaning depends on a
+    flag cannot be rendered from the number by itself, and the flag was being thrown away by every
+    caller. Its own docstring described the flag and then dropped it.
+
+    Both halves are independently optional (§11.1): an answer with no comma yields a value and no
+    flag, and an unparseable one yields neither.
+    """
+    text = _clean(response)
+    if text is None:
+        return None, None
+    head, comma, tail = text.partition(",")
+    return parse_decimal(head), (parse_boolean(tail) if comma else None)
+
+
 def parse_boolean(response: str | None) -> bool | None:
     """Parse a boolean answer, which the receiver spells ``0`` or ``1``."""
     value = parse_integer(response)
