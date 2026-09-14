@@ -1,0 +1,95 @@
+name: Release
+
+# **A release is a tag, and the artefacts are built from it.** Nothing here is built by hand: the
+# version comes from the tag through `hatch_version.py`, so an artefact that says 1.2.0 was built
+# from `v1.2.0` and nothing else can make it say that.
+on:
+  push:
+    tags: ["v*"]
+  # So a release can be re-cut without moving a tag — the artefacts rebuild from the same commit.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: The tag to build
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  wheel:
+    name: Wheel and sdist
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        # Tags and full history, because the version is derived from them (#33). Actions
+        # checks out a shallow clone with no tags by default, and hatch-vcs then falls back
+        # to 0.0.0 rather than failing — so every artefact would report the same wrong
+        # number, silently. tests/test_versioning.py fails if this line goes.
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - run: pip install build
+      - run: python -m build
+      - name: The version in the artefact is the version in the tag
+        run: |
+          set -eu
+          tag="${{ inputs.tag || github.ref_name }}"
+          expected="${tag#v}"
+          ls dist/
+          test -n "$(find dist -name "smartclock_monitor-${expected}*.whl")" \
+            || { echo "::error::no wheel for ${expected}; hatch_version.py derived something else"; \
+                 exit 1; }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: python-distributions
+          path: dist/*
+
+  appimage:
+    name: AppImage
+    runs-on: ubuntu-22.04
+    # **The oldest runner, deliberately.** An AppImage carries everything but glibc, so the build
+    # machine's glibc is the floor for every machine that runs it — building on the newest would
+    # quietly raise that floor for every user.
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Qt runtime libraries
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 fuse
+      - run: pip install -e ".[package]"
+      - run: ./build/make-appimage.sh
+      - name: It runs, and says what it is
+        run: ./dist/smartclock-monitor-*.AppImage --doctor || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: appimage
+          path: dist/*.AppImage
+
+  publish:
+    name: Publish
+    needs: [wheel, appimage]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/download-artifact@v4
+        with:
+          path: artefacts
+      - name: Attach every artefact to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -eu
+          tag="${{ inputs.tag || github.ref_name }}"
+          find artefacts -type f -printf '%p\n'
+          gh release upload "$tag" $(find artefacts -type f) --clobber
