@@ -16,6 +16,16 @@ runtime-version: '24.08'
 sdk: org.freedesktop.Sdk
 command: smartclock-monitor
 
+# **The AppStream data is installed and validated, not composed at build time.**
+# `flatpak-builder` runs `appstreamcli compose` at the end of every build, and on a plain Ubuntu
+# runner that step fails with `file-read-error` against a component whose three files are all
+# present, readable and valid — `appstreamcli validate` passes on the same metainfo in this
+# repository's own tests. Six builds went into narrowing that down and none of them named a file.
+#
+# Composing is an optimisation: it pre-renders icons and caches the catalogue data. The metainfo
+# is still installed, so a software centre reads it the ordinary way. #140 carries the rest.
+appstream-compose: false
+
 # The build backend, which is needed to *build* the wheel and has no business in the bundle. It
 # lives in the prefix rather than in /tmp because flatpak-builder gives each module its own build
 # context — anything written outside the prefix is gone before the next module runs.
