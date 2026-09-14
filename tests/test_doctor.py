@@ -313,3 +313,102 @@ def test_the_wsl_remedy_warns_about_the_two_things_that_waste_an_afternoon(
 
     assert "socket" in remedy
     assert "detach" in remedy
+
+
+# ---- The probe, in a build that has no interpreter to hand ---------------------------------------
+
+
+def test_a_frozen_build_asks_itself_rather_than_an_interpreter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """#147. `sys.executable` is only an interpreter when there is one.
+
+    PyInstaller sets it to the launcher, so `[sys.executable, "-c", …]` re-invokes the application
+    with an argument its own parser has never heard of. Argparse exits 2 before Qt is reached — on
+    every machine, however healthy the display — and the AppImage reported `cannot start a GUI` and
+    prescribed four apt packages on a desktop where `--demo` opened its window.
+    """
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    argv = doctor._probe_argv()
+
+    assert argv == [sys.executable, doctor.GUI_PROBE_FLAG]
+    assert "-c" not in argv, "a frozen build has no interpreter to hand a -c to"
+
+
+def test_an_ordinary_build_still_uses_an_interpreter() -> None:
+    """The other half. A wheel or a checkout has a real `sys.executable`, and going through the
+    launcher there would start the whole application to ask it one question."""
+    monkeypatch_free = doctor._probe_argv()
+
+    assert monkeypatch_free[:2] == [sys.executable, "-c"]
+
+
+def test_the_launcher_answers_the_probe_flag() -> None:
+    """The flag has to exist on the parser, or the frozen path above swaps one exit-2 for another.
+
+    Run as a subprocess rather than by calling `run_gui_probe`, because a `QApplication` can exist
+    once per process and this suite has already made one.
+    """
+    finished = subprocess.run(
+        [sys.executable, "-m", "smartclock_monitor", doctor.GUI_PROBE_FLAG],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+        env={**os.environ, "QT_QPA_PLATFORM": "offscreen"},
+    )
+
+    assert finished.returncode == 0, finished.stderr[-500:]
+    assert finished.stdout.startswith("PROBE "), (
+        f"the launcher did not answer its own probe flag: {finished.stdout[:200]!r}"
+    )
+
+
+def test_the_probe_flag_is_not_advertised() -> None:
+    """A diagnostic talking to itself. Listing it would describe an implementation detail as a
+    feature, and it is the one argument nobody should ever type."""
+    finished = subprocess.run(
+        [sys.executable, "-m", "smartclock_monitor", "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+    )
+
+    assert "gui-probe" not in finished.stdout
+
+
+def test_stderr_that_is_not_qt_s_is_not_quoted_as_qt_s(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The half of #147 that turned a wrong diagnosis into a misleading one.
+
+    The salvage took the last line of stderr whatever it was, so a probe that never reached Qt had
+    somebody else's words attributed to the platform plugin — in the AppImage, a line of the
+    probe's own source.
+    """
+
+    class Finished:
+        returncode = 2
+        stdout = ""
+        stderr = 'smartclock-monitor: error: unrecognized arguments: -c print("PROBE")\n'
+
+    monkeypatch.setattr("smartclock_monitor.doctor.subprocess.run", lambda *a, **k: Finished())
+    probe = doctor._probe_gui()
+
+    assert probe.started is False
+    assert "saying nothing about Qt" in probe.detail, probe.detail
+    assert "the probe exited 2" in probe.detail
+
+
+def test_qt_s_own_complaint_is_still_quoted_as_qt_s(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Because the salvage is worth keeping: this line names the missing library."""
+
+    class Finished:
+        returncode = -6
+        stdout = ""
+        stderr = 'qt.qpa.plugin: Could not load the Qt platform plugin "xcb"\n'
+
+    monkeypatch.setattr("smartclock_monitor.doctor.subprocess.run", lambda *a, **k: Finished())
+    probe = doctor._probe_gui()
+
+    assert "qt.qpa.plugin" in probe.detail
+    assert "saying nothing about Qt" not in probe.detail

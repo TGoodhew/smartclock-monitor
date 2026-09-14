@@ -40,6 +40,7 @@ from smartclock_device.transport.settings import (
     SerialSettings,
     StopBits,
 )
+from smartclock_monitor import doctor
 from smartclock_monitor.platform.paths import trend_database
 from smartclock_monitor.services import logging as app_log
 from smartclock_monitor.services import preferences
@@ -118,6 +119,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--list-ports", action="store_true", help="print the serial ports this machine can see"
     )
+    # **The doctor talking to itself, and hidden because nobody types it** (#147). `--doctor` asks
+    # a child process whether Qt can start, because a platform plugin that will not load calls
+    # `qFatal()` and the answer is only survivable as an exit status. In a frozen bundle there is
+    # no interpreter to hand that child a `-c`: `sys.executable` is this launcher. So the launcher
+    # answers the question itself when asked this way.
+    parser.add_argument(doctor.GUI_PROBE_FLAG, action="store_true", help=argparse.SUPPRESS)
     return parser
 
 
@@ -153,6 +160,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if arguments.list_ports:
         return list_ports()
+
+    # Before `--doctor`, because this *is* `--doctor`, one process further down. Answering it late
+    # would mean the child ran the whole report before printing the one line its parent wanted.
+    if arguments.gui_probe:
+        doctor.run_gui_probe()
+        return 0
 
     # Before the Qt import below, deliberately: the machine that needs the doctor most is the one
     # where importing PySide6 is itself the thing that fails.

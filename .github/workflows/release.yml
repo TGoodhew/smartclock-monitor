@@ -66,8 +66,28 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 fuse
       - run: pip install -e ".[package]"
       - run: ./build/make-appimage.sh
+      # **`|| true` on the only place this artefact is ever exercised is why #147 went unseen.**
+      # The AppImage's `--doctor` failed Qt and fonts on every machine — `sys.executable` is the
+      # launcher in a frozen build, so the probe re-invoked argparse — and nothing looked at the
+      # verdict for as long as the AppImage has existed.
+      #
+      # A headless runner cannot expect `[ok]` here, so this asserts the narrower thing that is
+      # true everywhere: the report is *printed*, and any Qt failure is attributed to Qt rather
+      # than to somebody else's stderr. The bench is where `[ok]` gets checked.
       - name: It runs, and says what it is
-        run: ./dist/smartclock-monitor-*.AppImage --doctor || true
+        run: |
+          set -eu
+          ./dist/smartclock-monitor-*.AppImage --doctor > doctor.txt 2>&1 || true
+          cat doctor.txt
+          grep -q "smartclock-monitor doctor" doctor.txt \
+            || { echo "::error::the AppImage printed no report at all"; exit 1; }
+          for check in pyserial "Serial ports" "Qt platform"; do
+            grep -q "$check" doctor.txt \
+              || { echo "::error::the report stopped before '$check'"; exit 1; }
+          done
+          grep -q "saying nothing about Qt" doctor.txt \
+            && { echo "::error::the GUI probe never reached Qt — see #147"; exit 1; }
+          exit 0
       - uses: actions/upload-artifact@v4
         with:
           name: appimage
@@ -95,6 +115,21 @@ jobs:
           tag="${{ inputs.tag || github.ref_name }}"
           grep -q "tag: $tag" packaging/flatpak/io.github.tgoodhew.SmartClockMonitor.yml \
             || { echo "::error::the manifest builds a different tag than $tag"; exit 1; }
+      # **The version a software centre shows, which is the one surface nothing checked** (#146).
+      # v1.2.1 shipped reporting 1.0.0 because the newest <release> in the metainfo is hand-typed
+      # and the only test over it asserted that an entry existed, not that it matched anything. The
+      # value was fixed by hand; this is the gap that let it drift.
+      - name: The metainfo names the release this tag is for
+        run: |
+          set -eu
+          tag="${{ inputs.tag || github.ref_name }}"
+          expected="${tag#v}"
+          newest="$(python3 tools/newest_release.py)"
+          test "$newest" = "$expected" || {
+            echo "::error::the metainfo's newest release is $newest, and this is $expected."
+            echo "::error::Add a <release version=\"$expected\"> entry, newest first."
+            exit 1
+          }
       - name: Build the bundle
         run: |
           flatpak-builder --user --force-clean --disable-rofiles-fuse \
