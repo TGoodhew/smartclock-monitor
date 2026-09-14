@@ -300,6 +300,20 @@ class PollingService:
     #: Two consecutive misses is a tier that has stopped.
     STALE_AFTER_INTERVALS: ClassVar[int] = 2
 
+    def _asks_for_the_tracked_count(self) -> bool:
+        """Whether this family's sweep contains the SmartClock's tracked-satellite scalar.
+
+        Asked of the **plan** rather than of the driver's type, because that is the thing that
+        decides: a family that sends the query has an authoritative count to publish, and one that
+        does not has only the satellites its full read parsed. Nothing here knows or needs to know
+        which families those are, which is the seam §12 asks for.
+        """
+        plan = self.driver.plan
+        return any(
+            command.mnemonic == catalog.TRACKED_COUNT.mnemonic
+            for command in (*plan.fast, *plan.full_extras, plan.full)
+        )
+
     def _is_stale(self, now: datetime) -> bool:
         """Whether the full read has gone quiet for longer than its own cadence allows.
 
@@ -328,6 +342,22 @@ class PollingService:
             efc = _value(results, catalog.OSCILLATOR_EFC.mnemonic, parse_decimal) or efc
             tracked = _value(results, catalog.TRACKED_COUNT.mnemonic, parse_integer) or tracked
             sync = state or sync
+
+        # §12: **take the receiver's own count, where the driver never answers the scalar.**
+        #
+        # `:GPS:SAT:TRAC:COUN?` is the SmartClock's, and this figure was read from nothing else —
+        # so a family whose plan does not contain it left the count empty for the life of the
+        # session. §10.4 showed nothing and #127's log said "an unreported number of satellites"
+        # against a talker reporting ten.
+        #
+        # `status.satellites_tracked` and **not** `len(status.tracked)`: that list is assembled
+        # from a table which can arrive in pieces, and counting it on a VK-162 gave 0, 3, 0, 9, 2,
+        # 10 across six seconds of a steady ten. The driver reads a number the receiver states.
+        #
+        # The scalar still wins where it is asked. A receiver's own count is the answer, and the
+        # SmartClock's screen can be ten seconds older than the sweep that reports it.
+        if not self._asks_for_the_tracked_count():
+            tracked = self._status.satellites_tracked
 
         now = self.clock.utc_now()
         reading = Reading(

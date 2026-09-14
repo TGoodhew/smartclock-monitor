@@ -123,7 +123,7 @@ def test_the_four_events_section_10_9_names(tmp_path: Path) -> None:
     changes.detected("19200-7-O-1", 2)
     changes.connected("/dev/ttyUSB0 @ 9600-8-N-1", "Z3805A")
     changes.observed(reading())
-    changes.disconnected("the link went")
+    changes.disconnected("/dev/ttyUSB0 was disconnected.")
 
     text = written(path)
     assert "Opened /dev/ttyUSB0" in text
@@ -201,3 +201,42 @@ def test_one_satellite_is_not_pluralised(tmp_path: Path) -> None:
     app_log.ChangeLog().observed(reading(tracked=1))
 
     assert "1 satellite," in written(path) or "1 satellite." in written(path)
+
+
+# ---- Why the link went ---------------------------------------------------------------------------
+
+
+def test_a_lost_link_is_logged_with_the_reason_the_session_recorded(tmp_path: Path) -> None:
+    """#127's log is read by somebody looking for a fault, and this was the line that named none.
+
+    `DeviceSession.last_fault` is §9.11's one actionable sentence — it names the port and what
+    happened to it — and the disconnect line threw it away in favour of a constant.
+    """
+    path = app_log.configure(tmp_path)
+    assert path is not None
+
+    app_log.ChangeLog().disconnected(
+        "/dev/ttyUSB0 is not accessible. Another program may have it open, or your user may "
+        "not be in the 'dialout' group."
+    )
+
+    text = written(path)
+    assert "not accessible" in text, "the reason never reached the log"
+    assert "dialout" in text
+
+
+def test_an_unrecorded_reason_still_reads_as_a_whole_sentence(tmp_path: Path) -> None:
+    """It said `Disconnected: the link went`, which is a sentence with its ending missing.
+
+    A reader cannot tell a truncated log line from a truncated *log*, and the one place this
+    appears is the moment somebody is trying to find out what happened.
+    """
+    path = app_log.configure(tmp_path)
+    assert path is not None
+
+    app_log.ChangeLog().disconnected(None)
+
+    text = written(path)
+    line = next(line for line in text.splitlines() if "Disconnected" in line)
+    assert line.rstrip().endswith("."), f"not a whole sentence: {line!r}"
+    assert "the link went down" in line

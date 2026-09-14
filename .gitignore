@@ -21,3 +21,10 @@ htmlcov/
 .idea/
 *.swp
 .DS_Store
+
+# Release artefacts, which are downloaded beside the tree to be tested and are never committed.
+# A bundle is ~53 MB and GitHub warns above 50; one reached a branch through `git add -A` before
+# this line existed.
+*.flatpak
+*.AppImage
+*.whl

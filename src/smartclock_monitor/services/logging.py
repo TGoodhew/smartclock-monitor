@@ -108,8 +108,17 @@ class ChangeLog:
     def connected(self, description: str, model: str | None) -> None:
         log().info("Connected to %s on %s.", model or "an unidentified receiver", description)
 
-    def disconnected(self, reason: str) -> None:
-        log().warning("Disconnected: %s", reason)
+    def disconnected(self, reason: str | None) -> None:
+        """A link that went without being asked to, and **why** where that is known.
+
+        ``reason`` is `DeviceSession.last_fault` — §9.11's one actionable sentence, naming the port
+        and what happened to it. ``None`` where the session never recorded one, which is the honest
+        answer rather than a guessed cause.
+
+        The fallback is a whole sentence. This method was called with `"the link went"`, which read
+        as a line that had lost its ending and said nothing a reader could act on.
+        """
+        log().warning("Disconnected: %s", reason or "the link went down for an unrecorded reason.")
 
     def user_disconnected(self) -> None:
         """A disconnect somebody asked for.

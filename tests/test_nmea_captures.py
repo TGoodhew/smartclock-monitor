@@ -722,3 +722,37 @@ def test_no_satellite_has_been_faulted_in_six_hundred_cycles() -> None:
         clean += len(statuses)
 
     assert clean > 590, "two sittings, and not one flagged satellite between them"
+
+
+# ---- The satellite count the receiver states ----------------------------------------------------
+
+
+def test_the_stated_count_agrees_with_the_table_on_every_complete_cycle() -> None:
+    """1,799 cycles, and the two figures agree on all of them.
+
+    This is what pins the field *index*: `satellites_tracked` is read from one field of the fix
+    sentence and `tracked` is built from GSV and GSA, so agreement across 1,799 cycles — including
+    the 106 where the count changes — is independent evidence that the field being read is the
+    right one. A wrong index would have to be wrong in exactly the same way 1,799 times.
+
+    **It does not show the two are interchangeable.** Replaying a file hands the listener whole
+    cycles in order, so GSV's four-page group is never cut. A live port does cut it: on a VK-162
+    the table read 0, 3, 0, 9, 2, 10 across six seconds while the receiver stated a steady ten.
+    That is why the reading takes the stated figure, and `test_session_and_polling.py` holds the
+    half-parsed case this corpus cannot produce.
+    """
+    statuses = _replay("vk162-steady-state")
+
+    assert all(s.satellites_tracked is not None for s in statuses), "a fix reported no count"
+    assert [s.satellites_tracked for s in statuses] == [len(s.tracked) for s in statuses]
+
+
+def test_the_stated_count_is_read_from_the_fix_sentence_the_talker_sent() -> None:
+    """GGA and GNS put it in the same field, which is why the driver has one constant and no
+    branch. A GNS talker that reported nothing would be this reading silently absent."""
+    for name, kind in (("vk162-steady-state", "GGA"), ("form8n-gns-no-gga-wsl-bench", "GNS")):
+        statuses = [s for s in _replay(name) if s.position is not None]
+        assert statuses, f"{name} produced no fix to read a count from"
+        assert any(s.satellites_tracked is not None for s in statuses), (
+            f"no count was read from {kind} in {name}"
+        )

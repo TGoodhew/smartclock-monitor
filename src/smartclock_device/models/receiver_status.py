@@ -242,6 +242,18 @@ class ReceiverStatus:
     #: Satellites expected to be visible but not tracked.
     not_tracked: tuple[PredictedSatellite, ...] = ()
 
+    #: How many satellites the receiver says it is using, **where it says so as a number**.
+    #:
+    #: Not ``len(tracked)``, and the difference is the reason this field exists. :attr:`tracked` is
+    #: assembled from a *table* — the SmartClock's acquisition block, an NMEA talker's GSV pages —
+    #: and a table can arrive in pieces. A talker sends its satellites as a four-page GSV group, so
+    #: a cycle that catches two of the four parses half the constellation: counted on a VK-162 at
+    #: 1 Hz the figure read 0, 3, 0, 9, 2, 10 while the receiver had a steady ten.
+    #:
+    #: A count the receiver states in one field cannot straddle anything. ``None`` where the family
+    #: gives no such field, which is not the same as zero — §11.1, and §10.4 renders it as ``—``.
+    satellites_tracked: int | None = None
+
     #: The elevation mask below which satellites are ignored, in degrees.
     elevation_mask_degrees: int | None = None
 

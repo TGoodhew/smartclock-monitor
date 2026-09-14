@@ -26,6 +26,7 @@ from smartclock_device.drivers.capability import STATUS_FIELDS
 from smartclock_device.drivers.nmea.driver import NmeaDriver
 from smartclock_device.models.device_identity import ReceiverModel
 from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
+from smartclock_device.models.satellite import TrackedSatellite
 from smartclock_device.transport.fake import FakeTransport, error_prompt
 from smartclock_device.transport.transaction import Transaction, TransactionOutcome
 from smartclock_monitor.services.polling import PollingService, Reading
@@ -773,3 +774,61 @@ async def test_a_fault_the_health_block_cannot_name_reaches_the_reading() -> Non
     assert reading.status.health_ok is True
     assert len(reading.status.unreported_faults) == 1
     assert "EEPROM" in reading.status.unreported_faults[0]
+
+
+# ---- The tracked count, for a family that never answers the scalar ------------------------------
+
+
+async def test_a_talker_publishes_the_satellites_its_own_full_read_parsed() -> None:
+    """`:GPS:SAT:TRAC:COUN?` is the SmartClock's, and this figure was read from nothing else.
+
+    A talker never sends it, so `Reading.tracked_count` stayed empty for the life of the session —
+    while the very same cycle had parsed ten satellites out of GSV onto the status. §10.4 showed
+    nothing and #127's log said "tracking an unreported number of satellites" against a receiver
+    reporting ten.
+
+    Measured on a VK-162 on the bench: ten tracked, and the count said nothing.
+    """
+    talker = NmeaDriver(clock=FixedClock(NOW))
+    # Ten stated by the receiver, and a GSV group that arrived half-parsed — which is the ordinary
+    # case, not a contrived one, and is why the count may not be taken from the list.
+    status = ReceiverStatus(
+        captured_at=NOW,
+        satellites_tracked=10,
+        tracked=tuple(TrackedSatellite(prn=prn) for prn in (1, 2, 3)),
+    )
+
+    # The session is never reached: `_publish` reads the status and the driver's plan, and this
+    # test is about exactly that. Building a real one keeps the type honest.
+    session, _ = build({"*CLS": ""})
+    service = PollingService(session=session, driver=talker, clock=FixedClock(NOW))
+    service._status = status
+    service._publish()
+
+    reading = service.latest
+    assert reading is not None
+    assert reading.tracked_count == 10, "the receiver stated a count and the reading ignored it"
+    assert reading.tracked_count != len(status.tracked), (
+        "counted the half-parsed table instead of the number the receiver stated"
+    )
+
+
+async def test_the_scalar_still_wins_for_a_family_that_asks_for_it() -> None:
+    """A receiver's own count is the answer where there is a question to ask.
+
+    The SmartClock's screen and its scalar can legitimately disagree — the screen is up to ten
+    seconds old and the sweep runs every second — so counting table rows for a family that asks
+    would make §10.4 a second late for no reason.
+    """
+    screen = read_fixture("locked-stabilizing.txt")
+    session, _ = build({"*CLS": "", ":SYST:STAT?": screen, **SWEEP})
+    await session.open(probe=PROBE)
+    service = poller(session)
+
+    await service.poll_full()
+    await service.poll_fast()
+
+    reading = service.latest
+    assert reading is not None
+    scalar = int(SWEEP[catalog.TRACKED_COUNT.mnemonic])
+    assert reading.tracked_count == scalar
