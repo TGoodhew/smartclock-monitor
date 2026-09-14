@@ -20,6 +20,13 @@ and cited test names are unambiguous, so those are what is checked.
 point at ``src/WinZ3805A/`` and their references are correct there. `provenance.md` records why they
 may not be edited, so a gate that demanded their links resolve here would be demanding a change the
 repository forbids.
+
+**``how-to-use.md`` was excluded with them and is not one of them** (corrected 14 Sep 2026, #97). It
+was inherited, and then it was **forked** — it describes this application, its pictures are rendered
+from this application, and two gates already check its text against the window. Leaving it on the
+inherited list meant the one document a user reads *inside the application* was the one document
+whose links nothing checked. All twenty-five resolve; it is on the list below now, so the next one
+that does not will say so.
 """
 
 from __future__ import annotations
@@ -30,7 +37,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 
 #: Carried from WinZ3805A byte-exact. See the module docstring.
-INHERITED = {"requirements.md", "adding-a-receiver.md", "how-to-use.md"}
+INHERITED = {"requirements.md", "adding-a-receiver.md"}
 
 #: `[text](target)`, with the target not a URL, a mail link or a bare anchor.
 LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
