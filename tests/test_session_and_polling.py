@@ -72,6 +72,11 @@ SWEEP: dict[str, str] = {
     ":SYNC:TINT?": " -5.4E-009",
     ":DIAG:ROSC:EFC:REL?": " +2.4E+001",
     ":GPS:SAT:TRAC:COUN?": " +6",
+    # The full tier's one extra (#112). Scripted here rather than left unanswered because an
+    # unscripted command queues nothing at all from the fake — the honest simulation of a silent
+    # receiver — and the poll would then pay a transaction timeout before retiring it, which is
+    # correct behaviour and three seconds of suite time per test that never meant to test it.
+    ":STAT:OPER:HARD:COND?": " +0",
 }
 
 
@@ -711,3 +716,60 @@ def test_a_full_read_that_stops_goes_stale_while_the_fast_sweep_keeps_answering(
         )
 
     asyncio.run(run())
+
+
+# ---- §7.3's full tier, and the one extra it carries here (#112) ----------------------------------
+
+
+async def test_the_full_read_asks_for_the_hardware_register_too() -> None:
+    """§7.3's table gives the full tier one command; its rationale gives that tier the **health**
+    section, and §10.4's health card is built from a block that cannot name two of the twelve
+    hardware faults. The divergence is `docs/divergences.md`'s, and this is where it happens."""
+    screen = read_fixture("locked-stabilizing.txt")
+    session, transport = build({"*CLS": "", ":SYST:STAT?": screen, **SWEEP})
+    await session.open(probe=PROBE)
+    service = poller(session)
+
+    await service.poll_full()
+
+    assert ":STAT:OPER:HARD:COND?" in transport.written
+    reading = service.latest
+    assert reading is not None
+    assert reading.status.unreported_faults == ()
+
+
+async def test_a_register_the_receiver_will_not_answer_is_asked_once() -> None:
+    """**Once, and then not again this session.**
+
+    An extra that answers nothing costs a full transaction timeout, and paying that every ten
+    seconds for the life of a connection buys nothing — §7.3.1 makes the same trade on the fast
+    tier, keyed on the sync state. There is no state to key on here, so it is once.
+    """
+    screen = read_fixture("locked-stabilizing.txt")
+    answers = {key: value for key, value in SWEEP.items() if key != ":STAT:OPER:HARD:COND?"}
+    session, transport = build({"*CLS": "", ":SYST:STAT?": screen, **answers})
+    await session.open(probe=PROBE)
+    service = poller(session)
+
+    await service.poll_full()
+    await service.poll_full()
+
+    assert transport.written.count(":STAT:OPER:HARD:COND?") == 1
+
+
+async def test_a_fault_the_health_block_cannot_name_reaches_the_reading() -> None:
+    """The whole point of #112: bit 11 is a failed EEPROM write, the screen has no label for it,
+    and §10.4 would otherwise draw six green ticks over it."""
+    screen = read_fixture("locked-stabilizing.txt")
+    answers = {**SWEEP, ":STAT:OPER:HARD:COND?": f" +{1 << 11}"}
+    session, _ = build({"*CLS": "", ":SYST:STAT?": screen, **answers})
+    await session.open(probe=PROBE)
+    service = poller(session)
+
+    await service.poll_full()
+
+    reading = service.latest
+    assert reading is not None
+    assert reading.status.health_ok is True
+    assert len(reading.status.unreported_faults) == 1
+    assert "EEPROM" in reading.status.unreported_faults[0]

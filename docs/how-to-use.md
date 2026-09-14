@@ -199,6 +199,11 @@ side by side. A page taller than the window scrolls; none of them scrolls sidewa
   power, the oscillator, its control voltage, and the GPS receiver. A failing subsystem turns its
   pill red. Running the self-test is on the Diagnostics page, because it is not a thing to do by
   accident.
+
+  Two faults the receiver can have do not appear in that list, because the status screen has no
+  label for them — a failed time-interval measurement and a failed EEPROM write. The application
+  asks the receiver's hardware register for those separately and adds a pill for either if it is
+  set, so a receiver reporting itself healthy while one of them is true does not look healthy here.
 - **Receiver** — the four fields the receiver answers `*IDN?` with: manufacturer, model, serial
   number and firmware revision, in the monospaced face, verbatim. It is how you know you are
   talking to the instrument you think you are. If the answer was not four comma-separated fields

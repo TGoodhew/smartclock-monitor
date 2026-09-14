@@ -75,6 +75,21 @@ class PollPlan:
     #: The full read.
     full: ScpiCommand
 
+    #: What else the **full** tier asks for, after the full read and at the same cadence.
+    #:
+    #: §7.3's table gives the full tier one command, and its rationale line says what that tier is
+    #: *for*: *"full tier drives the satellite table, position, and health sections."* The health
+    #: section is where this port needed a second command — §10.4's card is built from a status
+    #: screen whose health block has no label for two of the twelve hardware faults, so a receiver
+    #: with either printed `[ OK ]` and the card drew six green ticks over it (#112).
+    #:
+    #: **A divergence from §7.3's table and not from its reasoning**, recorded in
+    #: `docs/divergences.md`. Measured first, which is #58a's rule: on the bench the register costs
+    #: 36 ms against a full read of 3.6 s and a ten-second window — 0.7% of the budget.
+    #:
+    #: Empty for every family that has nothing extra to ask, which is most of them.
+    full_extras: tuple[ScpiCommand, ...] = ()
+
     #: The fast-tier reading the receiver may legitimately refuse, or ``None``.
     #:
     #: §7.3.1: when a receiver refuses this, it is not asked again until the state query reports a
@@ -296,6 +311,22 @@ class ReceiverDriver(Protocol):
 
     def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
         """Fold the fast-tier answers into the status the full tier last produced."""
+        ...
+
+    def apply_full_extras(
+        self, status: ReceiverStatus, results: dict[str, Transaction]
+    ) -> ReceiverStatus:
+        """Fold :attr:`PollPlan.full_extras`' answers into the status the full read produced.
+
+        Separate from :meth:`apply_fast` because the two tiers own different fields and a gate
+        asserts the fast one writes only what its plan claims. Folding a slow-tier reading through
+        the fast path would make that claim false and the gate wrong at the same time.
+
+        **Required rather than defaulted**, for the reason `outgoing_text_for` gives at length: a
+        Python `Protocol` cannot default anything for a structural implementer, and a family that
+        asks for nothing extra writes one honest ``return status`` rather than inheriting a
+        behaviour nobody chose for it.
+        """
         ...
 
     def outgoing_text_for(self, mnemonic: str | None) -> str | None:

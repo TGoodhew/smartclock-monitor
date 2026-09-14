@@ -112,7 +112,7 @@ TRACKED_COUNT: Final = ScpiCommand(
     response=ResponseFormat.INTEGER,
 )
 
-#: The §7.3 fast tier, in the order §7.3.1 requires.
+#: The §7.3 fast tier, in the order §7.3.1 requires. Exactly the six §7.3's table lists.
 FAST_TIER: Final[tuple[ScpiCommand, ...]] = (
     SYNC_STATE,
     TIME_FIGURE_OF_MERIT,
@@ -375,6 +375,8 @@ HARDWARE_CONDITION: Final = next(
 OPERATION_CONDITION: Final = next(
     command for command in REGISTER_QUERIES if command.mnemonic == ":STAT:OPER:COND?"
 )
+
+
 REGISTER_SETTERS: Final[tuple[ScpiCommand, ...]] = _register_setters()
 
 

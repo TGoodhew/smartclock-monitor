@@ -491,6 +491,19 @@ class OverviewPage(_FieldsExport, Page):
             self._health_layout.addWidget(pill)
             self._health_pills.append(pill)
 
+        # **The faults the block cannot name** (#112). The screen prints six labels and the
+        # hardware register has twelve bits; two of the twelve have no label, so a receiver with
+        # either prints `[ OK ]` and the six ticks above are drawn over a real fault. The register
+        # is on the fast tier, so these arrive within a second of appearing.
+        for fault in status.unreported_faults:
+            pill = SeverityPill(Severity.CRITICAL, f"{fault}: Failed", self._palette)
+            self._health_layout.addWidget(pill)
+            self._health_pills.append(pill)
+
+    @property
+    def health_pills(self) -> list[SeverityPill]:
+        return self._health_pills
+
     def set_palette_tokens(self, palette: Palette) -> None:
         super().set_palette_tokens(palette)
         for pill in self._health_pills:
