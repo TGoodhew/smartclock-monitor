@@ -262,3 +262,39 @@ def test_the_flatpak_ships_only_the_qt_modules_this_application_imports() -> Non
 
     assert imported
     assert imported <= essentials, f"not in PySide6-Essentials: {sorted(imported - essentials)}"
+
+
+def test_every_icon_size_a_desktop_wants_is_rendered() -> None:
+    """**PNGs, and deliberately not only the scalable icon** (#140).
+
+    `appstreamcli compose` — which `flatpak-builder` runs at the end of every build — cannot read
+    our SVG: with it in the icon path the build fails with `file-read-error`, and with these PNGs
+    and no SVG it prints `Success!`. `rsvg-convert` renders the same file without complaint, so the
+    file is not at fault; a bundle that will not compose is not shippable.
+
+    Not gated on bytes: two Qt builds may antialias differently, and a gate that fired on a Qt
+    upgrade would be one people regenerate without looking. What is gated is that every size exists
+    and is the size it claims.
+    """
+    import struct
+
+    sys.path.insert(0, str(ROOT / "tools"))
+    from render_icons import SIZES, destination
+
+    for size in SIZES:
+        path = destination(size)
+        assert path.is_file(), f"{path.relative_to(ROOT)} is missing — run tools/render_icons.py"
+        header = path.read_bytes()[:24]
+        assert header[:8] == b"\x89PNG\r\n\x1a\n", f"{path.name} is not a PNG"
+        width, height = struct.unpack(">II", header[16:24])
+        assert (width, height) == (size, size), f"{path.name} is {width}x{height}"
+
+
+def test_the_flatpak_installs_the_pngs_and_not_the_svg() -> None:
+    """The whole of #140's fix, asserted where it would be undone: somebody tidying the manifest
+    back to one `install` line for the scalable icon would break every build, and the error would
+    name no file."""
+    text = MANIFEST.read_text(encoding="utf-8")
+
+    assert "packaging/icons/hicolor/" in text
+    assert "scalable/apps" not in text
