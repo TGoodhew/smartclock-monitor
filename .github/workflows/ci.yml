@@ -117,13 +117,20 @@ jobs:
       # The action assumes flatpak-builder is already there — it is, in the container images its
       # README suggests, and is not on a plain runner. Installing it here keeps the checkout and
       # the Python steps above working as they do in every other job.
-      - name: flatpak-builder, and the runtime remote it installs from
+      - name: flatpak-builder, and the runtime it builds against
         if: steps.changed.outputs.build == 'yes'
+        # **A user installation, not a system one.** The runner's account cannot authorise a
+        # system deploy — polkit refuses with "Flatpak system operation Deploy not allowed for
+        # user" — so the remote and the runtime are the user's, and flatpak-builder finds them
+        # there. Installed here rather than left to `--install-deps-from`, which would try the
+        # system installation again.
         run: |
           sudo apt-get update
           sudo apt-get install -y flatpak flatpak-builder
-          sudo flatpak remote-add --if-not-exists flathub \
+          flatpak remote-add --user --if-not-exists flathub \
             https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub \
+            org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         if: steps.changed.outputs.build == 'yes'
         with:
