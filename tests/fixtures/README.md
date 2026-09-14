@@ -116,3 +116,16 @@ fixture assertions for defects the corpus found, written before the parsing that
 `CLAUDE.md` requires: a talker sending `GNS` instead of `GGA` yields no cycles at all (#58), two
 constellations collide on one satellite number (#57), and `GST`/`GBS` go unread (#58). They are
 `strict`, so none can be quietly left behind once its fix lands.
+
+
+---
+
+# The register transcripts, in one paragraph
+
+`smartclock/` holds neither status screens nor raw talker output but **transcripts**: a status
+screen and the five `:STAT:…:COND?` registers asked in one sitting, written by
+`tools/capture_registers.py` and replayed by `tests/test_registers_against_screen.py`. They exist
+because the screen and the registers are two accounts of one instant, and the bit meanings in
+`status_register_map.py` had never been put beside a screen from the same moment. The first one
+found that the bench receiver's diagnostic log is almost full and that nothing in the application
+asks (#110). Each has a `.md` beside it; read that rather than this paragraph.
