@@ -94,3 +94,15 @@ AUTO_DETECT_SEQUENCE: Final[tuple[SerialSettings, ...]] = (
     SerialSettings(1200, 8, Parity.NONE, StopBits.ONE),
     SerialSettings(9600, 7, Parity.ODD, StopBits.ONE),
 )
+
+#: The two combinations the SmartClock family is **documented** to ship at (§7.1).
+#:
+#: The Z3805A's factory configuration and the Z3801A's, the latter stated twice in the Z3801A user
+#: guide — the source #64's correction cites. The other six in :data:`AUTO_DETECT_SEQUENCE` are a
+#: net rather than a claim about any particular unit, and the note above records that two of them
+#: are the unsourced spellings that correction was about.
+#:
+#: **This is a selection from that tuple, never an addition to it.** `tests/test_registry.py`
+#: checks that every entry appears there, so a rate that exists only here — and would therefore
+#: never be walked — fails rather than sits unnoticed.
+DOCUMENTED_SETTINGS: Final[tuple[SerialSettings, ...]] = AUTO_DETECT_SEQUENCE[:2]

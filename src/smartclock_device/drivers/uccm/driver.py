@@ -292,6 +292,16 @@ class UccmDriver(QueryResponseDefaults):
         """§10.12's eleventh combination, and this family's only one."""
         return (LINE_SETTINGS,)
 
+    @property
+    def documented_settings(self) -> tuple[SerialSettings, ...]:
+        """Its one, which was **measured** on a Trimble UCCM-P rather than guessed (#470).
+
+        This family has never met a receiver from this bench (D7) and its driver is written from
+        carried captures — so the one thing it does claim about the wire is the one thing somebody
+        put an instrument on.
+        """
+        return self.auto_detect_sequence
+
     # -- What may be sent ------------------------------------------------------------------------
 
     def is_allowed(self, mnemonic: str | None) -> bool:

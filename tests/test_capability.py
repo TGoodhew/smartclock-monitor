@@ -104,9 +104,18 @@ class TalkerDriver(QueryResponseDefaults):
     #: family rather than for a wire format — and set where a test is about the §10.12 union.
     walk: tuple[SerialSettings, ...] = ()
 
+    #: Which of :attr:`walk` are sourced rather than folklore. ``None`` means "all of them", which
+    #: is what a family with nothing to hide back looks like; a test about the walk's *bands* sets
+    #: it to a subset so the double can stand in for one that has both kinds.
+    documented: tuple[SerialSettings, ...] | None = None
+
     @property
     def auto_detect_sequence(self) -> tuple[SerialSettings, ...]:
         return self.walk
+
+    @property
+    def documented_settings(self) -> tuple[SerialSettings, ...]:
+        return self.walk if self.documented is None else self.documented
 
     def command(self, capability: Capability) -> ScpiCommand | None:
         """Nothing, unless a test says otherwise. A family that offers nothing is the point."""

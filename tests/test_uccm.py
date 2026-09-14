@@ -235,7 +235,11 @@ def test_the_union_is_eleven_with_this_family_registered() -> None:
     )
 
     assert len(registry.auto_detect_sequence) == 11
-    assert str(registry.auto_detect_sequence[-1]) == "57600-8-N-1"
+    # Its one combination was measured on a Trimble UCCM-P (#470), so it is documented and sits in
+    # the walk's first band rather than at the end. It used to be last only because §10.12 appended
+    # each family's sequence whole — which is what put three unsourced 7-bit spellings ahead of it.
+    assert str(registry.auto_detect_sequence[4]) == "57600-8-N-1"
+    assert registry.auto_detect_sequence[4] in UccmDriver(clock=clock).documented_settings
 
 
 # ---- The label a user actually sees --------------------------------------------------------------

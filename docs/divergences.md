@@ -33,6 +33,7 @@ its reasoning in [`platform-decisions.md`](platform-decisions.md) and its argume
 | **Compact mode, in and out** | Double-click the medallion, or `Ctrl+Shift+M` | `Ctrl+Shift+M` and `Esc` only | *Reduction* — see below |
 | **The user's guide** | One document | **Forked** — same receiver half, rewritten window half | Different — see below |
 | **The time code itself** | Format only (§10.14) | **Read on request**, decoded | *Addition* — see below |
+| **Auto-detect walk order** | §10.12's, each family's sequence appended whole | **Re-grouped into three bands** | Different — see below |
 | **Multiple receivers (P2-1)** | Not built | Not built | Same |
 
 ---
@@ -292,6 +293,63 @@ sits, not as constants to maintain.
 **The specification is not edited.** [`requirements.md`](requirements.md) stays byte-identical to
 WinZ3805A's copy, as [`provenance.md`](provenance.md) requires; this document is the authority for
 the difference. §9.6.2's 380 by 240 is therefore knowingly stale for this port, and deliberately so.
+
+---
+
+## §10.12's auto-detect walk is re-grouped into three bands
+
+§10.12 builds the walk by **appending each registered family's sequence whole**, in registration
+order, de-duplicated. That was right while there was one family, and it stayed right while there
+were two. With three it puts combinations nobody can source ahead of combinations a standard
+specifies.
+
+The order it produces today:
+
+```
+ 1. 9600-8-N-1     5. 19200-8-N-1     9. 4800-8-N-1     <- NMEA 0183's own rate
+ 2. 19200-7-O-1    6. 2400-8-N-1     10. 38400-8-N-1
+ 3. 19200-7-E-1    7. 1200-8-N-1     11. 57600-8-N-1
+ 4. 9600-7-E-1     8. 9600-7-O-1
+```
+
+Positions 3, 4 and 8 are the SmartClock's 7-bit spellings. §7.1's own note calls two of them
+folklore — they are the unsourced even-parity spellings #64's correction was about, kept "one place
+lower rather than removed" because second-hand receivers are this project's audience. **A talker
+running at the rate NMEA 0183 specifies was found on the ninth attempt**, behind four combinations
+no talker has ever used, which is about fourteen seconds at §7.2's 2 s probe — the same cost, and
+for the same reason, that #64 was filed about.
+
+This port orders the union in three bands instead. Within each, the union order is preserved:
+
+1. **Documented** — each driver's `documented_settings`: a manual's factory default, a standard's
+   rate, a figure somebody measured.
+2. **8-N-1** — everything else at eight data bits, no parity, one stop bit. A receiver is far more
+   likely to be at an unexpected *rate* than at an unexpected *framing*.
+3. **The rest** — the 7-bit and parity spellings, which is where the unsourced ones land.
+
+```
+ 1. 9600-8-N-1     Z3805A, factory          7. 2400-8-N-1
+ 2. 19200-7-O-1    Z3801A, factory (#64)    8. 1200-8-N-1
+ 3. 4800-8-N-1     NMEA 0183                9. 19200-7-E-1    unsourced
+ 4. 38400-8-N-1    NMEA 0183, high speed   10. 9600-7-E-1     unsourced
+ 5. 57600-8-N-1    UCCM-P, measured        11. 9600-7-O-1     unsourced
+ 6. 19200-8-N-1
+```
+
+**Positions 1 and 2 do not move**, which is the half of §10.12's ordering that is load-bearing:
+#64's correction put the Z3801A's documented 19200-7-O-1 second, and it is still second. What
+changed is that a family registered later no longer waits behind an earlier family's guesses.
+
+**No family's own sequence is touched.** Each driver still owns and orders its own, exactly as
+§10.12 lists the SmartClock's eight; the re-grouping happens in the union, which is the rule this
+diverges from. `documented_settings` is the one addition to the driver contract — every family
+answers for itself, with no default, so a family that inherited "all of mine are documented" cannot
+quietly promote a guess.
+
+Found on the VM with two u-blox talkers on the bench, alongside the poll-driver defect that was
+actually stopping them working. `tests/test_registry.py` holds the ordering, the property behind it
+and the rule that a documented combination must be one the walk actually tries — each checked
+against a deliberate violation.
 
 ---
 

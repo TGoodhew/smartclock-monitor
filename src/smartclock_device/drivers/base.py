@@ -179,6 +179,32 @@ class ReceiverDriver(Protocol):
         """
         ...
 
+    @property
+    def documented_settings(self) -> tuple[SerialSettings, ...]:
+        """Which of :attr:`auto_detect_sequence` are **sourced**, rather than folklore.
+
+        A manual that states a factory default, a standard that specifies a rate, or a figure
+        somebody measured off the hardware. Not "the ones we think are likely" — the walk is
+        already most-likely-first within a family, and this answers a different question that the
+        ordering across families needs: *is this combination something a receiver is known to ship
+        at, or something that propagated?*
+
+        **It is what stops a later family's documented rate sitting behind an earlier family's
+        guess.** §10.12 appends each driver's sequence whole, so the SmartClock's three unsourced
+        7-bit combinations sat ahead of NMEA 0183's own 4800 — a talker at the rate its standard
+        specifies waited through four combinations no talker has ever used. The bands are what
+        `Registry.auto_detect_sequence` orders by; see its note for the three of them.
+
+        **Every family answers for itself, and there is no default.** A `Protocol` cannot default
+        anything for a structural implementer, and a family that inherited "all of mine are
+        documented" would quietly promote a guess the moment somebody added one. Return `()` where
+        nothing is sourced; return the whole sequence where everything is.
+
+        Every entry must also appear in :attr:`auto_detect_sequence` — this selects from that list
+        rather than extending it, and `tests/test_registry.py` holds each driver to it.
+        """
+        ...
+
     def command(self, capability: Capability) -> ScpiCommand | None:
         """The command this family uses for one capability, or ``None`` if it has none.
 
