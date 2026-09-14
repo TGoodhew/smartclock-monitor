@@ -25,6 +25,7 @@ import sys
 from collections.abc import Callable, Sequence
 from contextlib import suppress
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from smartclock_device.clock import Clock, SystemClock
 from smartclock_device.drivers.nmea import NmeaDriver
@@ -53,8 +54,17 @@ from smartclock_monitor.services.supervisor import Supervisor
 from smartclock_monitor.services.trend_store import TrendStore, TrendStoreError
 from smartclock_monitor.themes import fonts
 from smartclock_monitor.themes.tokens import Theme
-from smartclock_monitor.views.connection_dialog import ConnectionChoice
-from smartclock_monitor.views.help_window import version
+
+# **Not at module scope, and this is the whole of #151.** Both reach PySide6, and importing Qt here
+# defeats every deferral below it: `--doctor`, `--help` and `--list-ports` each import Qt late so
+# that they work on a machine with none, and all three died on *this* line instead — before
+# `main()` ran, on exactly the machine the doctor exists to diagnose.
+#
+# `ConnectionChoice` is only ever an annotation, and `from __future__ import annotations` means
+# annotations are never evaluated. `version()` is called inside `main()`, after the Qt import that
+# is deliberate.
+if TYPE_CHECKING:
+    from smartclock_monitor.views.connection_dialog import ConnectionChoice
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -179,6 +189,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     import qasync
     from PySide6.QtWidgets import QApplication
 
+    from smartclock_monitor.views.help_window import version
     from smartclock_monitor.views.main_window import (
         APPLICATION_ID,
         APPLICATION_NAME,

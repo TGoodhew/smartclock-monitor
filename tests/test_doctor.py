@@ -412,3 +412,136 @@ def test_qt_s_own_complaint_is_still_quoted_as_qt_s(monkeypatch: pytest.MonkeyPa
 
     assert "qt.qpa.plugin" in probe.detail
     assert "saying nothing about Qt" not in probe.detail
+
+
+# ---- The machine the doctor exists for -----------------------------------------------------------
+
+
+def _without_qt(tmp_path: Path) -> dict[str, str]:
+    """An environment in which ``import PySide6`` raises, and nothing else is different.
+
+    A stub package earlier on the path than the real one. `PYTHONPATH` is searched before
+    site-packages, so this shadows the installed PySide6 for the child and for any child of its
+    own — which matters, because the GUI probe is itself a subprocess.
+
+    Deliberately an `ImportError` rather than a missing directory: that is what a broken wheel, a
+    mismatched ABI or an absent `libGL` actually produces, and it is the case the doctor claims to
+    survive.
+    """
+    stub = tmp_path / "no-qt"
+    (stub / "PySide6").mkdir(parents=True)
+    (stub / "PySide6" / "__init__.py").write_text(
+        'raise ImportError("PySide6 is not importable here")', encoding="ascii"
+    )
+    return {**os.environ, "PYTHONPATH": str(stub)}
+
+
+def test_the_stub_actually_hides_qt(tmp_path: Path) -> None:
+    """Guarding the guard. If the stub does not shadow the real PySide6, the three tests below
+    pass against a tree that would fail on a real machine — which is the failure mode this whole
+    issue is about, reproduced inside its own gate."""
+    finished = subprocess.run(
+        [sys.executable, "-c", "import PySide6"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+        env=_without_qt(tmp_path),
+    )
+
+    assert finished.returncode != 0, "the stub did not shadow the installed PySide6"
+    assert "not importable" in finished.stderr
+
+
+@pytest.mark.parametrize(
+    ("argument", "expected"),
+    [
+        ("--doctor", "smartclock-monitor doctor"),
+        ("--help", "usage: smartclock-monitor"),
+        ("--list-ports", ""),
+    ],
+)
+def test_it_still_answers_when_qt_cannot_be_imported(
+    tmp_path: Path, argument: str, expected: str
+) -> None:
+    """#151. **The three arguments that must work on a machine with no working Qt.**
+
+    `--doctor` says so itself: *"the machine that needs the doctor most is the one where importing
+    PySide6 is itself the thing that fails"*, and `--list-ports` and `--help` carry the same claim.
+    All three deferred their own Qt import and were defeated anyway, because `__main__` reached
+    PySide6 at module scope through two view imports — so the process died on its own entry point
+    before `main()` ran, and the report that would have named the missing library was never
+    printed.
+
+    Asserted on the **output**, not the exit status: `--doctor` legitimately exits 1 here, having
+    found something to fix, and `--list-ports` exits 1 where there is no adapter. What must never
+    happen is a traceback instead of a report.
+    """
+    finished = subprocess.run(
+        [sys.executable, "-m", "smartclock_monitor", argument],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+        env=_without_qt(tmp_path),
+    )
+
+    assert "Traceback" not in finished.stderr, (
+        f"{argument} died on an import instead of answering:\n{finished.stderr[-800:]}"
+    )
+    assert "ModuleNotFoundError" not in finished.stderr
+    assert "ImportError" not in finished.stderr
+    assert expected in finished.stdout, (
+        f"{argument} printed nothing useful: {finished.stdout[:300]!r}"
+    )
+
+
+def test_the_doctor_names_qt_as_the_problem_rather_than_dying_of_it(tmp_path: Path) -> None:
+    """And it has to be *useful*, not merely alive: the whole point is the line that says which
+    thing is missing. A report that ran every other check and stayed silent about Qt would pass the
+    test above while helping nobody."""
+    finished = subprocess.run(
+        [sys.executable, "-m", "smartclock_monitor", "--doctor"],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+        env=_without_qt(tmp_path),
+    )
+
+    assert "PySide6" in finished.stdout
+    assert "[FAIL]" in finished.stdout, finished.stdout[-600:]
+    # The checks after the failed one still run, which is #46's rule and is what makes the report
+    # worth printing at all on this machine.
+    for after in ("pyserial", "Serial ports", "dialout"):
+        assert after in finished.stdout, f"the report stopped before {after!r}"
+
+
+def test_the_entry_point_does_not_reach_qt_at_import_time() -> None:
+    """The cause, named directly, rather than the consequence the tests above measure.
+
+    Those three prove the symptom is gone. This one says *why*, and it is the check that fires the
+    moment somebody adds a module-scope view import again — which is how the guarantee was lost the
+    first time, silently, on a machine where nothing could notice.
+
+    Cheap and exact: one interpreter, one import, one question. `CLAUDE.md` prefers a precise check
+    that finds nothing today over a loose one that produces noise, and this is the precise one.
+    """
+    finished = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys, smartclock_monitor.__main__; "
+            "print('QT' if 'PySide6' in sys.modules else 'CLEAN')",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=180,
+    )
+
+    assert finished.stdout.strip() == "CLEAN", (
+        "importing the entry point pulled in PySide6. Every late Qt import below it is then "
+        "decoration: --doctor, --help and --list-ports die on this import before main() runs. "
+        "See #151."
+    )
