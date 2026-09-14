@@ -611,3 +611,114 @@ def test_a_firmware_default_is_marked_as_one() -> None:
 
     assert offset == 18
     assert is_default is True
+
+
+# ---- Taken on this bench with the receiver deliberately reconfigured ----------------------------
+
+#: Captures made here by switching sentences on with `UBX-CFG-MSG`, to RAM, with the owner's
+#: say-so — and restored afterwards with the result read back rather than assumed from the write.
+#:
+#: They exist to find out which of the carried sittings' findings are about **the firmware** and
+#: which were about one afternoon.
+RECONFIGURED: Final = ("form8n-gst-gbs-wsl-bench", "form8n-gns-no-gga-wsl-bench")
+
+
+@pytest.mark.parametrize("name", RECONFIGURED)
+def test_the_reconfigured_captures_are_present_and_written_up(name: str) -> None:
+    assert (CAPTURES / f"{name}.nmea").is_file()
+    assert (CAPTURES / f"{name}.md").is_file()
+
+
+def test_the_gns_defect_is_fixed_against_a_receiver_we_own() -> None:
+    """#58's defect was found in somebody else's recording. This is our own hardware in that state.
+
+    Against a talker sending `GNS` instead of `GGA` this application read **nothing at all** — the
+    listener's boundary never came round. 239 cycles here, every one carrying a position.
+    """
+    headers = _headers("form8n-gns-no-gga-wsl-bench")
+
+    assert not any(h.endswith("GGA") for h in headers), "GGA was switched off for this sitting"
+    assert headers["GNGNS"] == 240
+
+    statuses = _replay("form8n-gns-no-gga-wsl-bench")
+
+    assert len(statuses) == 239
+    assert all(s.position is not None for s in statuses)
+
+
+def test_the_mode_field_is_not_a_fixed_width_code_in_any_sitting() -> None:
+    """**`ANNA`, and it is the first value where a constellation other than the first contributes.**
+
+    Three sittings, three shapes: `DN` from the VK-162, `ANNN` from upstream's forM8N, `ANNA` here.
+    A reader that took one of those as *the* format — or matched the string, or looked only at
+    character zero — would be wrong on the other two. The parser asks "is any character not `N`"
+    and takes the best of what it finds.
+    """
+    modes = {
+        sentence.field(5)
+        for raw in (CAPTURES / "form8n-gns-no-gga-wsl-bench.nmea")
+        .read_bytes()
+        .decode("ascii", "replace")
+        .splitlines()
+        if (sentence := sentences.parse(raw.strip())) is not None and sentence.kind == sentences.GNS
+    }
+
+    assert modes == {"ANNA"}, "this sitting's mode string"
+    assert {s.fix_quality for s in _replay("form8n-gns-no-gga-wsl-bench")} == {
+        FixQuality.AUTONOMOUS
+    }, "the best of A, N, N, A"
+
+
+def test_two_independent_sittings_agree_the_error_ellipse_is_never_published() -> None:
+    """0 of 300 upstream, 0 of 301 here. Not a truncation, and not a property of one afternoon."""
+    for name in ("form8n-gst-gbs", "form8n-gst-gbs-wsl-bench"):
+        published = [
+            sentence
+            for raw in (CAPTURES / f"{name}.nmea")
+            .read_bytes()
+            .decode("ascii", "replace")
+            .splitlines()
+            if (sentence := sentences.parse(raw.strip())) is not None
+            and sentence.kind == sentences.GST
+            and any(sentence.field(i) for i in (2, 3, 4))
+        ]
+        assert published == [], f"{name} published an ellipse"
+
+
+def test_the_range_rms_emits_sentinels_rather_than_noise() -> None:
+    """**The finding this bench added**, and it strengthens the case for never reading the field.
+
+    The carried sitting's note calls the range RMS *"17 to 3,179,277 — six orders of magnitude"*,
+    which reads as a wild analogue reading. It is not. Both sittings, a day apart on different
+    hardware placement, contain the **same two exact values above a million and no others**:
+    `3179277` and `3071473`.
+
+    Two discrete values repeating exactly is a sentinel or a saturated computation, not noise —
+    and nothing in this application reads the field.
+    """
+    large: dict[str, set[float]] = {}
+    for name in ("form8n-gst-gbs", "form8n-gst-gbs-wsl-bench"):
+        values = [
+            value
+            for raw in (CAPTURES / f"{name}.nmea")
+            .read_bytes()
+            .decode("ascii", "replace")
+            .splitlines()
+            if (sentence := sentences.parse(raw.strip())) is not None
+            and sentence.kind == sentences.GST
+            and (value := sentences.parse_float(sentence.field(1))) is not None
+        ]
+        large[name] = {v for v in values if v > 1e6}
+
+    assert large["form8n-gst-gbs"] == large["form8n-gst-gbs-wsl-bench"] == {3179277.0, 3071473.0}
+
+
+def test_no_satellite_has_been_faulted_in_six_hundred_cycles() -> None:
+    """Which is why the faulted branch's test is still labelled synthetic, and has to be."""
+    clean = 0
+    for name in ("form8n-gst-gbs", "form8n-gst-gbs-wsl-bench"):
+        statuses = _replay(name)
+        assert all(s.integrity is not None and s.integrity.is_clean for s in statuses)
+        clean += len(statuses)
+
+    assert clean > 590, "two sittings, and not one flagged satellite between them"

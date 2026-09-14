@@ -133,12 +133,19 @@ no hardware — and it applies more urgently, because four of the ten record a r
 something no one had predicted: sending `GNS` and never `GGA`, advertising a constellation it
 cannot see, losing a fix and regaining it, and crossing UTC midnight.
 
-**Three captures were taken here**, with `tools/capture_talker.py` — the port of upstream's
+**Five captures were taken here**, with `tools/capture_talker.py` — the port of upstream's
 `Capture-Talker.ps1` — from the same two module families on this bench, reached through
 `usbipd`. They are not carried from anywhere and belong upstream if that repository wants them.
 Their value is the cross-check: the same silicon, a different harness, five days later.
 
-**One of the three is unlike everything else in this repository: it contains something this
+**Two of the five were taken with the receiver deliberately reconfigured**, by `UBX-CFG-MSG` to
+RAM, with the owner's say-so and from a script outside the application — D8 permits exactly one
+outgoing sentence from the driver and this is not it. The set was restored afterwards with the
+result **read back over eight seconds** rather than assumed from the write. They exist to find out
+which of the carried sittings' findings are about the *firmware* and which were about one
+afternoon, and all three of `form8n-gst-gbs`'s carried over.
+
+**One of the five is unlike everything else in this repository: it contains something this
 application sent.** `form8n-time-poll.nmea` is six `$PUBX,04` polls and six replies, and every
 other capture here — in every corpus — is a receiver talking unprompted. D8 traded away the
 structural guarantee that made that true, and that file is the evidence for the reading it was
