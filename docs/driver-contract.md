@@ -151,7 +151,7 @@ confirmations exist to prevent.
 
 ---
 
-## The five members the contract grew, and what each one is for
+## The six members the contract grew, and what each one is for
 
 Everything in this section postdates the walkthrough. A driver author reading
 [`adding-a-receiver.md`](adding-a-receiver.md) alone will not meet any of it.

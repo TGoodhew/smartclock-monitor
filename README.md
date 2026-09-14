@@ -14,8 +14,10 @@ Python 3 and Qt, so it runs on Linux, Windows and macOS.
 > **You can look at it without a receiver** — `smartclock-monitor --demo` replays the ten
 > captured status screens through the real protocol and poll loop. See *Running it* below.
 >
-> **Two receiver families**, not one: the SmartClock, and any NMEA 0183 talker. The second is
-> there because a driver seam with one implementation is a seam nobody has tested — see
+> **Three receiver families**, not one: the SmartClock, any NMEA 0183 talker, and the UCCM. The
+> second is there because a driver seam with one implementation is a seam nobody has tested; the
+> third is ported from captures and **permanently untested**, because there is no such receiver to
+> test it against ([D7](docs/platform-decisions.md)). See
 > [`docs/driver-contract.md`](docs/driver-contract.md).
 >
 > **Phase 8 is decided rather than pending.** Its shell-integration half — tray icon,

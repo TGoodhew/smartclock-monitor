@@ -181,6 +181,48 @@ def test_the_stylesheet_uses_only_the_spacing_scale() -> None:
     assert used <= allowed, f"Off-scale value in the stylesheet: {sorted(used - allowed)}"
 
 
+#: The layout calls that place things, and the only ones a spacing value reaches Qt through.
+_LAYOUT_CALLS: Final = frozenset(
+    {"setContentsMargins", "setSpacing", "setHorizontalSpacing", "setVerticalSpacing"}
+)
+
+
+def test_no_layout_call_uses_an_off_scale_value() -> None:
+    """§9.13 item 2's **imperative half**, which nothing checked until #97's audit.
+
+    The test above covers the generated stylesheet, and that was read as covering the rule. It does
+    not: most spacing in a Qt application is set in code — `layout.setSpacing(12)`,
+    `setContentsMargins(16, 16, 16, 16)` — and never reaches the stylesheet at all. Upstream's
+    `Test-SpacingScale.ps1` scans the XAML, which is where its spacing lives; this scans the calls,
+    which is where ours does.
+
+    **Zero off-scale values today**, which is the point: a precise gate that finds nothing beats a
+    loose one that produces noise, and this one catches the first `setSpacing(15)` rather than
+    arguing about it in review. 0, 1 and 2 are allowed for the same reasons the stylesheet allows
+    them — a reset, and a hairline border.
+    """
+    allowed = {*SCALE, *RADII, 0, 1, 2}
+    offenders: list[str] = []
+
+    for path in sorted((ROOT / "src" / "smartclock_monitor").rglob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+                continue
+            if node.func.attr not in _LAYOUT_CALLS:
+                continue
+            for argument in node.args:
+                if not isinstance(argument, ast.Constant):
+                    continue
+                value = argument.value
+                if isinstance(value, int) and value not in allowed:
+                    offenders.append(
+                        f"{path.relative_to(ROOT)}:{node.lineno} {node.func.attr}({value})"
+                    )
+
+    assert not offenders, "Off-scale spacing in a layout call:\n  " + "\n  ".join(offenders)
+
+
 def test_only_the_sanctioned_radii_exist() -> None:
     """§9.13: 4, 8, and circle. Circle is computed from the shorter side rather than written as a
     number, which is why it is not in the list a gate compares against."""
