@@ -50,6 +50,7 @@ class Capability(Enum):
     ERROR_QUEUE = "the error queue"
     HARDWARE_CONDITION = "the hardware status register"
     OPERATION_CONDITION = "the operation status register"
+    ACTIVE_LAMP = "the front-panel Active indicator"
     TIME_CODE_FORMAT = "the time-code output format"
     TIME_CODE = "the time code itself"
     LEAP_ACCUMULATED = "accumulated leap seconds"
@@ -58,6 +59,7 @@ class Capability(Enum):
     LEAP_STATE = "whether a leap second is announced"
 
     # -- Writing -------------------------------------------------------------------------------
+    SET_ACTIVE_LAMP = "set the front-panel Active indicator"
     SET_ANTENNA_DELAY = "set the antenna delay"
     SET_ELEVATION_MASK = "set the elevation mask"
     SET_HOLDOVER_DURATION_THRESHOLD = "set the holdover uncertainty threshold"

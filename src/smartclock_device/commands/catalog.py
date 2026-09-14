@@ -962,6 +962,67 @@ LOG_ENTRY: Final = ScpiCommand(
     maximum=999,
 )
 
+
+# ---- §8.2's two Safe setters, and §8.3's two mask setters (#118) ---------------------------------
+
+#: §8.2's third Safe non-query and the only Safe command that takes a value.
+#:
+#: **Safe because it changes no receiver behaviour** — no timing, no discipline, nothing that
+#: outlives the lamp — so a §8.3 confirmation would be asking permission to change nothing. It is
+#: documented (`z3801.pdf` Table 4-2, *"Sets or queries Active LED"*), so §8.4's permanent block on
+#: undocumented set forms does not reach it.
+#:
+#: Confirmed on the bench 13 Sep 2026 with the error queue **drained first**: both spellings write,
+#: the lamp reads back as commanded, and neither queues an error. That last clause needs the drain
+#: to mean anything — read without one, these writes appear to raise `E-221` and the errors are a
+#: previous sweep's (#105).
+SET_ACTIVE_LAMP: Final = ScpiCommand(
+    mnemonic=":LED:ACTive",
+    summary="Turn the front-panel Active indicator on or off",
+    response=ResponseFormat.NONE,
+    argument=ArgumentKind.KEYWORD,
+    keywords=("ON", "OFF"),
+)
+
+#: The second user-definable indicator. `z3801.pdf`'s *Front Panel at a Glance* names both:
+#: *"User-definable indicators labeled Enabled and Active"*.
+SET_ENABLED_LAMP: Final = ScpiCommand(
+    mnemonic=":LED:ENABled",
+    summary="Turn the front-panel Enabled indicator on or off",
+    response=ResponseFormat.NONE,
+    argument=ArgumentKind.KEYWORD,
+    keywords=("ON", "OFF"),
+)
+
+#: IEEE 488.2's two mask setters, at §8.3's tier with §8.3's sentence.
+#:
+#: **The sentence is shared and is the specification's own.** §8.3 gives one row to both, and its
+#: wording covers both operations — which is the shape §8.3's own amendment note warns about, where
+#: `:IGN:NONE` shared a sentence with the command that did the opposite. It is carried verbatim
+#: rather than improved, because §8.3's text is the authority and a divergence in a confirmation
+#: sentence is exactly the kind that should be argued in an issue rather than made in a catalogue.
+SET_EVENT_ENABLE_MASK: Final = ScpiCommand(
+    mnemonic="*ESE",
+    summary="Set the standard event status enable mask",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.INTEGER,
+    minimum=0,
+    maximum=65535,
+    confirmation="Change event/service-request enable mask?",
+)
+
+SET_SERVICE_REQUEST_MASK: Final = ScpiCommand(
+    mnemonic="*SRE",
+    summary="Set the service request enable mask",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.INTEGER,
+    minimum=0,
+    maximum=65535,
+    confirmation="Change event/service-request enable mask?",
+)
+
 #: Every catalogued command. **The allowlist.**
 ALL: Final[tuple[ScpiCommand, ...]] = (
     IDENTITY,
@@ -1045,6 +1106,10 @@ ALL: Final[tuple[ScpiCommand, ...]] = (
     ENABLED_LAMP,
     LAST_QUERY_RESPONSE,
     LOG_ENTRY,
+    SET_ACTIVE_LAMP,
+    SET_ENABLED_LAMP,
+    SET_EVENT_ENABLE_MASK,
+    SET_SERVICE_REQUEST_MASK,
     *EXPERIMENTAL,
 )
 

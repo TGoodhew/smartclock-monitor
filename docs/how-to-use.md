@@ -330,7 +330,7 @@ corrections it had learned, and its time error grows from there.
 
 #### Diagnostics — `Ctrl+6`
 
-![The Diagnostics page: a Self test card with an ALL subsystem picker and a Run test button; a Diagnostic log card with a filter box, Refresh and Clear and a Log has room pill; a Hardware conditions card; an Error queue card with Read errors; a Lifetime card; an Application log card naming the log folder with a Show log folder button; and an Undocumented read-only queries card listing six SCPI queries each with a Run button](images/how-to-use/page-diagnostics.png)
+![The Diagnostics page: a Self test card with an ALL subsystem picker and a Run test button; a Diagnostic log card with a filter box, Refresh and Clear and a Log has room pill; a Hardware conditions card; an Error queue card with Read errors; a Lifetime card; a Front panel card with an Active indicator switch; an Application log card naming the log folder with a Show log folder button; and an Undocumented read-only queries card listing six SCPI queries each with a Run button](images/how-to-use/page-diagnostics.png)
 
 - **Self test** — pick one **subsystem** or `ALL` and press **Run test**, which names what it is
   about to do because the receiver drops what it is doing while it tests itself. Testing one
@@ -359,6 +359,12 @@ corrections it had learned, and its time error grows from there.
   read removes the entry it returns, so what is shown is what was read.
 - **Lifetime** — power-on hours, how long the receiver has run in total. An oven-controlled
   oscillator ages with running time, so this is the figure behind the drift the Timing page reports.
+- **Front panel** — a switch for the receiver's **Active indicator**, one of the two lamps on its
+  front panel that software can drive. Nothing drives it automatically yet, so this is both the
+  way to use it and the way to turn it off again if something else left it lit. The receiver takes
+  about a second to answer a lamp write, so the switch settles a moment after you click it — and
+  if the receiver refuses the write, the switch goes back where it was rather than telling you
+  something happened.
 - **Application log** — what the application saw: the port opening, the settings auto-detect
   settled on, every connection change, and the receiver's mode and satellite count whenever they
   move. The card names the folder and **Show log folder** opens it in the desktop's file manager.

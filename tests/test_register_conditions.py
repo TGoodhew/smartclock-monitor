@@ -23,6 +23,7 @@ from conftest import NOW
 from smartclock_device.clock import FixedClock
 from smartclock_device.commands import catalog
 from smartclock_device.drivers.nmea.driver import NmeaDriver
+from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.models import status_register_map as registers
 from smartclock_device.models.status_register_map import faults_with_no_health_label
 from smartclock_monitor.themes.severity import Severity
@@ -196,3 +197,68 @@ def test_the_pills_follow_a_theme_change() -> None:
     page.set_palette_tokens(DARK)
 
     assert page.palette_of_condition_pills() == [DARK] * 2
+
+
+# ---- §10.9's Front panel card (#118) -------------------------------------------------------------
+
+
+def test_the_lamp_switch_shows_what_the_receiver_says() -> None:
+    page = page_reading(
+        **{
+            catalog.ACTIVE_LAMP.mnemonic: "1",
+            catalog.HARDWARE_CONDITION.mnemonic: "+0",
+            catalog.OPERATION_CONDITION.mnemonic: "+26",
+        }
+    )
+
+    assert page.lamp_switch.isChecked() is True
+
+
+def test_clicking_the_switch_writes_the_lamp() -> None:
+    """Tier S, so no confirmation: §8.2's ruling is that the command changes no receiver behaviour
+    and a confirmation would be asking permission to change nothing."""
+    page = DiagnosticsPage()
+    runner = FakeRunner(
+        answers={catalog.ACTIVE_LAMP.mnemonic: "0", catalog.SET_ACTIVE_LAMP.mnemonic: ""}
+    )
+    page.set_command_runner(runner)
+
+    page.lamp_switch.click()
+
+    assert (catalog.SET_ACTIVE_LAMP.mnemonic, "ON") in runner.sent
+    assert page.lamp_switch.isChecked() is True
+
+
+def test_a_write_the_receiver_refuses_puts_the_switch_back() -> None:
+    """§9.11: a Safe setter gets no success bar, so the switch's own position is the feedback — and
+    a switch that stayed where a user put it while the lamp did not move would be the one lie this
+    card can tell."""
+    page = DiagnosticsPage()
+    page.set_command_runner(FakeRunner(driver_for=SmartClockDriver(clock=FixedClock(NOW))))
+
+    page.lamp_switch.click()
+
+    assert page.lamp_switch.isChecked() is False
+    assert "back as it was" in page.lamp_note_text
+
+
+def test_a_refresh_does_not_write_the_lamp_back_at_itself() -> None:
+    """The click handler must not fire when the page sets the switch from a reading. Unguarded, a
+    page open on a locked receiver writes the lamp once a second for ever — and each write takes
+    the receiver about a second."""
+    page = DiagnosticsPage()
+    runner = FakeRunner(answers={catalog.ACTIVE_LAMP.mnemonic: "1"})
+    page.set_command_runner(runner)
+    page.refresh()
+
+    assert not [
+        mnemonic for mnemonic, _ in runner.sent if mnemonic == catalog.SET_ACTIVE_LAMP.mnemonic
+    ]
+
+
+def test_a_family_with_no_lamp_keeps_the_switch_and_explains() -> None:
+    page = DiagnosticsPage()
+    page.set_command_runner(FakeRunner(driver_for=NmeaDriver(clock=FixedClock(NOW))))
+
+    assert page.lamp_switch.isEnabled() is False
+    assert "no command for this" in page.lamp_note_text
