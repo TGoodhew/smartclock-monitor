@@ -237,6 +237,25 @@ class DeviceSession:
         await self._protocol.spend_startup_glitch()
 
         identity = await self._probe_identity()
+
+        # §12, listened for a second time — on what the *probe* heard rather than on the banner.
+        #
+        # **A talker's claim is a race against the probe window, and it lost about half of them.**
+        # `overhear` needs two recognised sentences including a fix sentence, and a 1 Hz talker
+        # whose burst straddles the window's edge delivers one clean cycle or none: measured on a
+        # VK-162, four connections at the same settings claimed the link twice. A missed claim is
+        # not a retry — the fallback family is adopted, its SCPI is asked of a device with no
+        # command parser, and the link is dropped and reopened for as long as it is left running.
+        #
+        # **This costs nothing.** The `*IDN?` above has just spent its own timeout, and a talker
+        # does not stop talking while it elapses, so those sentences are already in hand. Asking
+        # the question the banner could not answer, with twice the evidence and no extra second
+        # spent, is the whole of it.
+        if identity is not None and self._adopt_overheard(identity.lines):
+            self._state = ConnectionState.CONNECTED
+            self._consecutive_failures = 0
+            return
+
         if identity is not None and identity.succeeded:
             # Kept whole: §10.4 shows the raw answer where it is not four comma-separated fields,
             # because four dashes would say "nothing is connected" — a different statement from
