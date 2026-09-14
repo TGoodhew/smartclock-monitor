@@ -62,9 +62,17 @@ BACKEND: Final[tuple[tuple[str, str], ...]] = (
     ("trove-classifiers", "2026.6.1.19"),
 )
 
-#: Where the build backend goes. Free of a Python version, so the runtime's own never enters into
-#: it — the wheels are `py3-none-any` and the interpreter reads them from `PYTHONPATH`.
-BACKEND_PREFIX: Final = "/tmp/backend"
+#: Where the build backend goes.
+#:
+#: **Inside the prefix, and deleted from the finished bundle by the manifest's `cleanup`.** It was
+#: `/tmp/backend` first, which failed: flatpak-builder gives each module its own build context, so
+#: a directory one module writes outside the prefix is gone by the time the next one looks for it —
+#: the app module failed with *"Cannot import \'hatchling.build\'"* against a backend that had
+#: been installed and discarded.
+#:
+#: Free of a Python version, so the runtime\'s own never enters into it: the wheels are
+#: `py3-none-any` and the interpreter reads them from `PYTHONPATH`.
+BACKEND_PREFIX: Final = "${FLATPAK_DEST}/lib/build-backend"
 
 #: The platform the wheels must run on. `manylinux_2_34` needs glibc 2.34 or later, which every
 #: runtime this manifest targets has; a pure-Python wheel carries `none-any` instead.
@@ -100,7 +108,11 @@ _HEADER: Final = (
 
 def render(name: str, pins: tuple[tuple[str, str], ...], destination: str) -> str:
     """One module, installing `pins` into `destination`."""
-    into = f"--prefix={destination}" if destination.startswith("$") else f"--target={destination}"
+    into = (
+        f"--prefix={destination}"
+        if destination.endswith("FLATPAK_DEST}")
+        else f"--target={destination}"
+    )
     lines = [
         *_HEADER,
         f"name: {name}",

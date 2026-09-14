@@ -16,6 +16,12 @@ runtime-version: '24.08'
 sdk: org.freedesktop.Sdk
 command: smartclock-monitor
 
+# The build backend, which is needed to *build* the wheel and has no business in the bundle. It
+# lives in the prefix rather than in /tmp because flatpak-builder gives each module its own build
+# context — anything written outside the prefix is gone before the next module runs.
+cleanup:
+  - /lib/build-backend
+
 finish-args:
   # A desktop application, on either display server.
   - --socket=wayland
@@ -45,11 +51,11 @@ modules:
   - name: smartclock-monitor
     buildsystem: simple
     build-commands:
-      # `PYTHONPATH` rather than an install: the module above put hatchling in /tmp/backend
-      # precisely so a build tool never ships beside the application. `--no-deps` because every
-      # dependency is already in the prefix, pinned and hashed.
-      - PYTHONPATH=/tmp/backend pip3 install --no-index --no-build-isolation --no-deps
-        --prefix=${FLATPAK_DEST} .
+      # `PYTHONPATH` rather than an install: the module above put hatchling in the prefix, and
+      # `cleanup` below deletes it again, so a build tool never ships beside the application.
+      # `--no-deps` because every dependency is already in the prefix, pinned and hashed.
+      - PYTHONPATH=${FLATPAK_DEST}/lib/build-backend pip3 install --no-index
+        --no-build-isolation --no-deps --prefix=${FLATPAK_DEST} .
 
       # The desktop identity, which already existed — the Flatpak reuses it rather than carrying a
       # second copy that can disagree with the first.
