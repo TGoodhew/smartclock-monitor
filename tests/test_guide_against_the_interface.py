@@ -20,6 +20,11 @@ The extraction is **structural, not a search for bold text**. The guide names a 
 the leading bold span of a bullet, or as the first cell of a settings table row; bold elsewhere is
 emphasis. A rule that swept up every bold span would report ``**not**`` as a missing control and
 teach everyone to scroll past it.
+
+**Every page is covered, as of 14 Sep 2026 (#128).** Two sections named their controls in prose —
+*"use **Refresh all**"* — which this cannot read without sweeping up every emphasised phrase on the
+page, so they were excluded by name and their buttons went unchecked. They are bullets now, which
+was Tony'"'"'s call and the better one: the guide is more consistent and the gate is complete.
 """
 
 from __future__ import annotations
@@ -40,14 +45,6 @@ from smartclock_monitor.views.details_window import DetailsWindow
 from smartclock_monitor.views.pages import Page
 
 GUIDE: Final = Path(__file__).resolve().parent.parent / "docs" / "how-to-use.md"
-
-#: Pages whose guide section names nothing in the structural forms above, and why.
-#:
-#: Both describe their controls in prose — *"use **Refresh all**"* — which is a form this cannot
-#: read without sweeping up every emphasised phrase on the page. The reverse direction still covers
-#: their cards, so neither is unchecked; what is missing is the forward check on their buttons.
-#: #128 is whether the guide should name controls in a form a machine can find.
-_PROSE_ONLY: Final[frozenset[str]] = frozenset({"Status Registers", "Settings"})
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -70,8 +67,12 @@ def names_in(body: str) -> list[str]:
 
     A bullet opening in bold — ``- **Health monitor** — one pill per subsystem`` — and the first
     cell of a settings table row — ``| **Advanced Console** | …``.
+
+    **Nested bullets count** (#128). The guide indents a control under the card it sits on — the two
+    switches under *Advanced*, the two thresholds under *Thresholds* — and those are names in
+    exactly the way the outer ones are.
     """
-    bullets = re.findall(r"^- \*\*(.+?)\*\*", body, re.M)
+    bullets = re.findall(r"^\s*- \*\*(.+?)\*\*", body, re.M)
     cells = re.findall(r"^\| \*\*(.+?)\*\*\s*\|", body, re.M)
     return [name.strip() for name in (*bullets, *cells)]
 
@@ -156,7 +157,7 @@ def test_the_extraction_finds_what_it_looks_like_it_finds() -> None:
     checking nothing — the failure `test_layering.py` guards itself against, for the same reason."""
     found = cases()
 
-    assert len(found) >= 35
+    assert len(found) >= 45
     assert ("Overview", "Health monitor") in found
     assert ("Settings", "Advanced Console") in found
     assert {title for title, _ in found} >= {"Overview", "Diagnostics", "Time", "Settings"}
@@ -187,14 +188,3 @@ def test_every_card_on_a_page_is_named_in_the_guide(title: str) -> None:
 
     for card in card_titles(page):
         assert card in body, f"the {title} page has a {card!r} card and the guide never mentions it"
-
-
-def test_the_prose_only_sections_are_still_prose_only() -> None:
-    """An exclusion that quietly became true would be a rule enforcing nothing. When either section
-    starts naming its controls in a form this can read, #128 is settled and this says so."""
-    for title in _PROSE_ONLY:
-        body = section(title)
-        assert body is not None
-        assert not re.findall(r"^- \*\*(.+?)\*\*", body, re.M), (
-            f"{title} names controls in bullets now: take it out of _PROSE_ONLY"
-        )

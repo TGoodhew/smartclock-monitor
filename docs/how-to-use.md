@@ -403,12 +403,20 @@ corrections it had learned, and its time error grows from there.
 
 ![The Status registers page: a Register picker reading Operation with a Refresh all button, then a table with Bit, Cond, Event, Enab, PTr and NTr columns and a Meaning column naming each bit, and Discard changes and Apply mask changes buttons](images/how-to-use/page-status-registers.png)
 
-The receiver's SCPI status registers, bit by bit, with what each bit means. The **Cond**ition and
-**Event** columns are what the receiver reports; **Enab**le and the positive and negative
-**tr**ansition columns are the masks you can change. Registers are **read on demand** — use
-**Refresh all** — and mask edits are staged until **Apply mask changes** (confirmed) or **Discard
-changes**. A bit the application has no meaning for still shows its raw state rather than being
-left out. This page is for finding out why a summary bit is set; most people never need it.
+The receiver's SCPI status registers, bit by bit, with what each bit means. This page is for
+finding out why a summary bit is set; most people never need it.
+
+- **Registers** — the picker chooses which register the table below shows. The **Cond**ition and
+  **Event** columns are what the receiver reports; **Enab**le and the positive and negative
+  **tr**ansition columns are the masks you can change. A bit the application has no meaning for
+  still shows its raw state rather than being left out.
+- **Refresh all** — re-reads every field of the register on screen. Registers are read **on
+  demand**, never polled: they change when the receiver's state changes, and there are twenty-five
+  fields across the five.
+- **Apply mask changes** — writes the mask edits you have staged, after asking. Nothing is sent
+  while you are typing.
+- **Discard changes** — puts the masks back to what the receiver reported, which is the way out of
+  an edit you no longer want.
 
 #### Time — `Ctrl+8`
 
@@ -448,23 +456,24 @@ left out. This page is for finding out why a summary bit is set; most people nev
 
 ![The Settings page: an Advanced card with Advanced Console and Undocumented read-only queries switches, each with a paragraph; an Appearance card with a "Keep the window above others" switch; a Quitting card with an Exit button; and a card headed "Not here, and why"](images/how-to-use/page-settings.png)
 
-Every setting has its explanation next to it on the page; this is the short version.
+Every setting has its explanation next to it on the page; this is the short version. All three
+switches are off by default.
 
-| Setting | Off | On |
-|---|---|---|
-| **Advanced Console** | The console page is not shown. This is the default. | Adds the **Advanced Console** page below Settings — see below. It changes what is *reachable*, never what is *permitted*: the catalog is the same allowlist every other page uses. |
-| **Undocumented read-only queries** | The Diagnostics page shows no undocumented queries. This is the default. | The six read-only queries appear on the Diagnostics page. Nothing can be typed, and no setting can be changed through them. |
-| **Keep the window above others** | The main window behaves like any other. This is the default. | The main window stays above every other window. Remembered across restarts. |
+- **Advanced** — the two switches that change what the application will let you reach.
 
-**Exit** quits the application outright. There is no confirmation: polling is not a transaction and
-the trend is saved as it goes, so there is nothing to lose by stopping.
-
-The last card, **Not here, and why**, lists the settings this port does not offer and the reason
-for each — the poll cadences, the Windows accent colour, starting in the notification area, keeping
-it running on close, lock-loss notifications, and a second place to set the display time zone. It
-is there because a missing setting with no explanation reads as an oversight.
-
-The theme is chosen on the main window, not here.
+  - **Advanced Console** adds the **Advanced Console** page below Settings — see below. It changes
+    what is *reachable*, never what is *permitted*: the catalog is the same allowlist every other
+    page uses.
+  - **Undocumented read-only queries** makes the six read-only queries appear on the Diagnostics
+    page. Nothing can be typed, and no setting can be changed through them.
+- **Appearance** — **Keep the window above others** makes the main window stay above every other
+  window, and is remembered across restarts. The theme is chosen on the main window, not here.
+- **Quitting** — **Exit** quits the application outright. There is no confirmation: polling is not
+  a transaction and the trend is saved as it goes, so there is nothing to lose by stopping.
+- **Not here, and why** — the settings this port does not offer and the reason for each: the poll
+  cadences, the Windows accent colour, starting in the notification area, keeping it running on
+  close, lock-loss notifications, and a second place to set the display time zone. It is there
+  because a missing setting with no explanation reads as an oversight.
 
 #### Advanced Console
 
