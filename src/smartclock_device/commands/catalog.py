@@ -27,6 +27,7 @@ from typing import Final
 
 from smartclock_device.commands.scpi_command import (
     ArgumentKind,
+    FieldSpec,
     ResponseFormat,
     SafetyTier,
     ScpiCommand,
@@ -1023,6 +1024,165 @@ SET_SERVICE_REQUEST_MASK: Final = ScpiCommand(
     confirmation="Change event/service-request enable mask?",
 )
 
+
+# ---- §8.3's remaining Confirm commands (#118) ----------------------------------------------------
+#
+# **Every sentence below is §8.3's, verbatim.** A confirmation is the last thing between a user and
+# a consequence, and §8.3's table is the authority for its wording — so these are copied rather
+# than composed, and where one reads awkwardly it is noted rather than improved.
+#
+# **None of these was sent to a receiver.** The five that do something would have cost the bench
+# unit its configuration, its alarm masks or its 1 PPS phase to verify, and nothing about
+# cataloguing them needs that. The queries in #122's batch were all exercised; these are on the
+# strength of §8.3 listing them, and that difference is recorded here rather than left for someone
+# to assume otherwise.
+
+#: Factory defaults. §8.3's sentence names exactly what is lost, which is the point of it: a user
+#: who has spent two hours on a survey should be told the position goes with it.
+#:
+#: **Not one of §9.7.4's four.** The four commands carrying the extra "I understand" tick are named
+#: there and this is not among them, so it is not given one here — adding a fifth would be this
+#: repository deciding a §9.7.4 question in a catalogue.
+PRESET_RECEIVER: Final = ScpiCommand(
+    mnemonic=":SYST:PRESet",
+    summary="Reset the receiver's settings to factory defaults",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    confirmation=(
+        "Reset all receiver settings to factory defaults? Antenna delay, position, elevation "
+        "mask, and satellite selections will be lost. Serial port settings are not affected."
+    ),
+)
+
+#: **A step change in the 1 PPS**, which is the output half of this instrument's whole purpose. Any
+#: equipment disciplined to it sees the step too, which is why §8.3's sentence says so plainly.
+RESYNCHRONISE: Final = ScpiCommand(
+    mnemonic=":SYNC:IMMediate",
+    summary="Force an immediate resynchronisation of the 1 PPS output",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    confirmation=(
+        "Force immediate resynchronisation? This causes a step change in the 1 PPS output."
+    ),
+)
+
+#: The offset **the receiver itself reports in**, which is not the zone this application displays
+#: in — §10.14.1's question 2 declines to offer it for that reason. It is catalogued because §8.3
+#: tiers it; no surface sends it, and `time_zone_argument.py` says why the argument is its own kind.
+SET_TIME_ZONE: Final = ScpiCommand(
+    mnemonic=":PTIM:TZONe",
+    summary="Set the time zone offset the receiver reports in",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.FIELD_LIST,
+    fields=(FieldSpec("Hours", -12, 14), FieldSpec("Minutes", 0, 59)),
+    confirmation=(
+        "Change time zone offset? All reported times change, including the timecode output."
+    ),
+)
+
+# ---- §8.3's three acquisition aids ---------------------------------------------------------------
+#
+# **Valid only before the first satellite is tracked**, which is what §8.3's shared sentence says
+# and what makes them one row: they are the same operation told three ways, helping a cold receiver
+# find the sky faster. Sent late, the receiver answers `-221` and nothing happens.
+#
+# The wire format is the one §10.11 gives literally — `:GPS:INIT:DATE 1994,7,4` — and the field
+# ranges are the calendar's own. Three fields with three different ranges is exactly what
+# `ArgumentKind.FIELD_LIST` exists for; an integer list would accept month 31.
+
+_ACQUISITION_AID: Final = (
+    "Send initial acquisition aid? Only valid before the first satellite is tracked; the receiver "
+    "will return error −221 otherwise."
+)
+
+INITIAL_DATE: Final = ScpiCommand(
+    mnemonic=":GPS:INIT:DATE",
+    summary="Tell a cold receiver today's date, to speed acquisition",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.FIELD_LIST,
+    fields=(FieldSpec("Year", 1980, 2099), FieldSpec("Month", 1, 12), FieldSpec("Day", 1, 31)),
+    confirmation=_ACQUISITION_AID,
+)
+
+INITIAL_TIME: Final = ScpiCommand(
+    mnemonic=":GPS:INIT:TIME",
+    summary="Tell a cold receiver the time, to speed acquisition",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.FIELD_LIST,
+    fields=(FieldSpec("Hours", 0, 23), FieldSpec("Minutes", 0, 59), FieldSpec("Seconds", 0, 59)),
+    confirmation=_ACQUISITION_AID,
+)
+
+#: The position form takes §10.6's nine-part argument, the same one `:GPS:POSition` takes — so it
+#: is validated by the same module and cannot drift from it.
+INITIAL_POSITION: Final = ScpiCommand(
+    mnemonic=":GPS:INIT:POSition",
+    summary="Tell a cold receiver roughly where it is, to speed acquisition",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.POSITION,
+    confirmation=_ACQUISITION_AID,
+)
+
+PRESET_ALARM_MASKS: Final = ScpiCommand(
+    mnemonic=":STAT:PRESet:ALARm",
+    summary="Reset the alarm masks to their defaults",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    confirmation="Reset alarm masks to defaults?",
+)
+
+#: §10.10's Questionable register has a **user-defined** bit, and these two drive it: one sets or
+#: clears the condition, the other chooses which transition latches the event.
+#:
+#: §8.3 gives both one row and one sentence. That is the shape §8.3's own amendment note warns
+#: about — `:IGN:NONE` shared a sentence with the command that did the opposite — and it is carried
+#: verbatim anyway, because the sentence is the specification's and a divergence in a confirmation
+#: belongs in an issue rather than in a catalogue (#125).
+SET_USER_QUESTIONABLE_BIT: Final = ScpiCommand(
+    mnemonic=":STAT:QUES:COND:USER",
+    summary="Set or clear the user-defined questionable status bit",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.KEYWORD,
+    keywords=("SET", "CLE"),
+    confirmation="Change user-defined questionable status bit?",
+)
+
+SET_USER_QUESTIONABLE_TRANSITION: Final = ScpiCommand(
+    mnemonic=":STAT:QUES:EVEN:USER",
+    summary="Choose which transition latches the user-defined questionable bit",
+    response=ResponseFormat.NONE,
+    tier=SafetyTier.CONFIRM,
+    argument=ArgumentKind.KEYWORD,
+    keywords=("PTR", "NTR"),
+    confirmation="Change user-defined questionable status bit?",
+)
+
+
+#: IEEE 488.2's self-test, and **§8.3 gives it a row of its own**.
+#:
+#: §8.2 also lists it, under a heading that reads *"all queries plus non-disruptive actions"* — and
+#: that looked like a contradiction worth escalating (#120) until §8.3's table turned out to carry
+#: it explicitly, with a sentence naming the consequence. The specific row wins over the general
+#: heading, so this is Confirm, and the apparent conflict was a misreading rather than a defect.
+#:
+#: `transport/timeouts.py` already mapped `*TST?` to the self-test class before anything could send
+#: it — the sweep reached 24.0 s on the bench for the `GPS` subsystem alone.
+RUN_FULL_SELF_TEST: Final = ScpiCommand(
+    mnemonic="*TST?",
+    summary="Run the receiver's full self-test",
+    response=ResponseFormat.INTEGER,
+    tier=SafetyTier.CONFIRM,
+    confirmation=(
+        "Run the receiver's full self-test? The receiver will drop out of lock and re-acquire, so "
+        "the 1 PPS output is degraded for several minutes. The test itself takes up to 30 seconds."
+    ),
+)
+
 #: Every catalogued command. **The allowlist.**
 ALL: Final[tuple[ScpiCommand, ...]] = (
     IDENTITY,
@@ -1110,6 +1270,16 @@ ALL: Final[tuple[ScpiCommand, ...]] = (
     SET_ENABLED_LAMP,
     SET_EVENT_ENABLE_MASK,
     SET_SERVICE_REQUEST_MASK,
+    PRESET_RECEIVER,
+    RESYNCHRONISE,
+    SET_TIME_ZONE,
+    INITIAL_DATE,
+    INITIAL_TIME,
+    INITIAL_POSITION,
+    PRESET_ALARM_MASKS,
+    SET_USER_QUESTIONABLE_BIT,
+    SET_USER_QUESTIONABLE_TRANSITION,
+    RUN_FULL_SELF_TEST,
     *EXPERIMENTAL,
 )
 

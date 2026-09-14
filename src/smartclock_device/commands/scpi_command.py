@@ -97,6 +97,29 @@ class ArgumentKind(Enum):
     #: than a choice.
     POSITION = 5
 
+    #: Several whole numbers in a fixed order, **each with its own range**, comma-joined — a time
+    #: zone as hours and minutes, a date as year, month and day. Distinct from
+    #: :attr:`INTEGER_LIST`, which is any number of like values sharing one pair of bounds: hours
+    #: and minutes do not share one, and a list kind carrying the wider of the two would accept
+    #: ninety minutes and let the receiver decide what that meant.
+    #:
+    #: The fields are named by :attr:`ScpiCommand.fields`, which is also what §10.11 needs to put
+    #: one editor per parameter in the receiver's order.
+    FIELD_LIST = 6
+
+
+@dataclass(frozen=True, slots=True)
+class FieldSpec:
+    """One field of an :attr:`ArgumentKind.FIELD_LIST` argument.
+
+    Named as well as bounded, because §10.11 puts one editor per parameter and an editor with no
+    label is a box a user has to count their way to.
+    """
+
+    name: str
+    minimum: int
+    maximum: int
+
 
 @dataclass(frozen=True, slots=True)
 class ScpiCommand:
@@ -129,6 +152,9 @@ class ScpiCommand:
     #: The permitted keywords, upper-cased, for :attr:`ArgumentKind.KEYWORD`.
     keywords: tuple[str, ...] = ()
 
+    #: The fields, in the receiver's own order, for :attr:`ArgumentKind.FIELD_LIST`.
+    fields: tuple[FieldSpec, ...] = ()
+
     #: §8.3's confirmation sentence, verbatim.
     #:
     #: **Carried on the command rather than assembled by the dialog.** §8.3's own amendment note
@@ -149,6 +175,30 @@ class ScpiCommand:
     @property
     def needs_confirmation(self) -> bool:
         return self.tier is SafetyTier.CONFIRM
+
+    def _rendered_fields(self, argument: object) -> str | None:
+        """Several whole numbers in the receiver's order, each against its own range.
+
+        **The count has to match exactly.** A short list would send a date with no day, which the
+        receiver would either refuse or read as something else — and §8.3's sentence for these
+        commands says they are valid only before the first satellite is tracked, so a
+        misunderstood one is not something a user gets to watch fail.
+        """
+        if isinstance(argument, str) or not isinstance(argument, Iterable):
+            return None
+
+        values = list(argument)
+        if len(values) != len(self.fields):
+            return None
+
+        rendered: list[str] = []
+        for value, field in zip(values, self.fields, strict=True):
+            if isinstance(value, bool) or not isinstance(value, int):
+                return None
+            if not field.minimum <= value <= field.maximum:
+                return None
+            rendered.append(f"{value:d}")
+        return f"{self.mnemonic} {','.join(rendered)}"
 
     def _rendered_list(self, argument: object) -> str | None:
         """A comma-joined list, or ``None`` if any element is not one this command accepts.
@@ -199,6 +249,9 @@ class ScpiCommand:
                 return None
             text = argument.rendered()
             return None if text is None else f"{self.mnemonic} {text}"
+
+        if self.argument is ArgumentKind.FIELD_LIST:
+            return self._rendered_fields(argument)
 
         if self.argument is ArgumentKind.KEYWORD:
             text = str(argument).strip().upper()
