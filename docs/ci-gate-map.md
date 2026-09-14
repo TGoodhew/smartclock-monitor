@@ -34,14 +34,15 @@ it reads as coverage.*
 | `Test-ResourceKeysResolve.ps1` | Every `{ThemeResource Wz…}` names a token that exists | **Not applicable, and moot for a better reason than absence.** QSS has no resource dictionaries — the stylesheet is generated from the token table by `themes/qss.py`, so a misspelled token is an attribute that does not exist and `mypy --strict` refuses it before anything runs. A missing key cannot reach a running window |
 | `Test-SpacingScale.ps1` | §9.13 item 2: only §9.6's spacing scale and §9.3's three radii | `test_design_tokens.py` — `test_the_stylesheet_uses_only_the_spacing_scale` covers the generated QSS, and `test_no_layout_call_uses_an_off_scale_value` covers the imperative half: `setContentsMargins`, `setSpacing` and the two grid spacings, by AST scan. **The second was added by #97's audit** — the first covered the stylesheet only, and most spacing in a Qt application is set in code rather than in the stylesheet |
 | `Test-ThemeDictionaryParity.ps1` | §9.4 / A11Y-8: every theme defines the same keys, of the same type | `test_design_tokens.py` — `test_every_theme_defines_every_token`, and `test_there_are_two_themes_per_decision_d3` pins how many themes there are to a decision rather than to a habit. The high-contrast third is D3's *not shipped* |
-| `Test-NoClosingKeywords.ps1` | A GitHub closing keyword stands only where the author means to close the issue | **Nothing here.** It is the one gate in this table that is neither ported nor ruled out, and it is about *this* repository's habits rather than about WinUI — see [#131](https://github.com/TGoodhew/smartclock-monitor/issues/131) |
+| `Test-NoClosingKeywords.ps1` | A GitHub closing keyword stands only where the author means to close the issue | `test_closing_keywords.py` for the commit messages this branch adds to `main`, and `ci.yml`'s **Closing keywords** job for the pull request body, which is not in the tree at all. One module (`tools/closing_keywords.py`) behind both, so the two halves of the rule cannot drift apart (#131) |
 | `Test-PageTeardown.ps1` | A page that subscribes must let go when navigated away | **Not applicable, and pinned as such.** `test_page_lifecycle.py` asserts the two facts that make it moot: pages are built once into a `QStackedWidget` and shown by index, and every `.connect()` in `pages.py` is to a signal the page owns. Either changing would make WinUI's rule live here |
 
 ## What this leaves open
 
-**One row, and it is not the one this section used to name.** `Test-NoClosingKeywords.ps1` has no
-counterpart here (#131). Everything else is either ported, or asserted not to apply in a form that
-stays true on its own — which is the only kind of *not applicable* worth writing down.
+**Nothing, as of 14 Sep 2026.** Every one of the eighteen is either ported, or asserted not to
+apply in a form that stays true on its own — which is the only kind of *not applicable* worth
+writing down. `Test-NoClosingKeywords.ps1` was the last open row and closed the same day the audit
+that found it (#97) was written up.
 
 > **Corrected 14 Sep 2026 (#97).** This section said `Test-GuideCoverage.ps1` had *"nothing on
 > `main`"* and that its counterpart sat unpushed on a branch. **It was merged**: `tests/test_guide.py`
