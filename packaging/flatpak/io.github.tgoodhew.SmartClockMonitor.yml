@@ -1,0 +1,68 @@
+# The Flatpak D2 names, and the one that reaches a user through their desktop's software centre
+# rather than as a file they have to make executable.
+#
+# **Built from a tag, not from a working copy.** `flatpak-builder` builds offline and Flathub builds
+# from sources it can fetch itself, so the application comes from this repository's git at a pinned
+# tag and every wheel is declared with its hash. That is what makes the bundle reproducible: two
+# people running this manifest a year apart get the same bytes.
+#
+# **The runtime is `org.freedesktop.Platform`, and D10 records why.** The short version: the wheels
+# this manifest installs are the wheels CI tests against, so the Qt a user gets is the Qt §9.12's
+# accessibility criteria are gated on. Taking `org.kde.Platform` for its Qt would mean shipping a
+# Qt nothing here has ever tested, since a PySide6 wheel carries its own regardless.
+id: io.github.tgoodhew.SmartClockMonitor
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+command: smartclock-monitor
+
+finish-args:
+  # A desktop application, on either display server.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+
+  # **The serial port, and there is no narrower permission for one.** Flatpak has no
+  # `--device=serial`: `--device=dri` is the graphics card and nothing else, and a USB adapter
+  # appears as `/dev/ttyUSB0`, which only `--device=all` covers. An application that monitors a
+  # receiver over RS-232 and cannot open a serial port is an application nobody can use.
+  #
+  # It does **not** grant access the user does not already have. The port is still owned by
+  # `dialout` on the host, so a user outside that group is refused by the kernel exactly as they
+  # are outside the sandbox — which `--doctor` says, inside the sandbox and out.
+  - --device=all
+
+  # No network. Nothing in this application talks to anything but the receiver on the wire, and a
+  # permission it never uses is a permission a reader has to rule out.
+
+modules:
+  # The wheels, pinned and hashed by tools/flatpak_requirements.py. Both lists are generated:
+  # `--check` in CI fails if either has drifted from what this repository tests against.
+  - python3-modules.yml
+  - python3-build-backend.yml
+
+  - name: smartclock-monitor
+    buildsystem: simple
+    build-commands:
+      # `PYTHONPATH` rather than an install: the module above put hatchling in /tmp/backend
+      # precisely so a build tool never ships beside the application. `--no-deps` because every
+      # dependency is already in the prefix, pinned and hashed.
+      - PYTHONPATH=/tmp/backend pip3 install --no-index --no-build-isolation --no-deps
+        --prefix=${FLATPAK_DEST} .
+
+      # The desktop identity, which already existed — the Flatpak reuses it rather than carrying a
+      # second copy that can disagree with the first.
+      - install -Dm644 packaging/io.github.tgoodhew.SmartClockMonitor.desktop
+        ${FLATPAK_DEST}/share/applications/io.github.tgoodhew.SmartClockMonitor.desktop
+      - install -Dm644 packaging/io.github.tgoodhew.SmartClockMonitor.metainfo.xml
+        ${FLATPAK_DEST}/share/metainfo/io.github.tgoodhew.SmartClockMonitor.metainfo.xml
+      - install -Dm644 packaging/io.github.tgoodhew.SmartClockMonitor.svg
+        ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/io.github.tgoodhew.SmartClockMonitor.svg
+    sources:
+      # The application, from a tag. `hatch_version.py` derives the version from git, so a source
+      # without history would build `0.0.0.0` — silently, which is the failure test_versioning.py
+      # exists to prevent. A git source carries the tag it needs.
+      - type: git
+        url: https://github.com/TGoodhew/smartclock-monitor.git
+        tag: v1.1.0

@@ -197,12 +197,40 @@ One file, no install, any glibc desktop. **Build it on the oldest distribution y
 support** — an AppImage carries everything but glibc, so the build machine's glibc is the floor for
 every machine that runs it.
 
-**AppImage rather than Flatpak, and serial access is the whole reason** (#27). Flatpak has no
-fine-grained serial permission: reaching `/dev/ttyUSB0` needs `--device=all`, which grants every
-device on the machine and reads as a broad permission in GNOME Software. An AppImage is not
-sandboxed, so it inherits the user's own access — the access a checkout already has, and the access
-this application has always needed. The cost is that it cannot ship a udev rule, so `--doctor`
-keeps carrying the `dialout` advice and the `brltty` warning.
+**The AppImage came first, and serial access is the reason** (#27). Flatpak has no fine-grained
+serial permission: reaching `/dev/ttyUSB0` needs `--device=all`, which grants every device on the
+machine and reads as a broad permission in GNOME Software. An AppImage is not sandboxed, so it
+inherits the user's own access — the access a checkout already has, and the access this application
+has always needed. The cost is that it cannot ship a udev rule, so `--doctor` keeps carrying the
+`dialout` advice and the `brltty` warning.
+
+**Both are shipped now**, because they answer different questions: one file you can carry on a
+stick, or an application your desktop installs and updates. The Flatpak still needs `--device=all`
+and says so — see below.
+
+### The Flatpak
+
+```bash
+flatpak-builder --user --install --force-clean build-dir \
+  packaging/flatpak/io.github.tgoodhew.SmartClockMonitor.yml
+flatpak run io.github.tgoodhew.SmartClockMonitor --doctor
+```
+
+It builds **from a tag**, not from your working copy, so what it produces is reproducible: the
+application comes from this repository's git at the tag the manifest pins, and every wheel is
+declared with its hash because `flatpak-builder` builds with no network. `tools/flatpak_requirements.py`
+regenerates those pins, and a test fails if they drift from the versions this repository tests
+against.
+
+**It asks for `--device=all`, and that is the only permission that reaches a serial port.** It does
+not grant access you do not already have: the port is still owned by `dialout` on the host, so an
+account outside that group is refused by the kernel exactly as it is outside the sandbox. Run
+`--doctor` inside the sandbox — it reports the two facts separately, because they are two different
+failures with two different fixes.
+
+**Which Qt you get is [D10](docs/platform-decisions.md)**, and it is deliberate: the bundle installs
+the same PySide6 wheels CI tests against, on `org.freedesktop.Platform`, rather than binding to a
+runtime's Qt that nothing here has measured §9.12's contrast and focus figures against.
 
 ### The desktop identity
 

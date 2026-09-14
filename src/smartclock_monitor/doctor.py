@@ -380,6 +380,62 @@ def _dialout() -> Finding:
     )
 
 
+def _is_flatpak() -> bool:
+    """Whether this process is inside a Flatpak sandbox.
+
+    `/.flatpak-info` is written by the runtime into every sandbox and exists nowhere else, which is
+    what makes it the documented test rather than an environment variable a shell could carry in.
+    """
+    return pathlib.Path("/.flatpak-info").exists()
+
+
+def _sandbox() -> Finding:
+    """What the sandbox permits, said plainly, because it is a different environment (#93).
+
+    **Only reported inside one.** A check that announced "not sandboxed" on every ordinary run
+    would be a line of noise on the ninety-nine runs where it does not matter.
+
+    The two facts a user needs are not the same fact. `--device=all` is what lets the application
+    *see* `/dev/ttyUSB0` at all, and it is in the manifest because Flatpak has no narrower
+    permission for a serial port. Being in `dialout` is what lets the kernel open it, it is a
+    property of the **host** account, and no sandbox permission substitutes for it — which is why
+    the check above this one still runs and still matters.
+    """
+    if not _is_flatpak():
+        return Finding("sandbox", True, "not sandboxed")
+
+    devices = ""
+    try:
+        info = pathlib.Path("/.flatpak-info").read_text(encoding="utf-8")
+        devices = next(
+            (
+                line.split("=", 1)[1].strip()
+                for line in info.splitlines()
+                if line.startswith("devices=")
+            ),
+            "",
+        )
+    except OSError:
+        pass
+
+    if "all" in devices.split(";"):
+        return Finding(
+            "sandbox",
+            True,
+            "Flatpak, with device access — serial ports are visible; the dialout check below "
+            "still decides whether one opens",
+        )
+
+    return Finding(
+        "sandbox",
+        False,
+        f"Flatpak, without device access (devices={devices or 'none'}), so no serial port is "
+        "visible inside it",
+        "flatpak override --user --device=all io.github.tgoodhew.SmartClockMonitor — or reinstall "
+        "the bundle, whose manifest asks for it.",
+    )
+
+
 def _is_wsl() -> bool:
     if platform.system() != "Linux":
         return False
@@ -399,6 +455,10 @@ def checks() -> Iterator[Finding]:
     yield _qt_platform(probe)
     yield _fonts(probe)
     yield _pyserial()
+    # Before the ports: inside a sandbox without device access there are no ports to
+    # find, and "none" would otherwise read as "nothing is plugged in".
+    if _is_flatpak():
+        yield _sandbox()
     yield _ports()
     yield _usb_serial_hardware()
     yield _dialout()

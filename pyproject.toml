@@ -55,6 +55,8 @@ dev = [
     "mypy>=1.11",
     "ruff>=0.6",
     "numpy>=1.26",       # build/palette only
+    "pyyaml>=6.0",       # tests/test_packaging.py reads the Flatpak manifest
+    "types-PyYAML>=6.0", # ... and mypy --strict wants its stubs
 ]
 
 # Kept out of `dev` on purpose: PyInstaller pulls a compiler toolchain's worth of machinery and
