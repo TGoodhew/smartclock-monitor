@@ -116,12 +116,18 @@ _FRAGMENTS: Final[frozenset[str]] = frozenset(
     }
 )
 
-#: The one family §8.3 tiers that **neither implementation catalogues** — the serial port's own
-#: settings. Excluded by name and with the question attached (#126): cataloguing them would put a
-#: control in §10.11's console that drops the link it is sent over, and §8.3's own sentence says
-#: the change *"persists through power cycling"*. §15's OQ-3 declined two of the family's other
-#: nodes on related reasoning and said so; the six here have never been decided either way.
-_UNDECIDED: Final[frozenset[str]] = frozenset(
+#: The one family §8.3 tiers that this port **deliberately does not catalogue** — the serial port's
+#: own settings.
+#:
+#: **Decided, not pending** (#126, 14 Sep 2026). Cataloguing them would put a control in §10.11's
+#: console that drops the link it is sent over, whose effect §8.3's own sentence says *"persists
+#: through power cycling"*, and whose success depends on an adapter supporting a rate nobody
+#: checked. §15's OQ-3 declined two other nodes of the same family — `PROM OFF` and `FDUPlex OFF` —
+#: on related reasoning and wrote it down; these are declined on their own and written down here.
+#:
+#: Kept as a list with a test behind it because that is the difference between a rule and an
+#: oversight: the next person to run this gate finds a decision rather than a gap.
+_DECLINED: Final[frozenset[str]] = frozenset(
     {
         ":SYST:COMM:SER1:BAUD",
         ":SYST:COMM:SER1:BITS",
@@ -163,7 +169,7 @@ def test_the_confirmation_table_is_found_and_is_the_size_it_looks() -> None:
     assert "*TST?" in found
 
 
-@pytest.mark.parametrize("mnemonic", sorted(set(confirm_table()) - _FRAGMENTS - _UNDECIDED))
+@pytest.mark.parametrize("mnemonic", sorted(set(confirm_table()) - _FRAGMENTS - _DECLINED))
 def test_every_command_the_specification_confirms_is_catalogued_and_confirms(mnemonic: str) -> None:
     """**Tier and sentence, not just presence.** A command catalogued at the wrong tier is worse
     than one missing: it is a consequence a user is never warned about, on a control that looks
@@ -182,7 +188,7 @@ def test_every_command_the_specification_confirms_is_catalogued_and_confirms(mne
 def test_the_undecided_family_is_still_undecided() -> None:
     """An exclusion that quietly became true would be a rule enforcing nothing. When the serial
     settings are catalogued — or ruled out for good — #126 says so and this test is what notices."""
-    for mnemonic in _UNDECIDED:
+    for mnemonic in _DECLINED:
         assert not catalogued(mnemonic), (
             f"{mnemonic} is catalogued now: settle #126 and drop it here"
         )

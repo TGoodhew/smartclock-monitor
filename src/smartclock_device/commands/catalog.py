@@ -997,13 +997,16 @@ SET_ENABLED_LAMP: Final = ScpiCommand(
     keywords=("ON", "OFF"),
 )
 
-#: IEEE 488.2's two mask setters, at §8.3's tier with §8.3's sentence.
+#: IEEE 488.2's two mask setters, at §8.3's tier and **one sentence each** (#125).
 #:
-#: **The sentence is shared and is the specification's own.** §8.3 gives one row to both, and its
-#: wording covers both operations — which is the shape §8.3's own amendment note warns about, where
-#: `:IGN:NONE` shared a sentence with the command that did the opposite. It is carried verbatim
-#: rather than improved, because §8.3's text is the authority and a divergence in a confirmation
-#: sentence is exactly the kind that should be argued in an issue rather than made in a catalogue.
+#: §8.3 gives one row to both and one sentence between them — *"Change event/service-request enable
+#: mask?"* — which names two things and commits to neither. That is the shape §8.3's own amendment
+#: note warns about, where `:IGN:NONE` shared a sentence with the command that did the opposite.
+#:
+#: **The divergence was argued before it was made**, which is the rule: #125 put the four proposed
+#: sentences up and Tony took them. `docs/divergences.md` records it, and it belongs upstream too —
+#: the specification is a shared asset and a confirmation is the last thing between a user and a
+#: consequence.
 SET_EVENT_ENABLE_MASK: Final = ScpiCommand(
     mnemonic="*ESE",
     summary="Set the standard event status enable mask",
@@ -1012,7 +1015,7 @@ SET_EVENT_ENABLE_MASK: Final = ScpiCommand(
     argument=ArgumentKind.INTEGER,
     minimum=0,
     maximum=65535,
-    confirmation="Change event/service-request enable mask?",
+    confirmation="Change the standard event enable mask?",
 )
 
 SET_SERVICE_REQUEST_MASK: Final = ScpiCommand(
@@ -1023,7 +1026,7 @@ SET_SERVICE_REQUEST_MASK: Final = ScpiCommand(
     argument=ArgumentKind.INTEGER,
     minimum=0,
     maximum=65535,
-    confirmation="Change event/service-request enable mask?",
+    confirmation="Change the service request enable mask?",
 )
 
 
@@ -1140,10 +1143,9 @@ PRESET_ALARM_MASKS: Final = ScpiCommand(
 #: §10.10's Questionable register has a **user-defined** bit, and these two drive it: one sets or
 #: clears the condition, the other chooses which transition latches the event.
 #:
-#: §8.3 gives both one row and one sentence. That is the shape §8.3's own amendment note warns
-#: about — `:IGN:NONE` shared a sentence with the command that did the opposite — and it is carried
-#: verbatim anyway, because the sentence is the specification's and a divergence in a confirmation
-#: belongs in an issue rather than in a catalogue (#125).
+#: §8.3 gives both one row and one sentence — *"Change user-defined questionable status bit?"* —
+#: which is true of the first and misleading about the second: **choosing a transition does not
+#: change the bit.** One sentence each here (#125), argued in the issue before it was made.
 SET_USER_QUESTIONABLE_BIT: Final = ScpiCommand(
     mnemonic=":STAT:QUES:COND:USER",
     summary="Set or clear the user-defined questionable status bit",
@@ -1151,7 +1153,7 @@ SET_USER_QUESTIONABLE_BIT: Final = ScpiCommand(
     tier=SafetyTier.CONFIRM,
     argument=ArgumentKind.KEYWORD,
     keywords=("SET", "CLE"),
-    confirmation="Change user-defined questionable status bit?",
+    confirmation="Set or clear the user-defined questionable status bit?",
 )
 
 SET_USER_QUESTIONABLE_TRANSITION: Final = ScpiCommand(
@@ -1161,7 +1163,7 @@ SET_USER_QUESTIONABLE_TRANSITION: Final = ScpiCommand(
     tier=SafetyTier.CONFIRM,
     argument=ArgumentKind.KEYWORD,
     keywords=("PTR", "NTR"),
-    confirmation="Change user-defined questionable status bit?",
+    confirmation="Change which transition latches the user-defined questionable bit?",
 )
 
 

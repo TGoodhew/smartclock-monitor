@@ -394,6 +394,29 @@ seventh member beyond the inherited walkthrough — see [`driver-contract.md`](d
 The other two families declare no extras and decline the reading outright, which §11's amendment
 distinguishes from a dash.
 
+### Four confirmations where §8.3 writes two
+
+§8.3's table gives two of its rows to **pairs of commands**, with one sentence between them:
+
+| §8.3 | here |
+|---|---|
+| `*ESE` / `*SRE` — *"Change event/service-request enable mask?"* | `*ESE` — *"Change the standard event enable mask?"*<br>`*SRE` — *"Change the service request enable mask?"* |
+| `:STAT:QUES:COND:USER` / `:STAT:QUES:EVEN:USER` — *"Change user-defined questionable status bit?"* | `:COND:USER` — *"Set or clear the user-defined questionable status bit?"*<br>`:EVEN:USER` — *"Change which transition latches the user-defined questionable bit?"* |
+
+**§8.3 already learned this lesson once.** Its own amendment note, from 30 Aug 2026, records
+`:IGN:NONE` sharing the exclusion sentence with a command that *cleared* the exclusion list, *"so a
+user confirming it would reasonably believe they were excluding satellites"*. A table row covering
+two commands is where that lesson gets unlearned, because the row reads as one decision and is two.
+
+The second pair is the clearer case: choosing which transition latches a bit does not change the
+bit, and the shared sentence says it does.
+
+**Argued before it was made** (#125), which is the rule for a divergence in a confirmation: a
+confirmation is the last thing between a user and a consequence, and §8.3's text is the authority
+until somebody decides otherwise in the open. **This belongs upstream too** — the specification is
+a shared asset, like the fixtures and the palette, and the two copies agreeing is what makes either
+worth trusting.
+
 ### Three platforms
 
 The whole reason the repository exists. WinUI 3 is Windows-only by definition.
