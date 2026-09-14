@@ -209,6 +209,13 @@ class NmeaDriver:
             return False
         return not sentences.is_the_time_poll(candidate)
 
+    @property
+    def prompt_words(self) -> tuple[str, ...]:
+        """**None.** A talker is never written to, so it never answers, so nothing waits for a
+        prompt from it. Claiming one would put a word in the probe's union that no receiver of this
+        family will ever send."""
+        return ()
+
     def apply_full_extras(
         self, status: ReceiverStatus, results: dict[str, Transaction]
     ) -> ReceiverStatus:
