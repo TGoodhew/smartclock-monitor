@@ -1,0 +1,50 @@
+# taken 2026-09-14T00:52:38+00:00 from /dev/ttyUSB0
+# lines are verbatim; '>>> ' opens what was sent
+>>> :SYST:STAT?
+------------------------------- Receiver Status -------------------------------
+SYNCHRONIZATION ............................................. [ Outputs Valid ]
+SmartClock Mode ___________________________   Reference Outputs _______________
+>> Locked to GPS                              TFOM     3             FFOM     0
+   Recovery                                   1PPS TI +4.6 ns relative to GPS
+   Holdover                                   HOLD THR 1.000 us
+   Power-up                                   Holdover Uncertainty ____________
+                                              Predict  1.4 us/initial 24 hrs
+                                                
+ACQUISITION ................................................ [ GPS 1PPS Valid ]
+Tracking: 9 ____   Not Tracking: 2 ________   Time ____________________________
+PRN  El  Az  C/N   PRN  El  Az                UTC      00:52:39     29 Jan 2007
+  5  22 302   31     4   7 143                GPS 1PPS Synchronized to UTC
+  7  73  62   41    20  13 315                ANT DLY  60 ns
+  8  39  86   39                              Position ________________________
+  9  37 156   31                              MODE     Hold
+ 14  38 222   39                              
+ 21  29 264   35                              LAT      N  47:31:18.546
+ 22  18 221   33                              LON      W 122:12:22.128
+ 27  21  47   38                              HGT               +38.00 m  (MSL)
+ 30  61 291   41                              
+                                              
+                                              
+                                              
+ELEV MASK 10 deg                              
+HEALTH MONITOR ......................................................... [ OK ]
+Self Test: OK    Int Pwr: OK   Oven Pwr: OK   OCXO: OK   EFC: OK   GPS Rcv: OK 
+>>> :STAT:OPER:COND?
++90
+>>> :STAT:OPER:HARD:COND?
++0
+>>> :STAT:OPER:HOLD:COND?
++0
+>>> :STAT:OPER:POW:COND?
++7
+>>> :STAT:QUES:COND?
++0
+>>> :SYNC:TFOM?
++3
+>>> :SYNC:FFOM?
++0
+>>> :SYNC:HOLD:DUR?
++1.44800E+003,0
+>>> :DIAG:LOG:COUN?
++222
+>>> :DIAG:LIF:COUN?
++36864
