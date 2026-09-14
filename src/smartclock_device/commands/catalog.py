@@ -351,6 +351,15 @@ REGISTER_QUERIES: Final[tuple[ScpiCommand, ...]] = _register_queries()
 HARDWARE_CONDITION: Final = next(
     command for command in REGISTER_QUERIES if command.mnemonic == ":STAT:OPER:HARD:COND?"
 )
+
+#: The Operation register's condition, for the same reason and by the same route.
+#:
+#: Its **bit 6 is the only fault in that register** — *diagnostic log almost full* — and the bench
+#: receiver has it set (#110): `+90` against a log holding 222 entries. §10.9 reads this beside
+#: the count, because a count is a number and the bit is a verdict.
+OPERATION_CONDITION: Final = next(
+    command for command in REGISTER_QUERIES if command.mnemonic == ":STAT:OPER:COND?"
+)
 REGISTER_SETTERS: Final[tuple[ScpiCommand, ...]] = _register_setters()
 
 

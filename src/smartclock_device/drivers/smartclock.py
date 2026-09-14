@@ -251,6 +251,7 @@ _BY_CAPABILITY: Final[dict[Capability, ScpiCommand]] = {
     Capability.GPS_ENGINE: catalog.GPS_ENGINE_IDENTITY,
     Capability.ERROR_QUEUE: catalog.ERROR_QUEUE,
     Capability.HARDWARE_CONDITION: catalog.HARDWARE_CONDITION,
+    Capability.OPERATION_CONDITION: catalog.OPERATION_CONDITION,
     Capability.TIME_CODE_FORMAT: catalog.TIME_CODE_FORMAT,
     Capability.LEAP_ACCUMULATED: catalog.LEAP_ACCUMULATED,
     Capability.LEAP_DATE: catalog.LEAP_DATE,

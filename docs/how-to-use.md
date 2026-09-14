@@ -330,7 +330,7 @@ corrections it had learned, and its time error grows from there.
 
 #### Diagnostics — `Ctrl+6`
 
-![The Diagnostics page: a Self test card with an ALL subsystem picker and a Run test button; a Diagnostic log card with a filter box, Refresh and Clear; an Error queue card with Read errors; a Lifetime card; an Application log card naming the log folder with a Show log folder button; and an Undocumented read-only queries card listing six SCPI queries each with a Run button](images/how-to-use/page-diagnostics.png)
+![The Diagnostics page: a Self test card with an ALL subsystem picker and a Run test button; a Diagnostic log card with a filter box, Refresh and Clear and a Log has room pill; a Hardware conditions card; an Error queue card with Read errors; a Lifetime card; an Application log card naming the log folder with a Show log folder button; and an Undocumented read-only queries card listing six SCPI queries each with a Run button](images/how-to-use/page-diagnostics.png)
 
 - **Self test** — pick one **subsystem** or `ALL` and press **Run test**, which names what it is
   about to do because the receiver drops what it is doing while it tests itself. Testing one
@@ -341,10 +341,20 @@ corrections it had learned, and its time error grows from there.
   GPS lock while it runs — expect a couple of minutes back to lock and a few more before the time
   figure of merit recovers. The confirmation says so before it runs.
 - **Diagnostic log** — the entries the receiver itself keeps, filterable, with **Refresh** to
-  re-read them and **Clear**, which removes them from the receiver after asking. Export the page
+  re-read them and **Clear**, which removes them from the receiver after asking. Below the list,
+  the receiver's own verdict on its log: **Log has room**, or **Log almost full — clear it to keep
+  recording**. That is the receiver's judgement and not a count this application interprets — how
+  full *almost* is, is the receiver's business. Export the page
   first if you want them. The list **scrolls inside its own card** rather than stretching the page,
   so a receiver with hundreds of entries does not bury everything below it. Timestamps are on the
   receiver's own time scale and are subject to the week rollover.
+- **Hardware conditions** — what the receiver's hardware status register reports that the
+  Overview page's health monitor has no label for. The health monitor prints six labels and the
+  register has twelve bits, so two faults — a failed time interval measurement and a failed EEPROM
+  write — would otherwise be reported nowhere: the receiver prints `HEALTH MONITOR ... [ OK ]` and
+  Overview draws six green ticks. Read with **Refresh** on the log card, alongside everything else
+  on this page. A receiver with nothing to add says so, which is a different thing from not having
+  been asked.
 - **Error queue** — **Read errors** reads the receiver's error queue. Reading it empties it: each
   read removes the entry it returns, so what is shown is what was read.
 - **Lifetime** — power-on hours, how long the receiver has run in total. An oven-controlled
