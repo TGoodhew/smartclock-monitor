@@ -92,4 +92,9 @@ jobs:
           set -eu
           tag="${{ inputs.tag || github.ref_name }}"
           find artefacts -type f -printf '%p\n'
+          # **Create it if it is not there.** `gh release upload` answers "release not found" and
+          # stops, which is what v1.2.0 did: the artefacts were built correctly and had nowhere to
+          # go. A tag with no release is the ordinary case for a tag that was just pushed.
+          gh release view "$tag" >/dev/null 2>&1 \
+            || gh release create "$tag" --title "$tag" --generate-notes
           gh release upload "$tag" $(find artefacts -type f) --clobber
