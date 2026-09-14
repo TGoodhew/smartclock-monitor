@@ -251,6 +251,17 @@ class NmeaDriver:
             SerialSettings(38400, 8, Parity.NONE, StopBits.ONE),
         )
 
+    @property
+    def documented_settings(self) -> tuple[SerialSettings, ...]:
+        """**Both of them.** NMEA 0183 specifies 4800 and its high-speed variant 38400, and both
+        are 8-N-1 because the standard says so — which is as sourced as a line setting gets.
+
+        Nothing here is folklore, so nothing is held back. This is what lifts a talker's own rate
+        out from behind the SmartClock's unsourced 7-bit spellings, where it cost four probe
+        timeouts to reach a combination no talker has ever used.
+        """
+        return self.auto_detect_sequence
+
     def command(self, capability: Capability) -> ScpiCommand | None:
         """**Nothing, for every capability.** A talker is never written to and has no command
         parser, so there is no command it uses for any of them — and §9.11's gate turns that into a

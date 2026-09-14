@@ -27,7 +27,11 @@ from smartclock_device.parsing.scalars import (
 )
 from smartclock_device.parsing.status_screen import StatusScreenParser
 from smartclock_device.transport.response_buffer import DEFAULT_PROMPT_WORDS
-from smartclock_device.transport.settings import AUTO_DETECT_SEQUENCE, SerialSettings
+from smartclock_device.transport.settings import (
+    AUTO_DETECT_SEQUENCE,
+    DOCUMENTED_SETTINGS,
+    SerialSettings,
+)
 from smartclock_device.transport.transaction import Transaction
 
 #: §7.3: 1 s for the scalar sweep, 10 s for the screen.
@@ -103,6 +107,21 @@ class SmartClockDriver(QueryResponseDefaults):
         """§7.1's eight combinations. The note on the constant records why odd parity sits
         second, and what an even-parity spelling with no source behind it cost."""
         return AUTO_DETECT_SEQUENCE
+
+    @property
+    def documented_settings(self) -> tuple[SerialSettings, ...]:
+        """The two this family is **documented** to ship at, and only those.
+
+        9600-8-N-1 is the Z3805A's factory configuration and 19200-7-O-1 the Z3801A's — the latter
+        stated twice in the Z3801A user guide, which is the source §7.1's #64 correction cites.
+
+        The remaining six are not in the same category and the constant's own note says so: the
+        even-parity spellings are the folklore that correction was about, kept "one place lower
+        rather than removed" because second-hand receivers are this project's audience, and the
+        low rates are a net rather than a claim about any particular unit. They stay in the walk;
+        they no longer outrank another family's documented rate.
+        """
+        return DOCUMENTED_SETTINGS
 
     def command(self, capability: Capability) -> ScpiCommand | None:
         """This family's command for a capability. Every one of them is offered."""

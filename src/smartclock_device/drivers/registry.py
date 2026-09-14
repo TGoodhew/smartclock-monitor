@@ -21,7 +21,20 @@ from dataclasses import dataclass
 
 from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_device.models.device_identity import DeviceIdentity
-from smartclock_device.transport.settings import SerialSettings
+from smartclock_device.transport.settings import Parity, SerialSettings, StopBits
+
+
+def _is_eight_none_one(candidate: SerialSettings) -> bool:
+    """Eight data bits, no parity, one stop bit — whatever the rate.
+
+    The framing nearly everything uses. Band 2 of the walk is this, because a receiver is far
+    more likely to be at an unexpected *rate* than at an unexpected *framing*.
+    """
+    return (
+        candidate.data_bits == 8
+        and candidate.parity is Parity.NONE
+        and candidate.stop_bits is StopBits.ONE
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,21 +94,54 @@ class Registry:
 
     @property
     def auto_detect_sequence(self) -> tuple[SerialSettings, ...]:
-        """§10.12: the union of every registered driver's sequence, in registration order.
+        """§10.12's union of every registered driver's sequence, ordered in **three bands**.
 
-        **De-duplicated, and first occurrence wins.** Registration order is priority order, so a
-        combination two families both name is tried at the earlier one's position — which keeps the
-        Z3805A answering on the first attempt after a talker's rates were added to the walk.
+        **De-duplicated, and first occurrence wins**, as it always did: registration order is
+        priority order, so a combination two families both name is tried at the earlier one's
+        position. The union is what makes a second family reachable at all — a talker runs at 4800
+        and the walk had only ever known one receiver's rates.
 
-        The union is what makes a second family *reachable*: a talker runs at 4800 and the walk had
-        only ever known one receiver's rates, so the driver was registered and could not be found.
+        What changed is the *order* the union comes out in. §10.12 appends each driver's sequence
+        whole, and the consequence only appeared once there were three families: the SmartClock's
+        three **unsourced** 7-bit combinations sat at 3, 4 and 8, ahead of every rate the other two
+        families are documented to use. An NMEA talker at the rate its own standard specifies was
+        found on the ninth attempt, behind four combinations no talker has ever run at — about
+        fourteen seconds at §7.2's 2 s probe. See `docs/divergences.md`.
+
+        The bands, in order:
+
+        1. **Documented** — every driver's :attr:`~...base.ReceiverDriver.documented_settings`, in
+           registration order. A manual's factory default, a standard's rate, a measured figure.
+        2. **8-N-1** — everything else that is eight data bits, no parity, one stop bit. Framing is
+           near-universal and a rate is cheap to be wrong about, so the rates come first.
+        3. **The rest** — the 7-bit and parity spellings, which is where the unsourced ones end up.
+
+        Within each band the union order is preserved, so a family's own most-likely-first ordering
+        still decides between its own entries — and 9600-8-N-1 stays first, with the Z3801A's
+        19200-7-O-1 second, which is what §7.1's #64 correction is about.
         """
         found: list[SerialSettings] = []
         for driver in self._drivers:
             for candidate in driver.auto_detect_sequence:
                 if candidate not in found:
                     found.append(candidate)
-        return tuple(found)
+
+        documented = [
+            candidate
+            for driver in self._drivers
+            for candidate in driver.documented_settings
+            if candidate in found
+        ]
+
+        def band(candidate: SerialSettings) -> int:
+            if candidate in documented:
+                return 0
+            return 1 if _is_eight_none_one(candidate) else 2
+
+        # **A stable sort, so the union order survives inside each band.** Re-grouping the walk
+        # rather than rewriting it is what keeps this a change to §10.12's ordering and not to any
+        # family's own sequence, which each driver still owns.
+        return tuple(sorted(found, key=band))
 
     @property
     def is_ambiguous(self) -> bool:
