@@ -245,6 +245,53 @@ def test_the_pinned_wheels_are_the_versions_this_repository_tests_against() -> N
         )
 
 
+def _normalised(name: str) -> str:
+    """PEP 503's name comparison, so `PySide6_Essentials` and `pyside6-essentials` are one name."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _declared_runtime_dependencies() -> set[str]:
+    import tomllib
+
+    with (ROOT / "pyproject.toml").open("rb") as handle:
+        requirements = tomllib.load(handle)["project"]["dependencies"]
+
+    names = set()
+    for requirement in requirements:
+        match = re.match(r"[A-Za-z0-9._-]+", requirement)
+        assert match, f"no distribution name in {requirement!r}"
+        names.add(_normalised(match.group()))
+    return names
+
+
+def test_the_flatpak_pins_every_runtime_dependency() -> None:
+    """**The gate above only ever looks at what `PINNED` already names.** A dependency *omitted*
+    from it is examined by nothing — so v1.2.1 shipped a Flatpak with no `qasync`, which could not
+    reach its own event loop and died on the import, while every check in this file stayed green
+    (#144). Only `--doctor` still ran, because it imports nothing beyond the standard library, so
+    the one instrument pointed at the bundle reported that there was nothing to fix.
+
+    This asserts the other direction: every runtime dependency `pyproject.toml` declares reaches
+    the bundle. Extra pins are fine — `shiboken6` is here because PySide6 loads it, and no
+    dependency table names it.
+    """
+    sys.path.insert(0, str(ROOT / "tools"))
+    from flatpak_requirements import PINNED, SUBSTITUTED
+
+    pinned = {_normalised(name) for name, _ in PINNED}
+    missing = sorted(
+        declared
+        for declared in _declared_runtime_dependencies()
+        if SUBSTITUTED.get(declared, declared) not in pinned
+    )
+
+    assert not missing, (
+        f"pyproject.toml requires {', '.join(missing)} and the Flatpak does not install "
+        f"{'it' if len(missing) == 1 else 'them'} — add to PINNED in tools/flatpak_requirements.py "
+        "and re-run it"
+    )
+
+
 def test_the_flatpak_ships_only_the_qt_modules_this_application_imports() -> None:
     """The bundle installs **PySide6-Essentials**, not the metapackage — 80 MB against several
     hundred, with the same binaries for everything used.

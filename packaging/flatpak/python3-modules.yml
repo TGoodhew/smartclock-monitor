@@ -10,6 +10,7 @@ build-commands:
     --no-build-isolation --prefix=${FLATPAK_DEST}
     shiboken6
     PySide6_Essentials
+    qasync
     pyserial
     pyserial-asyncio
 sources:
@@ -19,6 +20,9 @@ sources:
   - type: file
     url: https://files.pythonhosted.org/packages/0e/1a/84a84bbc75835ee88abdcb66eb875b8e1a21834af9b833bc1893f2c1bfaf/pyside6_essentials-6.11.2-cp310-abi3-manylinux_2_34_x86_64.whl
     sha256: aaf9f25f0f324874085fa5b26a610318db8a8e243cf85bb3e5400595191c7778
+  - type: file
+    url: https://files.pythonhosted.org/packages/e5/84/0ce4cd946f6e958428c87d5accac35df70f81607e45ba4919947d0762d63/qasync-0.28.0-py3-none-any.whl
+    sha256: 21faba8d047c717008378f5ac29ea58c32a8128528629e4afd57c59b768dba0f
   - type: file
     url: https://files.pythonhosted.org/packages/07/bc/587a445451b253b285629263eb51c2d8e9bcea4fc97826266d186f96f558/pyserial-3.5-py2.py3-none-any.whl
     sha256: c4451db6ba391ca6ca299fb3ec7bae67a5c55dde170964c7a14ceefec02f2cf0
