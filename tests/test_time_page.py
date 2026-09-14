@@ -12,8 +12,10 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtWidgets import QApplication
 
 from conftest import NOW
+from smartclock_device.clock import FixedClock
 from smartclock_device.commands import catalog, leap
 from smartclock_device.drivers.capability import Capability
+from smartclock_device.drivers.nmea.driver import NmeaDriver
 from smartclock_device.models.receiver_status import (
     ReceiverStatus,
     SmartClockMode,
@@ -353,3 +355,89 @@ def test_a_family_with_neither_still_shows_a_dash(application: QApplication) -> 
     page.show_reading(reading())
 
     assert page.leap_fields.value_of("GPS − UTC") == DASH
+
+
+# ---- The time code card (#113) -------------------------------------------------------------------
+
+#: One message the bench receiver actually sent, from
+#: `tests/fixtures/smartclock/locked-with-time-code-13sep2026`.
+MESSAGE = "T2200701290147493000047"
+
+
+def code_page(answer: object = MESSAGE) -> TimePage:
+    page = TimePage()
+    page.set_command_runner(FakeRunner(answers={catalog.TIME_CODE.mnemonic: answer}))
+    page.read_code_button.click()
+    return page
+
+
+def test_the_time_code_is_read_only_when_asked_for() -> None:
+    """§10.14's ruling is about **refreshing**: a cost *"charged again on every refresh"* is what
+    it declined to pay. Arriving on the page must therefore not ask."""
+    page = TimePage()
+    runner = FakeRunner(answers={catalog.TIME_CODE.mnemonic: MESSAGE})
+    page.set_command_runner(runner)
+
+    assert catalog.TIME_CODE.mnemonic not in [mnemonic for mnemonic, _ in runner.sent]
+
+
+def test_pressing_read_decodes_the_message() -> None:
+    rows = code_page().time_code_rows
+
+    assert rows["Message"] == MESSAGE
+    assert rows["Names the 1 PPS at"] == "2007-01-29 01:47:49"
+    assert rows["Figures of merit"] == "TFOM 3 · FFOM 0"
+    assert rows["Checksum"] == "Matches"
+
+
+def test_the_flags_are_a_sentence_rather_than_three_zeroes() -> None:
+    """§9.11: a user reading `0 0 0` off the wire learns nothing. These are the message's own
+    answers to three questions the rest of this page asks in words."""
+    rows = code_page().time_code_rows
+
+    assert rows["The receiver adds"] == (
+        "the time is valid, no leap second announced, no service requested"
+    )
+
+
+def test_the_time_code_s_own_date_is_shown_beside_the_corrected_one() -> None:
+    """§7.4, and the same rule the clock card follows. The epoch count comes from the status
+    screen, which is the only thing that compares the receiver against a host clock."""
+    page = code_page()
+    page.show_reading(reading(week_rollover_epochs=1))
+    page.read_code_button.click()
+
+    rows = page.time_code_rows
+    assert rows["Names the 1 PPS at"] == "2007-01-29 01:47:49"
+    assert rows["Corrected"] == "2026-09-14 01:47:49"
+
+
+def test_a_time_code_read_before_the_first_poll_shows_no_correction() -> None:
+    """Honest rather than helpful: nothing has established that this receiver has rolled over, and
+    a correction shown on no evidence is a correction that will be wrong on a patched unit."""
+    assert code_page().time_code_rows["Corrected"] == DASH
+
+
+def test_a_corrupted_message_says_so_and_still_shows_its_fields() -> None:
+    rows = code_page(MESSAGE[:-2] + "FF").time_code_rows
+
+    assert "may be corrupted" in rows["Checksum"]
+    assert rows["Names the 1 PPS at"] == "2007-01-29 01:47:49"
+
+
+def test_an_unreadable_answer_leaves_dashes() -> None:
+    rows = code_page("not a time code").time_code_rows
+
+    assert rows["Message"] == "not a time code"
+    assert rows["Names the 1 PPS at"] == DASH
+    assert rows["Figures of merit"] == DASH
+
+
+def test_a_family_with_no_time_code_keeps_the_button_and_explains() -> None:
+    """§9.11: disabled and explained, never hidden. A talker broadcasts sentences and has nothing
+    of this shape to be asked for."""
+    page = TimePage()
+    page.set_command_runner(FakeRunner(driver_for=NmeaDriver(clock=FixedClock(NOW))))
+
+    assert page.read_code_button.isEnabled() is False
+    assert "no command for this" in page.code_note_text

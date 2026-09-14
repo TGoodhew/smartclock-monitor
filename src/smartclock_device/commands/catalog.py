@@ -144,6 +144,20 @@ TIME_CODE_FORMAT: Final = ScpiCommand(
     response=ResponseFormat.KEYWORD,
 )
 
+#: The time code itself. §8.2 lists it; this port did not have it until #113.
+#:
+#: **It answers, and it is slow.** The receiver emits the message on its own 1 Hz cadence, so a
+#: request lands in the next slot and the transaction blocks for 0.4 to 1.0 s — measured on the
+#: bench 13 Sep 2026, against 0.2 s for an ordinary scalar query on the same link in the same
+#: minute. §10.14 says the same from its own measurement in Aug 2026. That is why it is a
+#: catalogued query a user can ask for and **not** a poll-plan entry: five readings for five
+#: queries' worth of wall time is not a bargain, and §7.3's fast tier is one second long.
+TIME_CODE: Final = ScpiCommand(
+    mnemonic=":PTIM:TCOD?",
+    summary="The time code — the next 1 PPS, with both figures of merit (blocks up to a second)",
+    response=ResponseFormat.TEXT,
+)
+
 LOG_COUNT: Final = ScpiCommand(
     mnemonic=":DIAG:LOG:COUN?",
     summary="How many entries the diagnostic log holds",
@@ -719,6 +733,7 @@ ALL: Final[tuple[ScpiCommand, ...]] = (
     DIAGNOSTIC_LOG,
     SELF_TEST_RESULT,
     TIME_CODE_FORMAT,
+    TIME_CODE,
     LOG_COUNT,
     LIFETIME_HOURS,
     GPS_ENGINE_IDENTITY,

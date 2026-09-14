@@ -51,6 +51,7 @@ class Capability(Enum):
     HARDWARE_CONDITION = "the hardware status register"
     OPERATION_CONDITION = "the operation status register"
     TIME_CODE_FORMAT = "the time-code output format"
+    TIME_CODE = "the time code itself"
     LEAP_ACCUMULATED = "accumulated leap seconds"
     LEAP_DATE = "the announced leap second's date"
     LEAP_DURATION = "the announced leap second's direction"

@@ -14,12 +14,19 @@ receiver from a correct one.
 not say which zone it is in cannot be compared to anything, and neither can one that does not say
 which *time scale* the receiver is on — UTC and GPS differ by the accumulated leap seconds.
 
-**The time code itself is not shown, and that is a decision rather than an omission.**
-``:PTIM:TCOD?`` does not answer when asked: it answers on the receiver's own 1 Hz cadence, about
-509 ms before the 1 PPS it names. A request lands in the next emission slot and blocks for up to a
-second — a cost a read-only page has no reason to pay, and one charged again on every refresh. The
-format is the part that does not change and the part without which the message cannot be read at
-all.
+**The time code itself is read only when asked for, and that is the same decision §10.14 made.**
+``:PTIM:TCOD?`` answers on the receiver's own 1 Hz cadence, so a request lands in the next emission
+slot and blocks for 0.4 to 1.0 s — re-measured on the bench 13 Sep 2026 against 0.2 s for an
+ordinary scalar query on the same link in the same minute. §10.14's ruling is that this is *"a cost
+a read-only page has no reason to pay, and one charged again on every refresh"*, and both halves of
+that sentence are about **refreshing**. A button pressed once is not a refresh, and the reading it
+buys is five figures the screen carries only after a page and a half of text: the next 1 PPS, both
+figures of merit, whether a leap second is announced, and whether the receiver thinks its own time
+is valid.
+
+So: the format is read on arrival, the message is read on request, and nothing here is polled. The
+divergence from §10.14's wireframe — which shows the format alone — is recorded in
+`docs/divergences.md` with the measurement behind it.
 """
 
 from __future__ import annotations
@@ -28,12 +35,20 @@ from collections.abc import Sequence
 from datetime import datetime
 from enum import Enum
 
-from PySide6.QtWidgets import QComboBox, QFrame, QHBoxLayout, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QHBoxLayout,
+    QPushButton,
+    QVBoxLayout,
+    QWidget,
+)
 
 from smartclock_device.commands import leap
 from smartclock_device.drivers.capability import Capability
-from smartclock_device.models import time_code_format
+from smartclock_device.models import gps_week_rollover, time_code_format
 from smartclock_device.models.receiver_status import LeapSecondPending, ReceiverStatus
+from smartclock_device.parsing import time_code
 from smartclock_device.parsing.scalars import parse_boolean, parse_first_of_list, parse_integer
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.polling import Reading
@@ -41,6 +56,7 @@ from smartclock_monitor.services.session import CommandOutcome
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
+from smartclock_monitor.views.capability import explain, gate
 from smartclock_monitor.views.pages import DASH, FieldGrid, Page, card, label
 from smartclock_monitor.views.wording import humanise
 from smartclock_monitor.widgets.severity_pill import SeverityPill
@@ -72,6 +88,7 @@ class TimePage(Page):
         self._leap_date: str | None = None
         self._leap_direction: int | None = None
         self._format: time_code_format.TimeCodeFormat | None = None
+        self._code: time_code.TimeCode | None = None
 
         layout = QVBoxLayout(self)
         layout.setSpacing(Spacing.MEDIUM)
@@ -153,22 +170,63 @@ class TimePage(Page):
 
     def _build_time_code(self) -> QFrame:
         holder, holder_layout = card("Time code output")
-        self._time_code = FieldGrid(("Format", "Message length"))
-        holder_layout.addWidget(self._time_code)
-        holder_layout.addWidget(
-            label(
-                "The time code itself is emitted on the receiver's own 1 Hz cadence, about 509 ms "
-                "before the 1 PPS it names, so it is not requested here.",
-                "tertiary",
+        self._time_code = FieldGrid(
+            (
+                "Format",
+                "Message length",
+                "Message",
+                "Names the 1 PPS at",
+                "Corrected",
+                "Figures of merit",
+                "The receiver adds",
+                "Checksum",
             )
         )
+        holder_layout.addWidget(self._time_code)
+
+        row = QHBoxLayout()
+        self._code_note = label(
+            "The receiver emits this on its own 1 Hz cadence, so reading it takes up to a second.",
+            "tertiary",
+        )
+        self._code_note.setWordWrap(True)
+        row.addWidget(self._code_note, 1)
+        self._read_code = QPushButton("Read")
+        self._read_code.setAccessibleName("Read one time code message from the receiver")
+        self._read_code.clicked.connect(self._read_time_code)
+        row.addWidget(self._read_code)
+        holder_layout.addLayout(row)
         return holder
+
+    def _read_time_code(self) -> None:
+        """One message, on request. **Never on a timer**: see this module's own docstring."""
+        runner = self._runner
+        if runner is None or not runner.is_connected:
+            return
+        self._time_code.set("Message", "Reading…")
+        runner.run([(Capability.TIME_CODE, None)], self._absorb_time_code)
+
+    def _absorb_time_code(self, outcomes: Sequence[CommandOutcome]) -> None:
+        answered = next((o for o in outcomes if o.capability is Capability.TIME_CODE), None)
+        if answered is None or answered.transaction is None:
+            self._code = None
+            self._time_code.set("Message", "No answer")
+            return
+
+        self._code = time_code.parse(answered.transaction.first_line)
+        self._redraw_time_code()
 
     # -- Wiring ----------------------------------------------------------------------------------
 
     def set_command_runner(self, runner: CommandRunner | None) -> None:
         self._runner = runner
-        if runner is not None and runner.is_connected:
+        live = runner is not None and runner.is_connected
+        # §9.11: a family with no time code keeps the button, greyed, with a sentence saying whose
+        # limitation it is. A talker emits sentences and has nothing of this shape to ask for.
+        driver = runner.driver if live and runner is not None else None
+        if not gate(self._read_code, driver, Capability.TIME_CODE):
+            self._code_note.setText(explain(driver))
+        if live:
             self.refresh()
 
     def refresh(self) -> None:
@@ -309,6 +367,7 @@ class TimePage(Page):
         self._leap_fields.set("Direction", _direction(self._leap_direction, pending))
 
     def _redraw_time_code(self) -> None:
+        self._redraw_code_message()
         if self._format is None:
             self._time_code.set("Format", DASH)
             self._time_code.set("Message length", DASH)
@@ -321,6 +380,40 @@ class TimePage(Page):
         self._time_code.set("Format", f"F{name[-1]} — messages begin {name}")
         length = time_code_format.message_length(self._format)
         self._time_code.set("Message length", DASH if length is None else f"{length} characters")
+
+    def _redraw_code_message(self) -> None:
+        """What one message said, or dashes where none has been read.
+
+        **Both dates, as everywhere else on this page** (§7.4). The receiver's own instant is what
+        the message carried; the correction is reported beside it and never in place of it — and
+        the epoch count comes from the status screen, which is the only place anything compares the
+        receiver's date against a host clock. A time code read before the first full poll therefore
+        shows its own date and a dash, which is honest: nothing has established that this receiver
+        has rolled over.
+        """
+        code = self._code
+        if code is None:
+            for row in ("Message", "Names the 1 PPS at", "Corrected", "Figures of merit"):
+                self._time_code.set(row, DASH)
+            self._time_code.set("The receiver adds", DASH)
+            self._time_code.set("Checksum", DASH)
+            return
+
+        self._time_code.set("Message", code.text or DASH)
+        self._time_code.set("Names the 1 PPS at", DASH if code.when is None else _stamp(code.when))
+
+        epochs = 0 if self._status is None else self._status.week_rollover_epochs
+        corrected = gps_week_rollover.correct(code.when, epochs)
+        self._time_code.set("Corrected", DASH if corrected is None else _stamp(corrected))
+
+        merits = [
+            f"{name} {value}"
+            for name, value in (("TFOM", code.tfom), ("FFOM", code.ffom))
+            if value is not None
+        ]
+        self._time_code.set("Figures of merit", " · ".join(merits) if merits else DASH)
+        self._time_code.set("The receiver adds", _code_sentence(code))
+        self._time_code.set("Checksum", _checksum_words(code))
 
     def csv_rows(self) -> Sequence[Sequence[str]]:
         rows: list[Sequence[str]] = [["Card", "Field", "Value"]]
@@ -335,6 +428,18 @@ class TimePage(Page):
         return rows
 
     # -- What a test may read --------------------------------------------------------------------
+
+    @property
+    def time_code_rows(self) -> dict[str, str]:
+        return dict(self._time_code.rows())
+
+    @property
+    def read_code_button(self) -> QPushButton:
+        return self._read_code
+
+    @property
+    def code_note_text(self) -> str:
+        return self._code_note.text()
 
     @property
     def clock_text(self) -> str:
@@ -409,3 +514,40 @@ def _direction(seconds: int | None, pending: LeapSecondPending | None) -> str:
     if pending is None or pending is LeapSecondPending.NONE:
         return DASH
     return humanise(pending)
+
+
+def _stamp(value: datetime) -> str:
+    """An instant, to the second, always naming its date. The time code names *the next* 1 PPS, so
+    a bare clock time would be a second in the future with nothing saying which day it is on."""
+    return value.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _code_sentence(code: time_code.TimeCode) -> str:
+    """The three flags as one sentence rather than three rows of ``0``.
+
+    §9.11's rule about saying what a reading *means*: a user reading `0 0 0` off the wire learns
+    nothing, and these three are the message's own answers to three questions the rest of this page
+    asks in words.
+    """
+    parts = []
+    if code.time_valid is not None:
+        parts.append("the time is valid" if code.time_valid else "the time is not valid")
+    if code.leap_pending is LeapSecondPending.NONE:
+        parts.append("no leap second announced")
+    else:
+        parts.append(
+            "a leap second is announced, "
+            + ("inserted" if code.leap_pending is LeapSecondPending.PLUS else "removed")
+        )
+    if code.service_requested is not None:
+        parts.append("service requested" if code.service_requested else "no service requested")
+    return ", ".join(parts) if parts else DASH
+
+
+def _checksum_words(code: time_code.TimeCode) -> str:
+    """**Reported, not enforced.** A message whose checksum fails is still the receiver's own
+    bytes, and hiding it would turn a corrupted read into a missing one — which is the harder fault
+    to diagnose of the two."""
+    if code.checksum_ok is None:
+        return DASH
+    return "Matches" if code.checksum_ok else "Does not match — the message may be corrupted"

@@ -1,7 +1,9 @@
-"""Ask the five status registers and the status screen in one sitting, and write both down.
+"""Ask the status screen, the five status registers and the time code in one sitting.
 
-The screen and the registers are two accounts of the same instant, and **the value of a capture
-is that they were taken in the same breath**. `Models/StatusRegisterMap.cs` and its port here say
+These are **three accounts of one instant**, and the value of the capture is that they were taken
+in the same breath. The screen prints the figures of merit; the registers carry the conditions
+behind them; and `:PTIM:TCOD?` carries both figures again, in twenty-three characters, by a third
+route that touches neither (#113). `Models/StatusRegisterMap.cs` and its port here say
 what each bit means; nothing in either repository had ever put those meanings beside a screen
 taken at the same moment and asked whether they agreed. `tests/test_registers_against_screen.py`
 asks, against whatever this harness last wrote.
@@ -47,7 +49,7 @@ REPLY_TIMEOUT = timedelta(seconds=6)
 
 #: What is asked, in the order it is asked. The screen first, so the registers below it describe
 #: an instant the screen has already been read for rather than one it will be read for later.
-def _commands() -> tuple[ScpiCommand, ...]:
+def _commands(time_codes: int = 1) -> tuple[ScpiCommand, ...]:
     condition_queries = tuple(
         query
         for register in registers.ALL
@@ -61,6 +63,14 @@ def _commands() -> tuple[ScpiCommand, ...]:
         catalog.HOLDOVER_DURATION,
         catalog.LOG_COUNT,
         catalog.LIFETIME_HOURS,
+        catalog.TIME_CODE_FORMAT,
+        # Last, and with the screen's timeout: this one answers on the receiver's own 1 Hz cadence
+        # and blocks until the next slot (#113).
+        #
+        # Asked **several times** by default, because one message proves a decode and a run of them
+        # proves the checksum rule: consecutive messages differ only in the seconds digit, so a
+        # checksum that tracks that difference is a checksum and not a coincidence.
+        *(catalog.TIME_CODE,) * max(1, time_codes),
     )
 
 
@@ -69,7 +79,7 @@ def _commands() -> tuple[ScpiCommand, ...]:
 SENT = ">>> "
 
 
-async def capture(port: str, destination: Path, clock: Clock) -> int:
+async def capture(port: str, destination: Path, clock: Clock, time_codes: int = 1) -> int:
     """Take one sitting and write it. Returns the number of commands that answered."""
     transport = SerialTransport(port, DEFAULT)
     await transport.open()
@@ -79,7 +89,7 @@ async def capture(port: str, destination: Path, clock: Clock) -> int:
         with destination.open("w", encoding="utf-8", newline="\r\n") as out:
             out.write(f"# taken {clock.utc_now().isoformat(timespec='seconds')} from {port}\n")
             out.write("# lines are verbatim; '>>> ' opens what was sent\n")
-            for command in _commands():
+            for command in _commands(time_codes):
                 timeout = SCREEN_TIMEOUT if command is catalog.STATUS_SCREEN else REPLY_TIMEOUT
                 transaction = await protocol.execute(command.mnemonic, timeout)
                 out.write(f"{SENT}{command.mnemonic}\n")
@@ -98,12 +108,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--port", default="/dev/ttyUSB0", help="the receiver's port")
     parser.add_argument("--label", required=True, help="what this sitting is, in kebab case")
     parser.add_argument("--into", type=Path, default=DEFAULT_DIRECTORY)
+    parser.add_argument(
+        "--time-codes", type=int, default=8, help="how many time-code messages to ask for"
+    )
     arguments = parser.parse_args(argv)
 
     arguments.into.mkdir(parents=True, exist_ok=True)
     destination = arguments.into / f"{arguments.label}.txt"
-    answered = asyncio.run(capture(arguments.port, destination, SystemClock()))
-    print(f"{answered} of {len(_commands())} answered -> {destination}")
+    answered = asyncio.run(
+        capture(arguments.port, destination, SystemClock(), arguments.time_codes)
+    )
+    print(f"{answered} of {len(_commands(arguments.time_codes))} answered -> {destination}")
     return 0
 
 
