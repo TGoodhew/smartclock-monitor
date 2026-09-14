@@ -62,6 +62,23 @@
   </recommends>
 
   <releases>
+    <release version="1.2.2" date="2026-09-14">
+      <description>
+        <p>
+          Fixes a Flatpak that could not start: the bundle was built without qasync and died on
+          the import before opening a window. Adds the check that would have caught it, and makes
+          the dialout diagnostic report honestly inside a sandbox instead of passing a test it
+          could not perform.
+        </p>
+      </description>
+    </release>
+    <release version="1.2.1" date="2026-09-13">
+      <description>
+        <p>
+          The Flatpak, and the icons that let it build.
+        </p>
+      </description>
+    </release>
     <release version="1.0.0" date="2026-09-03">
       <description>
         <p>

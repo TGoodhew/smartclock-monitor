@@ -81,4 +81,4 @@ modules:
       # exists to prevent. A git source carries the tag it needs.
       - type: git
         url: https://github.com/TGoodhew/smartclock-monitor.git
-        tag: v1.2.1
+        tag: v1.2.2
