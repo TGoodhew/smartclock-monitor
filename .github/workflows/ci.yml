@@ -114,6 +114,16 @@ jobs:
             || ! git diff --quiet HEAD^ -- packaging/ tools/flatpak_requirements.py; then
             echo "build=yes" >> "$GITHUB_OUTPUT"
           fi
+      # The action assumes flatpak-builder is already there — it is, in the container images its
+      # README suggests, and is not on a plain runner. Installing it here keeps the checkout and
+      # the Python steps above working as they do in every other job.
+      - name: flatpak-builder, and the runtime remote it installs from
+        if: steps.changed.outputs.build == 'yes'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          sudo flatpak remote-add --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
       - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
         if: steps.changed.outputs.build == 'yes'
         with:
