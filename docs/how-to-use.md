@@ -330,7 +330,7 @@ corrections it had learned, and its time error grows from there.
 
 #### Diagnostics — `Ctrl+6`
 
-![The Diagnostics page: a Self test card with an ALL subsystem picker and a Run test button; a Diagnostic log card with a filter box, Refresh and Clear and a Log has room pill; a Hardware conditions card; an Error queue card with Read errors; a Lifetime card; a Front panel card with an Active indicator switch; an Application log card naming the log folder with a Show log folder button; and an Undocumented read-only queries card listing six SCPI queries each with a Run button](images/how-to-use/page-diagnostics.png)
+![The Diagnostics page: a Self test card with an ALL subsystem picker and a Run test button; a Diagnostic log card with a filter box, Refresh and Clear and a Log has room pill; a Hardware conditions card; an Error queue card with Read errors; a Lifetime card; a GPS receiver card; a Front panel card with an Active indicator switch; an Application log card naming the log folder with a Show log folder button; and an Undocumented read-only queries card listing six SCPI queries each with a Run button](images/how-to-use/page-diagnostics.png)
 
 - **Self test** — pick one **subsystem** or `ALL` and press **Run test**, which names what it is
   about to do because the receiver drops what it is doing while it tests itself. Testing one
@@ -359,6 +359,13 @@ corrections it had learned, and its time error grows from there.
   read removes the entry it returns, so what is shown is what was read.
 - **Lifetime** — power-on hours, how long the receiver has run in total. An oven-controlled
   oscillator ages with running time, so this is the figure behind the drift the Timing page reports.
+- **GPS receiver** — what GPS module is inside the instrument, read with **Refresh** beside the
+  lifetime hours and never polled: the module cannot change while the instrument is powered. A
+  SmartClock is a disciplining chassis built around somebody else's GPS engine, and the two are
+  revised on separate schedules — the revision in the window's footer is the instrument's, and this
+  is the module's. Fields the receiver leaves blank are not shown; on the bench unit here, seven of
+  the ten come back empty, the serial number among them. A receiver with no separate engine inside
+  it says so rather than showing an empty card.
 - **Front panel** — a switch for the receiver's **Active indicator**, one of the two lamps on its
   front panel that software can drive. Nothing drives it automatically yet, so this is both the
   way to use it and the way to turn it off again if something else left it lit. The receiver takes
