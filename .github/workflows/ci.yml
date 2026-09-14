@@ -150,8 +150,10 @@ jobs:
           manifest=packaging/flatpak/io.github.tgoodhew.SmartClockMonitor.yml
           if [ "${{ github.event_name }}" = "pull_request" ]; then
             sed "s|^        tag: .*|        commit: ${{ github.event.pull_request.head.sha }}|" \
-              "$manifest" > /tmp/manifest.yml
-            manifest=/tmp/manifest.yml
+              "$manifest" > packaging/flatpak/under-test.yml
+            # Beside the original, because a manifest's includes resolve relative to **its own**
+            # directory — a copy in /tmp cannot find python3-modules.yml.
+            manifest=packaging/flatpak/under-test.yml
             grep -A3 'type: git' "$manifest"
           fi
           flatpak-builder --user --force-clean --disable-rofiles-fuse \
