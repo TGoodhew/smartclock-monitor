@@ -309,6 +309,23 @@ class ReceiverDriver(Protocol):
         """
         ...
 
+    @property
+    def prompt_words(self) -> tuple[str, ...]:
+        """The words this family's prompt is built from (§7.2's grammar).
+
+        A transaction ends at a prompt rather than at a newline, and the families spell theirs
+        differently — `scpi > ` and `UCCM-P >`. A word rather than a literal because the spacing
+        and the bracket belong to the grammar, and the two differ in both.
+
+        **Empty is the right answer for a broadcast family**, which is never written to and
+        therefore never waits for one.
+
+        `DeviceSession` asks every registered family for these before it has chosen one — the probe
+        phase belongs to no driver — and narrows to the chosen family's afterwards, so a Z3805A
+        cannot end a transaction on a UCCM's prompt.
+        """
+        ...
+
     def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
         """Fold the fast-tier answers into the status the full tier last produced."""
         ...

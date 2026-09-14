@@ -165,6 +165,10 @@ class TalkerDriver(QueryResponseDefaults):
     def apply_fast(self, status: ReceiverStatus, results: dict[str, Transaction]) -> ReceiverStatus:
         return status
 
+    @property
+    def prompt_words(self) -> tuple[str, ...]:
+        return ()
+
     def apply_full_extras(
         self, status: ReceiverStatus, results: dict[str, Transaction]
     ) -> ReceiverStatus:

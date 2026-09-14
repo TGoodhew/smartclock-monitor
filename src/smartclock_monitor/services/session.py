@@ -204,6 +204,12 @@ class DeviceSession:
         self._state = ConnectionState.CONNECTING
         self._last_fault = None
 
+        # §12: **the probe phase belongs to no driver**, so the prompt has to be recognisable
+        # before a family is chosen — which means the union of what every registered family may
+        # use, not one family's. Narrowed to the chosen driver's below, so a Z3805A cannot end a
+        # transaction on a UCCM's prompt (#135).
+        self._protocol.prompt_words = self._all_prompt_words()
+
         try:
             await self._transport.open()
         except TransportError as error:
@@ -242,6 +248,7 @@ class DeviceSession:
         # asked neutrally, and only now is a family chosen — choosing first would mean asking one
         # family's questions of a receiver that may be another's.
         self._select_driver()
+        self._protocol.prompt_words = self._driver.prompt_words
 
         self._state = ConnectionState.CONNECTED
         self._consecutive_failures = 0
@@ -559,6 +566,19 @@ class DeviceSession:
         if self._driver.link is LinkStyle.BROADCAST:
             self._start_listening(lines)
         return True
+
+    def _all_prompt_words(self) -> tuple[str, ...]:
+        """Every prompt word any registered family may use, de-duplicated and order-preserving.
+
+        The union rather than the first driver's, because nothing has chosen a family yet — and a
+        receiver whose prompt is not in this tuple ends no transaction at all, so every command it
+        is sent runs to its timeout before anything can notice it is there.
+        """
+        drivers = self._registry.drivers if self._registry is not None else (self._driver,)
+        words: dict[str, None] = {}
+        for driver in drivers:
+            words.update(dict.fromkeys(driver.prompt_words))
+        return tuple(words)
 
     def _select_driver(self) -> None:
         """Choose the family that claims this receiver, or keep the first registered."""

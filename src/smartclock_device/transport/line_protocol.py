@@ -31,7 +31,7 @@ from smartclock_device.transport.faults import (
     classify,
     is_transport_fault,
 )
-from smartclock_device.transport.response_buffer import ResponseBuffer
+from smartclock_device.transport.response_buffer import DEFAULT_PROMPT_WORDS, ResponseBuffer
 from smartclock_device.transport.transaction import Transaction, TransactionOutcome
 
 #: Stands in for a command in the transaction returned by :meth:`LineProtocol.synchronise`.
@@ -44,9 +44,23 @@ _CLEAR_STATUS = "*CLS"
 class LineProtocol:
     """One transaction at a time, over a borrowed transport."""
 
-    def __init__(self, transport: Transport, clock: Clock) -> None:
+    def __init__(
+        self,
+        transport: Transport,
+        clock: Clock,
+        prompt_words: tuple[str, ...] = DEFAULT_PROMPT_WORDS,
+    ) -> None:
         self._transport = transport
         self._clock = clock
+
+        #: Which words may end a transaction (§7.2's grammar).
+        #:
+        #: **Settable, because the probe phase belongs to no driver and the session does.** Until
+        #: #135 this was never passed at all: every buffer this class built took the default, which
+        #: is the SmartClock's `scpi` alone — so a family whose prompt is `UCCM-P >` ended no
+        #: transaction, and every command it was sent ran to its timeout. The member existed on the
+        #: driver contract, the UCCM driver implemented it, and nothing read it.
+        self.prompt_words = prompt_words
 
         # How long the next command may spend realigning the stream, or None when it is already
         # aligned. See _resynchronise.
@@ -85,7 +99,7 @@ class LineProtocol:
         await self._resynchronise()
 
         started_at = self._clock.utc_now()
-        buffer = ResponseBuffer()
+        buffer = ResponseBuffer(prompt_words=self.prompt_words)
 
         try:
             self._transport.discard_input()
@@ -165,7 +179,7 @@ class LineProtocol:
         to. The caller now spends the glitch itself, once it knows which kind of link it holds.
         """
         started_at = self._clock.utc_now()
-        buffer = ResponseBuffer()
+        buffer = ResponseBuffer(prompt_words=self.prompt_words)
 
         try:
             async with asyncio.timeout(timeout.total_seconds()):
@@ -292,7 +306,7 @@ class LineProtocol:
         # on every subsequent command.
         self._resynchronise_within = None
 
-        discarded = ResponseBuffer()
+        discarded = ResponseBuffer(prompt_words=self.prompt_words)
         try:
             async with asyncio.timeout(budget.total_seconds()):
                 await self._read_until_prompt(discarded)

@@ -26,6 +26,7 @@ from smartclock_device.parsing.scalars import (
     parse_seconds_as_nanoseconds,
 )
 from smartclock_device.parsing.status_screen import StatusScreenParser
+from smartclock_device.transport.response_buffer import DEFAULT_PROMPT_WORDS
 from smartclock_device.transport.settings import AUTO_DETECT_SEQUENCE, SerialSettings
 from smartclock_device.transport.transaction import Transaction
 
@@ -77,6 +78,11 @@ class SmartClockDriver(QueryResponseDefaults):
     @property
     def plan(self) -> PollPlan:
         return PLAN
+
+    @property
+    def prompt_words(self) -> tuple[str, ...]:
+        """`scpi > `, which §7.2 gives as this family's terminator."""
+        return DEFAULT_PROMPT_WORDS
 
     def is_allowed(self, mnemonic: str | None) -> bool:
         """The point-of-send allowlist check (§8.1)."""

@@ -208,6 +208,20 @@ The **probe phase takes the union**, because §12 says that phase belongs to no 
 has to be recognisable before a family is chosen. The session narrows it to the selected driver's
 afterwards, so one family cannot end a transaction on another's prompt.
 
+> **⚠ All of that was true of the design and of nothing else until 14 Sep 2026 (#135).** The member
+> was documented here, implemented by the UCCM driver, and described in `response_buffer.py` down to
+> the narrowing — and **it was not on the Protocol and nothing read it**. Every buffer took the
+> default, which is `scpi` alone, so a `UCCM-P >` prompt ended no transaction and every command sent
+> to that family ran to its timeout. A UCCM could not have connected.
+>
+> It was found by #99's end-to-end harness, on its first run, as an 85-second test rather than a
+> crash — because no test before it had opened a session over a transport and watched a transaction
+> fail to end. Three layers of *looks done*: a documented member, a careful implementation, and a
+> docstring describing behaviour nothing performed.
+>
+> **A broadcast family answers `()`**, which is the honest answer for a link that is never written
+> to and therefore never waits for a prompt.
+
 ### `plan.fast_readings` — which tier owns which reading
 
 §7.3 splits the poll in two and §7.3.1 governs refusals, but nothing said which readings the fast
