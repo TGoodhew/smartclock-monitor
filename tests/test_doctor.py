@@ -92,6 +92,9 @@ def test_the_dialout_check_can_fail_inside_a_sandbox(monkeypatch: pytest.MonkeyP
     adapter = SimpleNamespace(
         device="/dev/ttyUSB0", vid=0x067B, pid=0x2303, description="USB-Serial Controller"
     )
+    # Pinned, not skipped: a Flatpak only exists on Linux, but the logic under test is ordinary
+    # Python and the Windows leg is as good a place to check it as any.
+    monkeypatch.setattr("platform.system", lambda: "Linux")
     monkeypatch.setattr(doctor, "_is_flatpak", lambda: True)
     monkeypatch.setattr(list_ports, "comports", lambda: [adapter])
     monkeypatch.setattr("os.access", lambda *_: False)
@@ -116,6 +119,7 @@ def test_the_sandbox_dialout_check_reports_a_port_the_kernel_allows(
     adapter = SimpleNamespace(
         device="/dev/ttyUSB0", vid=0x067B, pid=0x2303, description="USB-Serial Controller"
     )
+    monkeypatch.setattr("platform.system", lambda: "Linux")
     monkeypatch.setattr(doctor, "_is_flatpak", lambda: True)
     monkeypatch.setattr(list_ports, "comports", lambda: [adapter])
     monkeypatch.setattr("os.access", lambda *_: True)
@@ -133,6 +137,7 @@ def test_the_sandbox_dialout_check_does_not_claim_an_answer_it_has_not_got(
     detail has to admit it rather than read as a pass."""
     from serial.tools import list_ports
 
+    monkeypatch.setattr("platform.system", lambda: "Linux")
     monkeypatch.setattr(doctor, "_is_flatpak", lambda: True)
     monkeypatch.setattr(list_ports, "comports", lambda: [])
 
