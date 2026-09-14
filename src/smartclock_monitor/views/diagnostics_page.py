@@ -30,6 +30,7 @@ from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QAbstractItemView,
+    QCheckBox,
     QComboBox,
     QHBoxLayout,
     QHeaderView,
@@ -50,7 +51,7 @@ from smartclock_device.models.diagnostic_log_entry import DiagnosticLogEntry
 from smartclock_device.models.status_register_map import faults_with_no_health_label
 from smartclock_device.parsing import gps_engine
 from smartclock_device.parsing.diagnostic_log import parse_all
-from smartclock_device.parsing.scalars import parse_integer
+from smartclock_device.parsing.scalars import parse_boolean, parse_integer
 from smartclock_device.transport.transaction import Transaction
 from smartclock_monitor.platform.paths import log_directory
 from smartclock_monitor.services.commands import CommandRunner
@@ -110,6 +111,7 @@ class DiagnosticsPage(Page):
         layout.addWidget(self._build_conditions())
         layout.addWidget(self._build_queue())
         layout.addWidget(self._build_lifetime())
+        layout.addWidget(self._build_front_panel())
         layout.addWidget(self._build_gps_engine())
         layout.addWidget(self._build_application_log())
         layout.addWidget(self._build_experimental())
@@ -473,6 +475,51 @@ class DiagnosticsPage(Page):
         del reading
         self._retune()
 
+    def _build_front_panel(self) -> QWidget:
+        """§10.9's Front panel card: a toggle for the Active lamp.
+
+        **The manual half of the lamp feature.** It is the escape hatch for a lamp left lit by an
+        application that closed unexpectedly, and the only way to exercise `:LED:ACTive` at all
+        until something drives it automatically (#123).
+
+        Tier S, so no confirmation — §8.2's ruling is that the command changes no receiver
+        behaviour, and a confirmation would be asking permission to change nothing. §9.11's other
+        half follows: a Safe setter gets no success bar, so **the toggle's own position is the
+        feedback**, and a write that fails puts it back.
+        """
+        holder, holder_layout = card("Front panel")
+        self._lamp = QCheckBox("Active indicator")
+        self._lamp.setAccessibleName("The receiver's front-panel Active indicator")
+        self._lamp.clicked.connect(self._write_lamp)
+        holder_layout.addWidget(self._lamp)
+        self._lamp_note = label(
+            "The receiver takes about a second to answer a lamp write, so the switch settles a "
+            "moment after you click it.",
+            "tertiary",
+        )
+        self._lamp_note.setWordWrap(True)
+        holder_layout.addWidget(self._lamp_note)
+        return holder
+
+    def _write_lamp(self, wanted: bool) -> None:
+        """Write the lamp, and put the switch back if the receiver does not take it."""
+        runner = self._runner
+        if runner is None or not runner.is_connected:
+            self._lamp.setChecked(not wanted)
+            return
+        runner.run(
+            [(Capability.SET_ACTIVE_LAMP, "ON" if wanted else "OFF")],
+            lambda outcomes: self._absorb_lamp_write(outcomes, wanted),
+        )
+
+    def _absorb_lamp_write(self, outcomes: Sequence[CommandOutcome], wanted: bool) -> None:
+        wrote = next((o for o in outcomes if o.capability is Capability.SET_ACTIVE_LAMP), None)
+        if wrote is None or wrote.transaction is None or not wrote.transaction.succeeded:
+            # **Back where it was, and a sentence saying why.** A switch that stayed where a user
+            # put it while the lamp did not move would be the one lie this card can tell.
+            self._lamp.setChecked(not wanted)
+            self._lamp_note.setText("The receiver did not take that; the switch is back as it was.")
+
     def _build_gps_engine(self) -> QWidget:
         """§10.9's third card: what GPS receiver is inside the instrument.
 
@@ -517,6 +564,8 @@ class DiagnosticsPage(Page):
         gate(self._clear_log, driver, Capability.CLEAR_DIAGNOSTIC_LOG)
         gate(self._refresh_log, driver, Capability.DIAGNOSTIC_LOG)
         gate(self._read_errors, driver, Capability.ERROR_QUEUE)
+        if not gate(self._lamp, driver, Capability.ACTIVE_LAMP, Capability.SET_ACTIVE_LAMP):
+            self._lamp_note.setText(explain(driver))
 
         if driver is not None and driver.command(Capability.OPERATION_CONDITION) is None:
             self._decline_conditions()
@@ -556,6 +605,7 @@ class DiagnosticsPage(Page):
                 (Capability.GPS_ENGINE, None),
                 (Capability.OPERATION_CONDITION, None),
                 (Capability.HARDWARE_CONDITION, None),
+                (Capability.ACTIVE_LAMP, None),
             ],
             self._absorb,
         )
@@ -577,6 +627,16 @@ class DiagnosticsPage(Page):
         # §11.1: an unread or unparseable answer renders a dash rather than "0 h" — a zero being a
         # claim about the hardware where a dash is a statement about the read.
         self._lifetime.setText(DASH if value is None else f"{value:,} h")
+
+        lamp = answered.get(Capability.ACTIVE_LAMP)
+        if lamp is not None and lamp.transaction is not None and lamp.transaction.succeeded:
+            lit = parse_boolean(lamp.transaction.first_line)
+            if lit is not None:
+                # Without the guard the click handler fires on every refresh and writes the lamp
+                # back to where it already is, once a second, for ever.
+                self._lamp.blockSignals(True)
+                self._lamp.setChecked(lit)
+                self._lamp.blockSignals(False)
 
         self._absorb_conditions(answered)
 
@@ -793,6 +853,14 @@ class DiagnosticsPage(Page):
     @property
     def test_result(self) -> SeverityPill:
         return self._test_result
+
+    @property
+    def lamp_switch(self) -> QCheckBox:
+        return self._lamp
+
+    @property
+    def lamp_note_text(self) -> str:
+        return self._lamp_note.text()
 
     @property
     def log_condition(self) -> tuple[Severity, str]:

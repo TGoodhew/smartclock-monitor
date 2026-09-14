@@ -36,7 +36,7 @@ _SECTION: Final = "### 8.2 Tier S"
 #: trailing ``?``. Parameters are written ``<PRN>`` beside the mnemonic and are not part of it.
 _MNEMONIC: Final = re.compile(r"^[:*][A-Za-z:*]+\??$")
 
-#: The two entries in §8.2 that are **not queries**, each excluded for a stated reason rather than
+#: The one entry in §8.2 that is **not catalogued**, excluded for a stated reason rather than
 #: because the gate was inconvenient.
 #:
 #: ``*TST?`` is a query in spelling and a self-test in effect. §10.9 measured what running one costs
@@ -45,9 +45,8 @@ _MNEMONIC: Final = re.compile(r"^[:*][A-Za-z:*]+\??$")
 #: warning about the same operation, and cataloguing it as Safe would put an unconfirmed way to
 #: unlock the receiver in the console beside the confirmed one. **Surfaced, not resolved** (#120).
 #:
-#: ``:LED:ACTive`` is §8.2's Safe *setter*, which is a different batch of work with a different
-#: question attached (what, if anything, should drive the lamps).
-_NOT_QUERIES: Final[frozenset[str]] = frozenset({"*TST?", ":LED:ACTive"})
+#: ``:LED:ACTive`` was here too until #118's second batch catalogued it.
+_NOT_QUERIES: Final[frozenset[str]] = frozenset({"*TST?"})
 
 
 def inventory() -> list[str]:

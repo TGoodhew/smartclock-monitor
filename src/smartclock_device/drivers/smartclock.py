@@ -252,6 +252,8 @@ _BY_CAPABILITY: Final[dict[Capability, ScpiCommand]] = {
     Capability.ERROR_QUEUE: catalog.ERROR_QUEUE,
     Capability.HARDWARE_CONDITION: catalog.HARDWARE_CONDITION,
     Capability.OPERATION_CONDITION: catalog.OPERATION_CONDITION,
+    Capability.ACTIVE_LAMP: catalog.ACTIVE_LAMP,
+    Capability.SET_ACTIVE_LAMP: catalog.SET_ACTIVE_LAMP,
     Capability.TIME_CODE_FORMAT: catalog.TIME_CODE_FORMAT,
     Capability.TIME_CODE: catalog.TIME_CODE,
     Capability.LEAP_ACCUMULATED: catalog.LEAP_ACCUMULATED,
