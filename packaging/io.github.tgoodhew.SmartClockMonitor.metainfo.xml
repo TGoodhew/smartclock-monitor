@@ -62,6 +62,17 @@
   </recommends>
 
   <releases>
+    <release version="1.2.3" date="2026-09-14">
+      <description>
+        <p>
+          Fixes a receiver that is not an HP SmartClock producing no readings at all: the poll
+          asked one family's questions of another, and dropped the link when they went unanswered.
+          Auto-detect now tries documented settings and the common framing before the spellings
+          nothing sources. The log says why a link was lost, and a GNSS talker reports the
+          satellites it is using.
+        </p>
+      </description>
+    </release>
     <release version="1.2.2" date="2026-09-14">
       <description>
         <p>

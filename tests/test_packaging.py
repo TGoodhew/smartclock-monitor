@@ -13,15 +13,33 @@ identifiers cannot drift even where the tools cannot judge the files.
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import shutil
 import subprocess
 import sys
 import xml.etree.ElementTree as ElementTree
 from pathlib import Path
+from types import ModuleType
 from typing import Final
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _by_path(name: str, path: Path) -> ModuleType:
+    """Load a module that lives at the project root, which is not on the test path (src layout).
+
+    The same device `test_versioning.py` uses for `hatch_version.py`, and for the same reason. It
+    matters here that the *workflow's* helper is the one imported: the release gate and this test
+    must agree about which entry "newest" means, and two readers of one file is how they stop.
+    """
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 PACKAGING = ROOT / "packaging"
 
 #: The one identifier three files and the running application must agree on.
@@ -345,3 +363,55 @@ def test_the_flatpak_installs_the_pngs_and_not_the_svg() -> None:
 
     assert "packaging/icons/hicolor/" in text
     assert "scalable/apps" not in text
+
+
+# ---- The version a software centre shows (#146) --------------------------------------------------
+
+
+def test_the_newest_release_is_never_behind_the_version_this_tree_builds() -> None:
+    """**The one version surface that is hand-typed**, and the drift that shipped v1.2.1 as 1.0.0.
+
+    Everything else is derived from git by `hatch_version.py` and cannot drift. The metainfo's
+    newest `<release>` is somebody remembering to add an entry, and when they did not the bundle
+    reported `1.0.0` in `flatpak info` and in every software centre — while the wheel, the AppImage
+    and the package version inside it were all correct.
+
+    `test_the_metainfo_carries_what_a_store_needs` asserted an entry *existed* and had *a* version,
+    which a stale entry satisfies. By `CLAUDE.md`'s own standard that is the worse kind of failure:
+    it read as coverage.
+
+    **Never behind, rather than exactly equal**, and the difference is the workflow this has to fit.
+    A release is prepared by bumping the metainfo and the manifest in one commit and tagging that
+    commit — so between the two the file legitimately names a version the tree has not been tagged
+    as yet. Demanding equality here would fail every release preparation there is, which is a gate
+    people would learn to work around. **Behind is the defect**; ahead is a release being cut.
+
+    Exactness belongs at the moment it can be checked, and `release.yml`'s *The metainfo names the
+    release this tag is for* is where the tag exists to compare against.
+    """
+    derived = _by_path("hatch_version", ROOT / "hatch_version.py").__version__
+    newest = _by_path("newest_release", ROOT / "tools" / "newest_release.py").newest_release()
+
+    assert newest is not None, "the metainfo describes no release at all"
+
+    built = tuple(int(part) for part in derived.split(".")[:3])
+    described = tuple(int(part) for part in newest.split("."))
+
+    assert described >= built, (
+        f"the metainfo's newest release is {newest} and this tree builds {derived} — a software "
+        f"centre would show {newest}. Add a <release> entry, newest first."
+    )
+
+
+def test_the_releases_are_newest_first() -> None:
+    """AppStream specifies it and every reader assumes it, including the gate above — which takes
+    the first entry and would happily bless an ancient one at the top of a re-sorted file."""
+    releases = ElementTree.parse(METAINFO).getroot().find("releases")
+    assert releases is not None
+
+    versions = [
+        tuple(int(part) for part in (element.get("version") or "0").split("."))
+        for element in releases
+    ]
+
+    assert versions == sorted(versions, reverse=True), f"not newest-first: {versions}"
