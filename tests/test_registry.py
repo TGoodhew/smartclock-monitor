@@ -14,13 +14,16 @@ import pytest
 
 from conftest import NOW
 from smartclock_device.clock import FixedClock
+from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_device.drivers.nmea import NmeaDriver
 from smartclock_device.drivers.registry import Registry
 from smartclock_device.drivers.smartclock import SmartClockDriver
+from smartclock_device.drivers.uccm.driver import UccmDriver
 from smartclock_device.models.device_identity import DeviceIdentity
 from smartclock_device.transport.fake import FakeTransport
 from smartclock_device.transport.settings import (
     AUTO_DETECT_SEQUENCE,
+    DOCUMENTED_SETTINGS,
     Parity,
     SerialSettings,
     StopBits,
@@ -208,10 +211,18 @@ def test_the_walk_is_the_union_of_every_family_s_rates() -> None:
 
 def test_the_smartclock_still_answers_on_the_first_attempt() -> None:
     """Registration order is priority order, and adding a family must not cost the first one a
-    single probe. Fourteen seconds was what getting this ordering wrong cost last time."""
+    single probe. Fourteen seconds was what getting this ordering wrong cost last time.
+
+    **The two the SmartClock is documented to ship at keep positions 1 and 2**, which is the half
+    of §10.12's ordering that is load-bearing: the Z3805A's factory 9600-8-N-1 and the Z3801A's
+    19200-7-O-1, the latter being exactly what #64's correction moved up from eighth. The banding
+    re-groups the walk behind them; it must never reach over them.
+    """
     walk = a_registry().auto_detect_sequence
 
-    assert walk[: len(AUTO_DETECT_SEQUENCE)] == AUTO_DETECT_SEQUENCE
+    assert walk[:2] == DOCUMENTED_SETTINGS
+    assert str(walk[0]) == "9600-8-N-1"
+    assert str(walk[1]) == "19200-7-O-1"
 
 
 def test_a_shared_combination_is_tried_once_at_the_earlier_position() -> None:
@@ -232,7 +243,7 @@ def test_a_shared_combination_is_tried_once_at_the_earlier_position() -> None:
     assert len(walk) == len(set(walk)), "the union is de-duplicated"
     assert walk.count(shared) == 1
     assert walk.index(shared) == 0, "tried at the earlier family's position, not appended"
-    assert walk[-1] == mine, "and what is new is still added"
+    assert mine in walk, "and what is new is still added"
 
 
 def test_a_family_with_no_rates_of_its_own_lengthens_nothing() -> None:
@@ -241,4 +252,143 @@ def test_a_family_with_no_rates_of_its_own_lengthens_nothing() -> None:
     tick = FixedClock(NOW)
     with_talker = Registry([SmartClockDriver(clock=tick), TalkerDriver()])
 
-    assert with_talker.auto_detect_sequence == AUTO_DETECT_SEQUENCE
+    assert sorted(map(str, with_talker.auto_detect_sequence)) == sorted(
+        map(str, AUTO_DETECT_SEQUENCE)
+    ), "a family with no rates added or removed one"
+    assert len(with_talker.auto_detect_sequence) == len(AUTO_DETECT_SEQUENCE)
+
+
+# ---- The three bands the walk is ordered in ----------------------------------------------------
+
+
+def test_the_walk_is_ordered_documented_then_8n1_then_the_rest() -> None:
+    """The whole ordering, spelled out, because every position in it was argued for.
+
+    §10.12 appends each family's sequence whole. With three families registered that put the
+    SmartClock's three **unsourced** 7-bit spellings at 3, 4 and 8 — ahead of NMEA 0183's own
+    4800, which a talker is specified to use. A talker was found on the ninth attempt, behind four
+    combinations no talker has ever run at, which is about fourteen seconds at §7.2's 2 s probe.
+    """
+    tick = FixedClock(NOW)
+    walk = Registry(
+        [SmartClockDriver(clock=tick), NmeaDriver(clock=tick), UccmDriver(clock=tick)]
+    ).auto_detect_sequence
+
+    assert [str(candidate) for candidate in walk] == [
+        # Band 1 — documented. A manual's factory default, a standard's rate, a measured figure.
+        "9600-8-N-1",  # Z3805A, factory
+        "19200-7-O-1",  # Z3801A, factory — #64's correction, still second
+        "4800-8-N-1",  # NMEA 0183
+        "38400-8-N-1",  # NMEA 0183, high speed
+        "57600-8-N-1",  # UCCM-P, measured (#470)
+        # Band 2 — 8-N-1. A rate is cheap to be wrong about; framing is near-universal.
+        "19200-8-N-1",
+        "2400-8-N-1",
+        "1200-8-N-1",
+        # Band 3 — the rest, which is where the unsourced spellings end up.
+        "19200-7-E-1",
+        "9600-7-E-1",
+        "9600-7-O-1",
+    ]
+
+
+def test_a_documented_rate_never_sits_behind_an_unsourced_one() -> None:
+    """The property the bands exist for, stated without naming a single combination.
+
+    The list above would still pass if somebody re-derived it from a walk that had drifted. This
+    one fails on the drift itself, and it is the sentence the change was made to make true.
+    """
+    tick = FixedClock(NOW)
+    drivers: list[ReceiverDriver] = [
+        SmartClockDriver(clock=tick),
+        NmeaDriver(clock=tick),
+        UccmDriver(clock=tick),
+    ]
+    walk = Registry(drivers).auto_detect_sequence
+    documented = {candidate for driver in drivers for candidate in driver.documented_settings}
+
+    last_documented = max(index for index, c in enumerate(walk) if c in documented)
+    first_unsourced = min(index for index, c in enumerate(walk) if c not in documented)
+
+    assert last_documented < first_unsourced, (
+        "an unsourced combination is being probed before a documented one"
+    )
+
+
+def test_eight_n_one_is_tried_before_any_other_framing() -> None:
+    """The user-facing half: every rate at the near-universal framing, before any 7-bit or parity
+    variant is tried at all."""
+    tick = FixedClock(NOW)
+    walk = Registry(
+        [SmartClockDriver(clock=tick), NmeaDriver(clock=tick), UccmDriver(clock=tick)]
+    ).auto_detect_sequence
+
+    def is_8n1(candidate: SerialSettings) -> bool:
+        return (
+            candidate.data_bits == 8
+            and candidate.parity is Parity.NONE
+            and candidate.stop_bits is StopBits.ONE
+        )
+
+    others = [index for index, c in enumerate(walk) if not is_8n1(c)]
+    eights = [index for index, c in enumerate(walk) if is_8n1(c)]
+
+    # The one deliberate exception, and the only one: the Z3801A's documented factory setting.
+    exception = walk.index(SerialSettings(19200, 7, Parity.ODD, StopBits.ONE))
+    assert max(eights) < min(index for index in others if index != exception)
+
+
+def test_every_documented_combination_is_one_the_walk_actually_tries() -> None:
+    """A `documented_settings` entry that is not in `auto_detect_sequence` is never probed.
+
+    It would sort nothing, change nothing and look like a claim that had been made — the quietest
+    way for this seam to stop meaning anything. Held against every real family.
+    """
+    tick = FixedClock(NOW)
+    for driver in (SmartClockDriver(clock=tick), NmeaDriver(clock=tick), UccmDriver(clock=tick)):
+        extra = set(driver.documented_settings) - set(driver.auto_detect_sequence)
+        assert not extra, f"{driver.name} documents {extra}, which its walk never tries"
+
+
+# ---- Claiming a talker on the second listen ----------------------------------------------------
+
+
+def test_a_talker_is_claimed_from_what_the_probe_heard_when_the_banner_was_not_enough() -> None:
+    """The claim is a race against the probe window, and it used to lose about half of them.
+
+    `overhear` needs two recognised sentences including a fix sentence. A 1 Hz talker whose burst
+    straddles the edge of the 2 s window delivers one clean cycle or none — measured on a VK-162,
+    four connections at identical settings claimed the link twice, and the two that missed adopted
+    the fallback family, asked SCPI of a device with no command parser and dropped the link.
+
+    So the question is asked again on what the ``*IDN?`` probe heard. **It costs nothing**: the
+    probe has just spent its own timeout and a talker does not stop talking while it elapses.
+
+    Here the banner carries one sentence — not enough — and the rest arrives during the probe.
+    """
+    talker = NmeaDriver(clock=clock())
+    registry = Registry([smartclock(), talker])
+
+    async def run() -> DeviceSession:
+        transport = FakeTransport(
+            {
+                "*CLS": "",
+                # What a talker "answers" `*IDN?` with: more of the stream, because it has no
+                # command parser and was never listening for a question.
+                "*IDN?": (
+                    "$GPGGA,000821.00,4731.31126,N,12212.37609,W,2,12,0.73,29.2,M,-18.8,M,,0000*5B"
+                    "\r\n$GPGSA,A,3,10,27,32,48,23,08,,,,,,,4.03,1.44,3.76*06\r\n"
+                ),
+            },
+            # One sentence, and not a fix sentence: `overhear` cannot claim on this.
+            banner="$GPGSA,A,3,10,27,32,48,23,08,,,,,,,4.03,1.44,3.76*06\r\n",
+            prompt="",
+        )
+        session = DeviceSession(transport, registry.drivers[0], clock(), registry=registry)
+        await session.open(probe=PROBE)
+        return session
+
+    session = asyncio.run(run())
+
+    assert session.driver is talker, "the banner alone lost the claim and nothing asked again"
+    assert session.identity is None, "a talker has no identity, and none may be invented for it"
