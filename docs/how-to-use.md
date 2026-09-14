@@ -341,7 +341,7 @@ corrections it had learned, and its time error grows from there.
 
 #### Diagnostics — `Ctrl+6`
 
-![The Diagnostics page: a Self test card with an ALL subsystem picker and a Run test button; a Diagnostic log card with a filter box, Refresh and Clear and a Log has room pill; a Hardware conditions card; an Error queue card with Read errors; a Lifetime card; a GPS receiver card; a Front panel card with an Active indicator switch; an Application log card naming the log folder with a Show log folder button; and an Undocumented read-only queries card listing six SCPI queries each with a Run button](images/how-to-use/page-diagnostics.png)
+![The Diagnostics page: a Self test card with an ALL subsystem picker and a Run test button; a Diagnostic log card with a filter box, Refresh and Clear and a Log has room pill; a Hardware conditions card; an Error queue card with Read errors; a Lifetime card; a GPS receiver card; a Front panel card with Active indicator and Enabled indicator switches; an Application log card naming the log folder with a Show log folder button; and an Undocumented read-only queries card listing six SCPI queries each with a Run button](images/how-to-use/page-diagnostics.png)
 
 - **Self test** — pick one **subsystem** or `ALL` and press **Run test**, which names what it is
   about to do because the receiver drops what it is doing while it tests itself. Testing one
@@ -377,12 +377,14 @@ corrections it had learned, and its time error grows from there.
   is the module's. Fields the receiver leaves blank are not shown; on the bench unit here, seven of
   the ten come back empty, the serial number among them. A receiver with no separate engine inside
   it says so rather than showing an empty card.
-- **Front panel** — a switch for the receiver's **Active indicator**, one of the two lamps on its
-  front panel that software can drive. Nothing drives it automatically yet, so this is both the
-  way to use it and the way to turn it off again if something else left it lit. The receiver takes
-  about a second to answer a lamp write, so the switch settles a moment after you click it — and
-  if the receiver refuses the write, the switch goes back where it was rather than telling you
-  something happened.
+- **Front panel** — a switch for each of the receiver's two software-driven lamps, **Active
+  indicator** and **Enabled indicator**. Use them to set a lamp by hand, or to put one back that
+  something else left lit. The receiver takes about a second to answer a lamp write, so a switch
+  settles a moment after you click it — and if the receiver refuses the write, the switch goes back
+  where it was rather than telling you something happened.
+
+  With **Drive the front-panel lamps** on in Settings, the application drives both: see there for
+  what each one then means.
 - **Application log** — what the application saw: the port opening, the settings auto-detect
   settled on, every connection change, and the receiver's mode and satellite count whenever they
   move. The card names the folder and **Show log folder** opens it in the desktop's file manager.
@@ -454,7 +456,7 @@ finding out why a summary bit is set; most people never need it.
 
 #### Settings — `Ctrl+9`
 
-![The Settings page: an Advanced card with Advanced Console and Undocumented read-only queries switches, each with a paragraph; an Appearance card with a "Keep the window above others" switch; a Quitting card with an Exit button; and a card headed "Not here, and why"](images/how-to-use/page-settings.png)
+![The Settings page: an Advanced card with Advanced Console, Undocumented read-only queries and Drive the front-panel lamps switches, each with a paragraph; an Appearance card with a "Keep the window above others" switch; a Quitting card with an Exit button; and a card headed "Not here, and why"](images/how-to-use/page-settings.png)
 
 Every setting has its explanation next to it on the page; this is the short version. All three
 switches are off by default.
@@ -466,6 +468,16 @@ switches are off by default.
     page uses.
   - **Undocumented read-only queries** makes the six read-only queries appear on the Diagnostics
     page. Nothing can be typed, and no setting can be changed through them.
+  - **Drive the front-panel lamps** lights the receiver's **Enabled** lamp while this application
+    is connected, and makes its **Active** lamp follow the lock state — lit when locked to GPS, out
+    when not. In front of a rack that tells you *which unit the software is attached to* and
+    *whether that unit is locked*, which one lamp cannot say.
+
+    It is **the only setting that makes the application change something on the receiver by
+    itself**, which is why it is off until you ask for it. Both lamps are read before they are
+    touched and put back exactly as they were found when you disconnect. An unexpected disconnect —
+    a pulled cable, a crash — leaves them as they are, because there is no wire left to put them
+    back over; the Diagnostics page's **Front panel** card is how you fix that by hand.
 - **Appearance** — **Keep the window above others** makes the main window stay above every other
   window, and is remembered across restarts. The theme is chosen on the main window, not here.
 - **Quitting** — **Exit** quits the application outright. There is no confirmation: polling is not

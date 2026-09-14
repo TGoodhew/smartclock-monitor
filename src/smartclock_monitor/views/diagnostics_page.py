@@ -512,9 +512,16 @@ class DiagnosticsPage(Page):
         self._lamp.setAccessibleName("The receiver's front-panel Active indicator")
         self._lamp.clicked.connect(self._write_lamp)
         holder_layout.addWidget(self._lamp)
+        # The second of the panel's two user-definable lamps (#123). Both are here because both can
+        # be left lit by an application that closed unexpectedly, and this is the way back.
+        self._enabled_lamp = QCheckBox("Enabled indicator")
+        self._enabled_lamp.setAccessibleName("The receiver's front-panel Enabled indicator")
+        self._enabled_lamp.clicked.connect(self._write_enabled_lamp)
+        holder_layout.addWidget(self._enabled_lamp)
         self._lamp_note = label(
-            "The receiver takes about a second to answer a lamp write, so the switch settles a "
-            "moment after you click it.",
+            "The receiver takes about a second to answer a lamp write, so a switch settles a "
+            "moment after you click it. With *Drive the front-panel lamps* on in Settings, the "
+            "application drives both and these put them back by hand.",
             "tertiary",
         )
         self._lamp_note.setWordWrap(True)
@@ -532,13 +539,32 @@ class DiagnosticsPage(Page):
             lambda outcomes: self._absorb_lamp_write(outcomes, wanted),
         )
 
-    def _absorb_lamp_write(self, outcomes: Sequence[CommandOutcome], wanted: bool) -> None:
-        wrote = next((o for o in outcomes if o.capability is Capability.SET_ACTIVE_LAMP), None)
-        if wrote is None or wrote.transaction is None or not wrote.transaction.succeeded:
-            # **Back where it was, and a sentence saying why.** A switch that stayed where a user
-            # put it while the lamp did not move would be the one lie this card can tell.
-            self._lamp.setChecked(not wanted)
-            self._lamp_note.setText("The receiver did not take that; the switch is back as it was.")
+    def _write_enabled_lamp(self, wanted: bool) -> None:
+        runner = self._runner
+        if runner is None or not runner.is_connected:
+            self._enabled_lamp.setChecked(not wanted)
+            return
+        runner.run(
+            [(Capability.SET_ENABLED_LAMP, "ON" if wanted else "OFF")],
+            lambda outcomes: self._absorb_lamp_write(
+                outcomes, wanted, Capability.SET_ENABLED_LAMP, self._enabled_lamp
+            ),
+        )
+
+    def _absorb_lamp_write(
+        self,
+        outcomes: Sequence[CommandOutcome],
+        wanted: bool,
+        capability: Capability = Capability.SET_ACTIVE_LAMP,
+        switch: QCheckBox | None = None,
+    ) -> None:
+        wrote = next((o for o in outcomes if o.capability is capability), None)
+        if wrote is not None and wrote.transaction is not None and wrote.transaction.succeeded:
+            return
+        # **Back where it was, and a sentence saying why.** A switch that stayed where a user put
+        # it while the lamp did not move would be the one lie this card can tell.
+        (switch if switch is not None else self._lamp).setChecked(not wanted)
+        self._lamp_note.setText("The receiver did not take that; the switch is back as it was.")
 
     def _build_gps_engine(self) -> QWidget:
         """§10.9's third card: what GPS receiver is inside the instrument.
@@ -584,7 +610,9 @@ class DiagnosticsPage(Page):
         gate(self._clear_log, driver, Capability.CLEAR_DIAGNOSTIC_LOG)
         gate(self._refresh_log, driver, Capability.DIAGNOSTIC_LOG)
         gate(self._read_errors, driver, Capability.ERROR_QUEUE)
-        if not gate(self._lamp, driver, Capability.ACTIVE_LAMP, Capability.SET_ACTIVE_LAMP):
+        lit = gate(self._lamp, driver, Capability.ACTIVE_LAMP, Capability.SET_ACTIVE_LAMP)
+        gate(self._enabled_lamp, driver, Capability.ENABLED_LAMP, Capability.SET_ENABLED_LAMP)
+        if not lit:
             self._lamp_note.setText(explain(driver))
 
         if driver is not None and driver.command(Capability.OPERATION_CONDITION) is None:
@@ -626,6 +654,7 @@ class DiagnosticsPage(Page):
                 (Capability.OPERATION_CONDITION, None),
                 (Capability.HARDWARE_CONDITION, None),
                 (Capability.ACTIVE_LAMP, None),
+                (Capability.ENABLED_LAMP, None),
             ],
             self._absorb,
         )
@@ -648,15 +677,20 @@ class DiagnosticsPage(Page):
         # claim about the hardware where a dash is a statement about the read.
         self._lifetime.setText(DASH if value is None else f"{value:,} h")
 
-        lamp = answered.get(Capability.ACTIVE_LAMP)
-        if lamp is not None and lamp.transaction is not None and lamp.transaction.succeeded:
+        for capability, switch in (
+            (Capability.ACTIVE_LAMP, self._lamp),
+            (Capability.ENABLED_LAMP, self._enabled_lamp),
+        ):
+            lamp = answered.get(capability)
+            if lamp is None or lamp.transaction is None or not lamp.transaction.succeeded:
+                continue
             lit = parse_boolean(lamp.transaction.first_line)
             if lit is not None:
                 # Without the guard the click handler fires on every refresh and writes the lamp
                 # back to where it already is, once a second, for ever.
-                self._lamp.blockSignals(True)
-                self._lamp.setChecked(lit)
-                self._lamp.blockSignals(False)
+                switch.blockSignals(True)
+                switch.setChecked(lit)
+                switch.blockSignals(False)
 
         self._absorb_conditions(answered)
 
@@ -877,6 +911,10 @@ class DiagnosticsPage(Page):
     @property
     def lamp_switch(self) -> QCheckBox:
         return self._lamp
+
+    @property
+    def enabled_lamp_switch(self) -> QCheckBox:
+        return self._enabled_lamp
 
     @property
     def lamp_note_text(self) -> str:

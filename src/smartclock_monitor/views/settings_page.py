@@ -95,6 +95,17 @@ class SettingsPage(Page):
             "No setting is changed.",
             holder_layout,
         )
+        # §10.9: **the only setting that makes the application change something on the receiver by
+        # itself**, which is why the caption says so in those words and why it is off by default.
+        self._lamps = self._switch(
+            "Drive the front-panel lamps",
+            "Lights the receiver's Enabled lamp while this application is connected, and makes its "
+            "Active lamp follow the lock state. It is the only setting that makes the application "
+            "change something on the receiver by itself. Both lamps are read first and put back as "
+            "they were found when you disconnect; an unexpected disconnect leaves them as they "
+            "are, and the Diagnostics page can put them right.",
+            holder_layout,
+        )
         return holder
 
     def _build_quitting(self) -> QFrame:
@@ -182,6 +193,7 @@ class SettingsPage(Page):
             self._console.setChecked(self._preferences.advanced_console)
             self._undocumented.setChecked(self._preferences.undocumented_queries)
             self._on_top.setChecked(self._preferences.always_on_top)
+            self._lamps.setChecked(self._preferences.drive_the_lamps)
         finally:
             self._settling = False
 
@@ -196,6 +208,7 @@ class SettingsPage(Page):
             advanced_console=self._console.isChecked(),
             undocumented_queries=self._undocumented.isChecked(),
             always_on_top=self._on_top.isChecked(),
+            drive_the_lamps=self._lamps.isChecked(),
         )
         if self._on_change is not None:
             self._on_change(self._preferences)
@@ -212,6 +225,10 @@ class SettingsPage(Page):
     @property
     def undocumented_switch(self) -> QCheckBox:
         return self._undocumented
+
+    @property
+    def lamps_switch(self) -> QCheckBox:
+        return self._lamps
 
     @property
     def on_top_switch(self) -> QCheckBox:

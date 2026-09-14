@@ -35,6 +35,7 @@ from smartclock_device.models.receiver_status import (  # noqa: E402
     SmartClockMode,
 )
 from smartclock_device.transport.fake import FakeTransport  # noqa: E402
+from smartclock_monitor.services.lamps import Lamps  # noqa: E402
 from smartclock_monitor.services.logging import ChangeLog  # noqa: E402
 from smartclock_monitor.services.polling import Reading  # noqa: E402
 from smartclock_monitor.services.session import DeviceSession  # noqa: E402
@@ -486,7 +487,7 @@ def test_announcing_a_session_wipes_the_previous_link_s_readings(
     )
     assert window.readouts["efc"].value_text != DASH
 
-    announce = _announce(window, ChangeLog(), FixedClock(NOW), lambda: False)
+    announce = _announce(window, ChangeLog(), FixedClock(NOW), lambda: False, Lamps())
     announce(_a_session())
 
     assert window.readouts["efc"].value_text == DASH, (
