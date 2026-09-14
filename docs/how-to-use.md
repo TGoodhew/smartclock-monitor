@@ -294,6 +294,12 @@ corrections it had learned, and its time error grows from there.
 - **Current state** — whether it is in holdover, the **predicted 24 h uncertainty**, the **present
   time error**, how long it has been in holdover, and — while it is *recovering* — the **reason** it
   is still waiting.
+
+  **Duration** is filled two ways. While the receiver is holding, the status screen carries it and
+  that is what you see. Locked, the screen says nothing about it, so the page asks the receiver
+  directly — and the receiver answers with the *last* holdover it had, which the row labels as
+  such. A figure with no label would read as the holdover you are in rather than the one you are
+  out of.
 - **Thresholds** — there are two here, they measure different things, and **only the second can be
   changed**. The page says so beside each; this is the short version.
 
@@ -380,6 +386,13 @@ corrections it had learned, and its time error grows from there.
   Settings. Six queries that exist in the receiver's command parser but not in its published
   manual, each run only when you press **Run**. They may return errors or nonsense; none of them
   changes a setting, and nothing can be typed here.
+
+  Two answers get words instead of a code, because they mean different things. *This receiver does
+  not have this query* is the receiver saying it has never heard of the mnemonic — the button then
+  stops offering, since the answer will not change. *The receiver has this query and no data for it
+  yet* is the opposite: the query is real and there is nothing to report through it at the moment,
+  so the button stays and asking again later may answer. Anything else is shown in the receiver's
+  own words.
 
 #### Status Registers — `Ctrl+7`
 
