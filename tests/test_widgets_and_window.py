@@ -533,3 +533,57 @@ def _a_session() -> DeviceSession:
     """
     clock = FixedClock(NOW)
     return DeviceSession(FakeTransport({}), SmartClockDriver(clock=clock), clock)
+
+
+def test_the_reason_a_link_was_lost_reaches_the_log(application: QApplication) -> None:
+    """The disconnect line said `"the link went"` — a constant, and a sentence missing its ending.
+
+    The session records why in `last_fault`: §9.11's one actionable sentence, naming the port and
+    what happened to it. `_announce` discarded it and logged the constant instead, so an unplugged
+    adapter, a port another program had open and a receiver that had simply stopped answering all
+    produced the same line — in the log #127 added for somebody looking for a fault.
+
+    Gated on the production callback rather than on `ChangeLog.disconnected`, because the method
+    was never the broken half.
+    """
+    del application
+    from smartclock_monitor.__main__ import _announce
+    from smartclock_monitor.views.main_window import MainWindow
+
+    said: list[str] = []
+
+    class Spy(ChangeLog):
+        def disconnected(self, reason: str | None) -> None:
+            said.append(reason or "<nothing>")
+
+    session = _a_session()
+    session._last_fault = "/dev/ttyUSB0 was disconnected."
+
+    announce = _announce(MainWindow(Theme.DARK), Spy(), FixedClock(NOW), lambda: False, Lamps())
+    announce(session)
+    announce(None)
+
+    assert said == ["/dev/ttyUSB0 was disconnected."], (
+        "the log was told nothing about why the link went"
+    )
+
+
+def test_a_link_lost_before_any_session_was_seen_says_so_without_inventing_a_cause(
+    application: QApplication,
+) -> None:
+    """`None` rather than a guess. A connect that never produced a session has no fault to report,
+    and `ChangeLog.disconnected` is what turns that into a whole sentence."""
+    del application
+    from smartclock_monitor.__main__ import _announce
+    from smartclock_monitor.views.main_window import MainWindow
+
+    said: list[str | None] = []
+
+    class Spy(ChangeLog):
+        def disconnected(self, reason: str | None) -> None:
+            said.append(reason)
+
+    announce = _announce(MainWindow(Theme.DARK), Spy(), FixedClock(NOW), lambda: False, Lamps())
+    announce(None)
+
+    assert said == [None]

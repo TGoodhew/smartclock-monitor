@@ -422,6 +422,13 @@ def _announce(
 
     assert isinstance(window, MainWindow)
 
+    #: The session that was live, kept for exactly as long as it takes to say why it is not.
+    #:
+    #: The supervisor announces ``None`` *before* closing the session, so the one that just
+    #: ended is still here to be asked — and `DeviceSession.last_fault` is "the most recent
+    #: link failure, in words a user can act on", which is the sentence this line carries.
+    last: list[DeviceSession] = []
+
     def announce(session: DeviceSession | None) -> None:
         if session is None:
             window.set_command_runner(None)
@@ -434,7 +441,13 @@ def _announce(
             if stopped_by_user():
                 changes.user_disconnected()
             else:
-                changes.disconnected("the link went")
+                # **Why, where the session knows.** This read `"the link went"` — a sentence
+                # with its ending missing, logged identically for an unplugged adapter, a port
+                # somebody else had open and a receiver that had simply stopped answering.
+                # #127's log is read by somebody looking for a fault, and it was the one line
+                # that named none.
+                changes.disconnected(last[-1].last_fault if last else None)
+            last.clear()
             return
 
         # #61: the readings on screen belong to the link that just ended. Connect to a second
@@ -448,6 +461,9 @@ def _announce(
         # tolerable: the link went, and what the receiver is doing now is exactly what nothing
         # here knows. Marking a *held* reading stale is the other half, and is #61's later part.
         window.show_reading(Reading.nothing_known(clock.utc_now()))
+
+        last.clear()
+        last.append(session)
 
         identity = session.identity
         named = identity.model if identity is not None else "receiver"
