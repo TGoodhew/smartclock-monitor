@@ -141,9 +141,14 @@ jobs:
           flatpak-builder --user --force-clean --disable-rofiles-fuse \
             --repo=repo build-dir \
             packaging/flatpak/io.github.tgoodhew.SmartClockMonitor.yml || {
-              echo '::group::appstreamcli issue report'
-              find build-dir .flatpak-builder -name '*.yml' -path '*issues*' -print -exec cat {} \; 2>/dev/null
-              find build-dir -name 'issues*' -print -exec cat {} \; 2>/dev/null
+              echo '::group::what the build installed'
+              find build-dir/files/share -maxdepth 4 \( -name '*.desktop' -o -name '*.xml' \
+                -o -name '*.svg' \) -printf '%M %s %p\n'
+              echo '::endgroup::'
+              echo '::group::appstreamcli compose, by hand and verbose'
+              appstreamcli compose --verbose --origin=flatpak --prefix=/ \
+                --result-root=/tmp/ascr --data-dir=/tmp/ascr/xml --icons-dir=/tmp/ascr/icons \
+                --components=io.github.tgoodhew.SmartClockMonitor build-dir/files || true
               echo '::endgroup::'
               exit 1
             }
