@@ -18,6 +18,8 @@ from __future__ import annotations
 from enum import Enum
 from typing import Final
 
+from smartclock_device.models.receiver_status import SmartClockMode
+
 #: Words that are not words. Kept upper-case wherever they appear.
 #:
 #: Every one is either the receiver's own vocabulary or the specification's: §7.4's GPS, §10.14's
@@ -55,3 +57,30 @@ def humanise_name(name: str) -> str:
         else:
             rendered.append(word.capitalize())
     return " ".join(rendered)
+
+
+#: How every surface words a receiver's mode (#99).
+#:
+#: **One mapping, because two surfaces showing one state in two words is what this fixes.** The
+#: main window's pill said *Locked to GPS* and §10.4's Overview card said *Locked* — the card used
+#: `humanise`, which renders the enum's own name, and the enum is named for the protocol rather
+#: than for a reader.
+#:
+#: The guide decides the vocabulary rather than the code: `how-to-use.md` is the `F1` help and uses
+#: *Locked to GPS* six times, *Powering up* twice and *Recovering* once, and none of `humanise`'s
+#: renderings — *Locked*, *Power up*, *Recovery* — appears in it anywhere. A user who reads the
+#: help and then looks at the page had to guess the two were the same state.
+MODE_WORDS: Final[dict[SmartClockMode, str]] = {
+    SmartClockMode.LOCKED: "Locked to GPS",
+    SmartClockMode.RECOVERY: "Recovering",
+    SmartClockMode.HOLDOVER: "Holdover",
+    SmartClockMode.POWER_UP: "Powering up",
+    SmartClockMode.UNKNOWN: "Unknown",
+}
+
+
+def mode_words(mode: SmartClockMode | None) -> str:
+    """What to call a mode, wherever it is shown. ``None`` is §11.1's dash."""
+    if mode is None:
+        return "—"
+    return MODE_WORDS.get(mode, "Unknown")
