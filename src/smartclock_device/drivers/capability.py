@@ -178,6 +178,12 @@ class ReceiverReading(Enum):
     #: §10.4 and §10.9's health monitor, and its per-subsystem items.
     HEALTH_MONITOR = "the health monitor"
 
+    #: The hardware faults §10.4's health block has no label for (#112). A separate
+    #: reading from the health monitor itself, because a family can have one and not
+    #: the other: the block is printed on a status screen and this comes from a
+    #: register.
+    HARDWARE_FAULTS = "hardware faults the health monitor cannot name"
+
     #: §10.10's status registers and their masks.
     STATUS_REGISTERS = "the status registers"
 
@@ -258,6 +264,7 @@ STATUS_FIELDS: dict[ReceiverReading, tuple[str, ...]] = {
     ReceiverReading.OUTPUT_VALIDITY: ("outputs",),
     ReceiverReading.LEAP_SECOND: ("leap_pending",),
     ReceiverReading.HEALTH_MONITOR: ("health_ok", "health_items"),
+    ReceiverReading.HARDWARE_FAULTS: ("unreported_faults",),
     ReceiverReading.STATUS_SCREEN: ("parse_warnings",),
     ReceiverReading.ELEVATION_MASK: ("elevation_mask_degrees",),
     ReceiverReading.POSITION_HOLD: (

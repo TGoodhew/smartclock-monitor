@@ -1117,11 +1117,21 @@ def _outputs_state(status: ReceiverStatus) -> tuple[Severity, str]:
 
 
 def _health_state(status: ReceiverStatus) -> tuple[Severity, str]:
-    if not status.health_items:
-        return Severity.NEUTRAL, "Health unknown"
-    if status.health_ok:
-        return Severity.SUCCESS, "Health OK"
+    """The pill, which is the only health this window shows.
+
+    **A fault the health block has no label for still counts** (#112). `health_ok` comes from the
+    screen's own `[ OK ]` banner, and the screen cannot say a time-interval measurement or an EEPROM
+    write has failed — so a receiver with either would have shown *Health OK* here while §10.10's
+    register page showed the bit. The register is polled now and its faults are named beside the
+    screen's.
+    """
     failed = [name for name, ok in status.health_items.items() if not ok]
+    failed += list(status.unreported_faults)
+
+    if not status.health_items and not status.unreported_faults:
+        return Severity.NEUTRAL, "Health unknown"
+    if not failed:
+        return Severity.SUCCESS, "Health OK"
     return Severity.CRITICAL, f"Health: {', '.join(failed)}"
 
 

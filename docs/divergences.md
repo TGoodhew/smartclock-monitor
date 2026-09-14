@@ -369,6 +369,31 @@ response and conclude the link was fine.
 All three are asserted in `tests/test_catalogue_gap.py` against the sitting, because a corrected
 summary that nothing checks is a comment that gets re-corrected back one day.
 
+### The full tier reads one command more than §7.3's table gives it
+
+§7.3's schedule is a two-row table: the fast tier asks six scalars every second, the full tier asks
+`:SYST:STAT?` every ten. This port's full tier asks **`:STAT:OPER:HARD:COND?` as well**.
+
+**It follows §7.3's reasoning and departs from its table**, which is the unusual shape of this one.
+The rationale line under that table says what each tier is *for* — *"fast tier drives the main
+window and trend charts; full tier drives the satellite table, position, and health sections"* — and
+the register is a health reading. §10.4's health card is built from the status screen's health
+block, and that block prints **six labels** where the hardware register has **twelve bits**: a
+receiver with a failed time-interval measurement or a failed EEPROM write prints
+`HEALTH MONITOR ... [ OK ]`, and the card draws six green ticks over a fault that is real, that the
+register has, and that §10.10's page would show to anyone who went looking (#112).
+
+**Measured before it was added**, which is #58a's rule after a poll-plan argument that measurement
+settled: on the bench the register costs **36 ms** against a full read of **3.6 s** in a ten-second
+window — 0.7% of the budget. The fast tier was the other candidate and was rejected for the better
+reason: it would have contradicted the rationale as well as the table, and polled a slowly-changing
+condition ten times more often than anything needs.
+
+The mechanism is `PollPlan.full_extras` and `ReceiverDriver.apply_full_extras`, the contract's
+seventh member beyond the inherited walkthrough — see [`driver-contract.md`](driver-contract.md).
+The other two families declare no extras and decline the reading outright, which §11's amendment
+distinguishes from a dash.
+
 ### Three platforms
 
 The whole reason the repository exists. WinUI 3 is Windows-only by definition.

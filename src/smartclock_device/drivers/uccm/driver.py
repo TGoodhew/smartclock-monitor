@@ -303,6 +303,13 @@ class UccmDriver(QueryResponseDefaults):
 
         return is_blocked(mnemonic)
 
+    def apply_full_extras(
+        self, status: ReceiverStatus, results: dict[str, Transaction]
+    ) -> ReceiverStatus:
+        """Nothing is asked, so nothing is folded. This family's plan carries no `full_extras`."""
+        del results
+        return status
+
     def outgoing_text_for(self, mnemonic: str | None) -> str | None:
         """Nothing. A query/response family's mnemonic *is* its wire text (D8)."""
         del mnemonic
@@ -361,6 +368,10 @@ class UccmDriver(QueryResponseDefaults):
             ReceiverReading.DIAGNOSTIC_LOG,
             ReceiverReading.ERROR_QUEUE,
             ReceiverReading.STATUS_REGISTERS,
+            # No status registers means no register bits, so none that a health block
+            # could fail to name (#112). Declined rather than answered empty: empty means
+            # *read, and nothing wrong*.
+            ReceiverReading.HARDWARE_FAULTS,
             ReceiverReading.POWER_ON_HOURS,
             ReceiverReading.GPS_ENGINE_IDENTITY,
             ReceiverReading.HEALTH_MONITOR,

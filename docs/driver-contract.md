@@ -8,8 +8,9 @@ signature in it is a `IReceiverDriver` method rather than a Python one.
 This document is the mapping. It says what the contract looks like here, which members exist, which
 do not yet, and where the difference is a decision rather than a gap.
 
-**Six members postdate the walkthrough entirely** — `reports`, `outgoing_text_for`, `prompt_words`,
-`plan.fast_readings`, `plan.cycle_boundaries` and `is_verified`. A driver author who reads only the
+**Seven members postdate the walkthrough entirely** — `reports`, `outgoing_text_for`,
+`prompt_words`, `plan.fast_readings`, `plan.cycle_boundaries`, `is_verified` and
+`apply_full_extras`. A driver author who reads only the
 inherited walkthrough will meet none of them, which is why they have a section of their own below
 rather than a row in a table.
 
@@ -151,7 +152,7 @@ confirmations exist to prevent.
 
 ---
 
-## The six members the contract grew, and what each one is for
+## The seven members the contract grew, and what each one is for
 
 Everything in this section postdates the walkthrough. A driver author reading
 [`adding-a-receiver.md`](adding-a-receiver.md) alone will not meet any of it.
@@ -228,6 +229,26 @@ a receiver sending the second this port read **nothing at all**.
 
 The listener closes when a boundary key repeats **its own** key, so a talker sending both still
 closes one cycle a second.
+
+### `apply_full_extras(status, results)` — the full tier's second command
+
+§7.3's table gives the full tier **one** command, and its rationale line gives that tier the health
+section: *"full tier drives the satellite table, position, and health sections."* For the SmartClock
+those are not the same thing. §10.4's health card is built from the screen's health block, and that
+block has no label for two of the twelve hardware faults — so a receiver with a failed EEPROM write
+prints `HEALTH MONITOR ... [ OK ]` and the card draws six green ticks over it (#112).
+
+So `PollPlan` carries `full_extras`, the poll reads them after the full read, and this folds them
+in. **Separate from `apply_fast` because the two tiers own different fields** and a gate asserts the
+fast one writes only what its plan claims; folding a slow-tier reading through the fast path would
+make that claim false and the gate wrong at the same time.
+
+**An extra that does not answer is asked once.** A refusal is the receiver saying it does not have
+the command; silence costs a full transaction timeout, and paying that every ten seconds for the
+life of a connection buys nothing. §7.3.1 makes the same trade on the fast tier, keyed on the sync
+state — there is no state to key on here, so it is once per session.
+
+A family with nothing extra to ask writes `return status`, and both of the others here do.
 
 ### `is_verified` — whether this driver has met a receiver
 

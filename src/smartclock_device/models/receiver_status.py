@@ -360,6 +360,18 @@ class ReceiverStatus:
 
     # ---- HEALTH -----------------------------------------------------------------------------
 
+    #: Faults the receiver reports through a register that its health block has no label for.
+    #:
+    #: **The health monitor prints six labels and the Hardware register has twelve bits** (#112).
+    #: Two of the twelve — a failed time interval measurement and a failed EEPROM write — have no
+    #: label at all, so a receiver with either prints `HEALTH MONITOR ... [ OK ]` and §10.4 draws
+    #: six green ticks over a fault that is real. These are those, in the receiver's own words.
+    #:
+    #: Empty means *the register was read and nothing is wrong*. A family with no such register
+    #: declines :attr:`ReceiverReading.HARDWARE_FAULTS` outright, which is a different claim and is
+    #: drawn differently.
+    unreported_faults: tuple[str, ...] = ()
+
     #: Whether the health monitor banner read ``OK``.
     health_ok: bool = False
 

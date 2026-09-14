@@ -131,6 +131,11 @@ class PollingService:
     _full_at: datetime | None = field(default=None, init=False)
     _fast_at: datetime | None = field(default=None, init=False)
     _suppressed_in_state: str | None = field(default=None, init=False)
+
+    #: Full-tier extras this session has stopped asking for (#112). Per session, like everything
+    #: else on this object: a reconnect builds a new one, so a receiver swapped for another is
+    #: asked again (§12).
+    _retired: set[str] = field(default_factory=set, init=False)
     _last: Reading | None = field(default=None, init=False)
 
     @property
@@ -206,6 +211,28 @@ class PollingService:
             return
 
         self._status = self.driver.parse_full(result, self._status)
+
+        # §7.3 gives the full tier one command and its rationale gives it the *health* section;
+        # for the SmartClock those are not the same thing, because the screen's health block has no
+        # label for two of the twelve hardware faults (#112). A family with nothing extra to ask
+        # declares no extras and this loop does not run.
+        extras: dict[str, Transaction] = {}
+        for command in plan.full_extras:
+            if command.mnemonic in self._retired:
+                continue
+            outcome = await self.session.execute(command.mnemonic)
+            if isinstance(outcome, Refusal) or not outcome.succeeded or outcome.was_rejected:
+                # **Asked once, and then not again this session.** An extra that is refused is the
+                # receiver saying it does not have the command; one that answers nothing at all
+                # costs a full transaction timeout, and paying that every ten seconds for the life
+                # of a connection buys nothing. §7.3.1 makes the same trade on the fast tier,
+                # keyed on the sync state; there is no state to key on here, so it is once.
+                self._retired.add(command.mnemonic)
+                continue
+            extras[command.mnemonic] = outcome
+        if extras:
+            self._status = self.driver.apply_full_extras(self._status, extras)
+
         self._full_at = self.clock.utc_now()
         self._publish()
 

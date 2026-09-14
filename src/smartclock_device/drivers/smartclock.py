@@ -19,6 +19,7 @@ from smartclock_device.drivers.base import Cadence, PollPlan, QueryResponseDefau
 from smartclock_device.drivers.capability import Capability, CommandGroup, ReceiverReading
 from smartclock_device.models.device_identity import DeviceIdentity, ReceiverModel
 from smartclock_device.models.receiver_status import ReceiverStatus
+from smartclock_device.models.status_register_map import faults_with_no_health_label
 from smartclock_device.parsing.scalars import (
     parse_decimal,
     parse_integer,
@@ -39,6 +40,10 @@ CADENCE: Final = Cadence(fast=timedelta(seconds=1), full=timedelta(seconds=10))
 PLAN: Final = PollPlan(
     fast=catalog.FAST_TIER,
     full=catalog.STATUS_SCREEN,
+    # §10.4's health card is built from the screen's health block, and that block has no label for
+    # two of the twelve hardware faults — so a receiver with either prints `[ OK ]` and the card
+    # draws six green ticks over a real fault (#112). The register does have them.
+    full_extras=(catalog.HARDWARE_CONDITION,),
     refusable=catalog.REFUSABLE,
     state_query=catalog.SYNC_STATE,
     # What the sweep above is answerable for. The tier also reads the sync state, which keys
@@ -207,6 +212,32 @@ class SmartClockDriver(QueryResponseDefaults):
             return status
 
         return dataclasses.replace(status, **changes)  # type: ignore[arg-type]
+
+    def apply_full_extras(
+        self, status: ReceiverStatus, results: dict[str, Transaction]
+    ) -> ReceiverStatus:
+        """Fold the hardware register into the status the screen produced (#112).
+
+        **Set whenever the register answered, including to empty** — unlike the fast tier's
+        scalars, which keep their last value through a refusal. The register is a complete
+        statement of what is wrong *now*, so a fault that has cleared must clear here too; keeping
+        the last non-empty answer would leave a red mark on a receiver that had recovered.
+
+        A refusal or a silence is still "keep what you had", because the difference between
+        *nothing is wrong* and *nobody asked* is the whole of §11.1.
+        """
+        condition = results.get(catalog.HARDWARE_CONDITION.mnemonic)
+        if condition is None or not condition.succeeded:
+            return status
+
+        value = parse_integer(condition.first_line)
+        if value is None:
+            return status
+
+        faults = tuple(bit.meaning for bit in faults_with_no_health_label(value))
+        if faults == status.unreported_faults:
+            return status
+        return dataclasses.replace(status, unreported_faults=faults)
 
 
 def _scalar[T](

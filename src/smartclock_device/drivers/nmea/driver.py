@@ -209,6 +209,13 @@ class NmeaDriver:
             return False
         return not sentences.is_the_time_poll(candidate)
 
+    def apply_full_extras(
+        self, status: ReceiverStatus, results: dict[str, Transaction]
+    ) -> ReceiverStatus:
+        """Nothing is asked, so nothing is folded. This family's plan carries no `full_extras`."""
+        del results
+        return status
+
     def outgoing_text_for(self, mnemonic: str | None) -> str | None:
         """The one sentence this family sends, and nothing else (D8, §7.2 gate 2).
 
@@ -378,6 +385,10 @@ class NmeaDriver:
             ReceiverReading.POWER_ON_HOURS,
             ReceiverReading.HEALTH_MONITOR,
             ReceiverReading.STATUS_REGISTERS,
+            # No status registers means no register bits, so none that a health block
+            # could fail to name (#112). Declined rather than answered empty: empty means
+            # *read, and nothing wrong*.
+            ReceiverReading.HARDWARE_FAULTS,
             ReceiverReading.DIAGNOSTIC_LOG,
             ReceiverReading.ERROR_QUEUE,
             ReceiverReading.ELEVATION_MASK,
