@@ -16,15 +16,6 @@ runtime-version: '24.08'
 sdk: org.freedesktop.Sdk
 command: smartclock-monitor
 
-# **The AppStream data is installed and validated, not composed at build time.**
-# `flatpak-builder` runs `appstreamcli compose` at the end of every build, and on a plain Ubuntu
-# runner that step fails with `file-read-error` against a component whose three files are all
-# present, readable and valid — `appstreamcli validate` passes on the same metainfo in this
-# repository's own tests. Six builds went into narrowing that down and none of them named a file.
-#
-# Composing is an optimisation: it pre-renders icons and caches the catalogue data. The metainfo
-# is still installed, so a software centre reads it the ordinary way. #140 carries the rest.
-appstream-compose: false
 
 # The build backend, which is needed to *build* the wheel and has no business in the bundle. It
 # lives in the prefix rather than in /tmp because flatpak-builder gives each module its own build
@@ -73,12 +64,21 @@ modules:
         ${FLATPAK_DEST}/share/applications/io.github.tgoodhew.SmartClockMonitor.desktop
       - install -Dm644 packaging/io.github.tgoodhew.SmartClockMonitor.metainfo.xml
         ${FLATPAK_DEST}/share/metainfo/io.github.tgoodhew.SmartClockMonitor.metainfo.xml
-      - install -Dm644 packaging/io.github.tgoodhew.SmartClockMonitor.svg
-        ${FLATPAK_DEST}/share/icons/hicolor/scalable/apps/io.github.tgoodhew.SmartClockMonitor.svg
+      # **PNGs, and deliberately not the scalable icon** (#140). `appstreamcli compose` — which
+      # flatpak-builder runs at the end of every build — cannot read our SVG: with it in the icon
+      # path the build fails with `file-read-error`, and with these PNGs and no SVG it prints
+      # `Success!`. `rsvg-convert` renders the same file without complaint, so the file is not at
+      # fault; a bundle that will not compose is not shippable, and a desktop reading a PNG loses
+      # nothing. `tools/render_icons.py` makes them, from the SVG, with Qt.
+      - |
+        for size in 64 128 256; do
+          install -Dm644 "packaging/icons/hicolor/${size}x${size}/apps/io.github.tgoodhew.SmartClockMonitor.png" \
+            "${FLATPAK_DEST}/share/icons/hicolor/${size}x${size}/apps/io.github.tgoodhew.SmartClockMonitor.png"
+        done
     sources:
       # The application, from a tag. `hatch_version.py` derives the version from git, so a source
       # without history would build `0.0.0.0` — silently, which is the failure test_versioning.py
       # exists to prevent. A git source carries the tag it needs.
       - type: git
         url: https://github.com/TGoodhew/smartclock-monitor.git
-        tag: v1.1.0
+        tag: v1.2.1

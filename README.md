@@ -240,6 +240,7 @@ runtime's Qt that nothing here has measured §9.12's contrast and focus figures 
 | | |
 |---|---|
 | `.desktop` | the launcher entry |
+| `icons/hicolor/*/apps/*.png` | rendered from the SVG by `tools/render_icons.py`, because `appstreamcli compose` cannot read the scalable one (#140) |
 | `.metainfo.xml` | AppStream, which is what GNOME Software and Flathub read |
 | `.svg` | the icon, §9.10.2's medallion |
 

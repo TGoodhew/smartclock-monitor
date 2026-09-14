@@ -73,9 +73,44 @@ jobs:
           name: appimage
           path: dist/*.AppImage
 
+  flatpak:
+    name: Flatpak
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.tag || github.ref }}
+      - name: flatpak-builder, and the runtime it builds against
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub \
+            org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
+      - name: The manifest builds the tag this release is for
+        run: |
+          set -eu
+          tag="${{ inputs.tag || github.ref_name }}"
+          grep -q "tag: $tag" packaging/flatpak/io.github.tgoodhew.SmartClockMonitor.yml \
+            || { echo "::error::the manifest builds a different tag than $tag"; exit 1; }
+      - name: Build the bundle
+        run: |
+          flatpak-builder --user --force-clean --disable-rofiles-fuse \
+            --repo=repo build-dir \
+            packaging/flatpak/io.github.tgoodhew.SmartClockMonitor.yml
+          flatpak build-bundle repo \
+            "smartclock-monitor-${{ inputs.tag || github.ref_name }}-x86_64.flatpak" \
+            io.github.tgoodhew.SmartClockMonitor
+      - uses: actions/upload-artifact@v4
+        with:
+          name: flatpak
+          path: "*.flatpak"
+
   publish:
     name: Publish
-    needs: [wheel, appimage]
+    needs: [wheel, appimage, flatpak]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
