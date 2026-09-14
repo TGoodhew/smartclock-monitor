@@ -30,7 +30,7 @@ from pathlib import Path
 
 from smartclock_device.clock import Clock, SystemClock
 from smartclock_device.commands import catalog
-from smartclock_device.commands.scpi_command import ScpiCommand
+from smartclock_device.commands.scpi_command import ArgumentKind, ScpiCommand
 from smartclock_device.models import status_register_map as registers
 from smartclock_device.transport.line_protocol import LineProtocol
 from smartclock_device.transport.serial_port import SerialTransport
@@ -49,6 +49,29 @@ REPLY_TIMEOUT = timedelta(seconds=6)
 
 #: What is asked, in the order it is asked. The screen first, so the registers below it describe
 #: an instant the screen has already been read for rather than one it will be read for later.
+def every_query() -> tuple[ScpiCommand, ...]:
+    """Every argument-free query on the allowlist, in catalogue order.
+
+    The sweep #118 wanted: a sitting that records what the receiver says to everything this
+    application may ask it, and that **covers a new catalogue entry automatically** rather than
+    waiting for someone to remember this file. Filtered to queries taking no argument, so the
+    actions and the setters are not swept and nothing here changes the receiver — except `*ESR?`,
+    whose contract is that reading clears it, and the error queue, which is a queue.
+
+    §8.5's experimental six are excluded: they are opt-in by §8.5's own ruling, five of the six
+    answer `E-113` on this receiver, and a sweep that collected six errors every time would be a
+    sweep nobody could read.
+    """
+    experimental = set(catalog.EXPERIMENTAL)
+    return tuple(
+        command
+        for command in catalog.ALL
+        if command.mnemonic.endswith("?")
+        and command.argument is ArgumentKind.NONE
+        and command not in experimental
+    )
+
+
 def _commands(time_codes: int = 1) -> tuple[ScpiCommand, ...]:
     condition_queries = tuple(
         query
@@ -79,7 +102,13 @@ def _commands(time_codes: int = 1) -> tuple[ScpiCommand, ...]:
 SENT = ">>> "
 
 
-async def capture(port: str, destination: Path, clock: Clock, time_codes: int = 1) -> int:
+async def capture(
+    port: str,
+    destination: Path,
+    clock: Clock,
+    time_codes: int = 1,
+    commands: tuple[ScpiCommand, ...] | None = None,
+) -> int:
     """Take one sitting and write it. Returns the number of commands that answered."""
     transport = SerialTransport(port, DEFAULT)
     await transport.open()
@@ -89,7 +118,7 @@ async def capture(port: str, destination: Path, clock: Clock, time_codes: int = 
         with destination.open("w", encoding="utf-8", newline="\r\n") as out:
             out.write(f"# taken {clock.utc_now().isoformat(timespec='seconds')} from {port}\n")
             out.write("# lines are verbatim; '>>> ' opens what was sent\n")
-            for command in _commands(time_codes):
+            for command in commands or _commands(time_codes):
                 timeout = SCREEN_TIMEOUT if command is catalog.STATUS_SCREEN else REPLY_TIMEOUT
                 transaction = await protocol.execute(command.mnemonic, timeout)
                 out.write(f"{SENT}{command.mnemonic}\n")
@@ -111,14 +140,20 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--time-codes", type=int, default=8, help="how many time-code messages to ask for"
     )
+    parser.add_argument(
+        "--every-query",
+        action="store_true",
+        help="sweep every argument-free query on the allowlist instead of the usual list",
+    )
     arguments = parser.parse_args(argv)
 
     arguments.into.mkdir(parents=True, exist_ok=True)
     destination = arguments.into / f"{arguments.label}.txt"
+    asked = every_query() if arguments.every_query else _commands(arguments.time_codes)
     answered = asyncio.run(
-        capture(arguments.port, destination, SystemClock(), arguments.time_codes)
+        capture(arguments.port, destination, SystemClock(), arguments.time_codes, asked)
     )
-    print(f"{answered} of {len(_commands(arguments.time_codes))} answered -> {destination}")
+    print(f"{answered} of {len(asked)} answered -> {destination}")
     return 0
 
 

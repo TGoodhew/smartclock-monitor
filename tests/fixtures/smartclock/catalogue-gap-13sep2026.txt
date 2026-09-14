@@ -1,0 +1,380 @@
+# taken 2026-09-14T04:11:05+00:00 from /dev/ttyUSB0
+# lines are verbatim; '>>> ' opens what was sent
+>>> *IDN?
+SYMMETRICOM,Z3805A,3625A02931,1.01.03-A
+>>> :SYST:STAT?
+------------------------------- Receiver Status -------------------------------
+SYNCHRONIZATION ............................................. [ Outputs Valid ]
+SmartClock Mode ___________________________   Reference Outputs _______________
+>> Locked to GPS                              TFOM     3             FFOM     0
+   Recovery                                   1PPS TI -3.4 ns relative to GPS
+   Holdover                                   HOLD THR 1.000 us
+   Power-up                                   Holdover Uncertainty ____________
+                                              Predict  1.5 us/initial 24 hrs
+                                                
+ACQUISITION ................................................ [ GPS 1PPS Valid ]
+Tracking: 8 ____   Not Tracking: 2 ________   Time ____________________________
+PRN  El  Az  C/N   PRN  El  Az                UTC      04:11:06     29 Jan 2007
+  1  21  54   35     2  11  33                GPS 1PPS Synchronized to UTC
+ 14  53  74   37    30  29 141                ANT DLY  60 ns
+ 15  27 267   38                              Position ________________________
+ 17  73 106   41                              MODE     Hold
+ 19  53 194   40                              
+ 20  30 230   38                              LAT      N  47:31:18.546
+ 22  72  51   40                              LON      W 122:12:22.128
+ 24  31 306   38                              HGT               +38.00 m  (MSL)
+                                              
+                                              
+                                              
+                                              
+ELEV MASK 10 deg                              
+HEALTH MONITOR ......................................................... [ OK ]
+Self Test: OK    Int Pwr: OK   Oven Pwr: OK   OCXO: OK   EFC: OK   GPS Rcv: OK 
+>>> :SYST:ERR?
++0,"No error"
+>>> :SYNC:STAT?
+LOCK
+>>> :SYNC:TFOM?
++3
+>>> :SYNC:FFOM?
++0
+>>> :SYNC:TINT?
++0.8E-009
+>>> :DIAG:ROSC:EFC:REL?
+-1.66216E+001
+>>> :GPS:SAT:TRAC:COUN?
++8
+>>> :DIAG:LOG:READ:ALL?
+Log status: 222 entries (overwriting)
+
+Log 001:20070105.08:24:42:  GPS lock started
+Log 002:20070105.09:31:35:  Holdover started, not tracking GPS
+Log 003:20070105.09:38:03:  GPS lock started
+Log 004:20070105.11:04:44:  Holdover started, not tracking GPS
+Log 005:20070105.11:10:24:  GPS lock started
+Log 006:20070105.11:55:44:  Holdover started, not tracking GPS
+Log 007:20070105.12:16:02:  GPS lock started
+Log 008:20070105.13:54:06:  Holdover started, not tracking GPS
+Log 009:20070105.14:06:36:  GPS lock started
+Log 010:20070105.15:15:05:  Holdover started, not tracking GPS
+Log 011:20070105.15:19:03:  GPS lock started
+Log 012:20070105.16:43:26:  Holdover started, not tracking GPS
+Log 013:20070105.16:52:37:  GPS lock started
+Log 014:20070105.20:04:45:  Holdover started, not tracking GPS
+Log 015:20070105.20:22:43:  GPS lock started
+Log 016:20070105.22:55:14:  Holdover started, not tracking GPS
+Log 017:20070105.23:15:12:  GPS lock started
+Log 018:20070106.00:28:54:  Holdover started, not tracking GPS
+Log 019:20070106.00:37:42:  GPS lock started
+Log 020:20070106.03:04:10:  Holdover started, not tracking GPS
+Log 021:20070106.03:07:08:  GPS lock started
+Log 022:20070106.04:53:20:  Holdover started, not tracking GPS
+Log 023:20070106.05:05:25:  GPS lock started
+Log 024:20070106.08:10:46:  Holdover started, not tracking GPS
+Log 025:20070106.08:19:14:  GPS lock started
+Log 026:20070106.09:27:27:  Holdover started, not tracking GPS
+Log 027:20070106.09:33:25:  GPS lock started
+Log 028:20070106.11:01:07:  Holdover started, not tracking GPS
+Log 029:20070106.11:04:25:  GPS lock started
+Log 030:20070106.11:52:20:  Holdover started, not tracking GPS
+Log 031:20070106.12:11:20:  GPS lock started
+Log 032:20070106.13:51:26:  Holdover started, not tracking GPS
+Log 033:20070106.14:01:24:  GPS lock started
+Log 034:20070106.15:12:14:  Holdover started, not tracking GPS
+Log 035:20070106.15:14:52:  GPS lock started
+Log 036:20070106.16:36:39:  Holdover started, not tracking GPS
+Log 037:20070106.16:43:27:  GPS lock started
+Log 038:20070106.20:00:56:  Holdover started, not tracking GPS
+Log 039:20070106.20:17:04:  GPS lock started
+Log 040:20070107.00:25:01:  Holdover started, not tracking GPS
+Log 041:20070107.00:33:29:  GPS lock started
+Log 042:20070107.01:37:53:  Holdover started, not tracking GPS
+Log 043:20070107.01:44:07:  GPS lock started
+Log 044:20070107.03:00:14:  Holdover started, not tracking GPS
+Log 045:20070107.03:02:52:  GPS lock started
+Log 046:20070107.04:50:28:  Holdover started, not tracking GPS
+Log 047:20070107.04:58:14:  GPS lock started
+Log 048:20070107.07:29:42:  Holdover started, not tracking GPS
+Log 049:20070107.07:33:00:  GPS lock started
+Log 050:20070107.08:06:45:  Holdover started, not tracking GPS
+Log 051:20070107.08:15:23:  GPS lock started
+Log 052:20070107.09:23:44:  Holdover started, not tracking GPS
+Log 053:20070107.09:29:32:  GPS lock started
+Log 054:20070107.10:56:02:  Holdover started, not tracking GPS
+Log 055:20070107.11:00:38:  GPS lock started
+Log 056:20070107.11:53:58:  Holdover started, not tracking GPS
+Log 057:20070107.12:08:10:  GPS lock started
+Log 058:20070107.15:07:21:  Holdover started, not tracking GPS
+Log 059:20070107.15:10:49:  GPS lock started
+Log 060:20070107.16:34:52:  Holdover started, not tracking GPS
+Log 061:20070107.16:38:40:  GPS lock started
+Log 062:20070107.16:41:21:  Holdover started, not tracking GPS
+Log 063:20070107.16:43:49:  GPS lock started
+Log 064:20070107.19:57:15:  Holdover started, not tracking GPS
+Log 065:20070107.20:13:43:  GPS lock started
+Log 066:20070107.22:44:14:  Holdover started, not tracking GPS
+Log 067:20070107.23:02:36:  GPS lock started
+Log 068:20070108.00:21:02:  Holdover started, not tracking GPS
+Log 069:20070108.00:28:30:  GPS lock started
+Log 070:20070108.02:55:22:  Holdover started, not tracking GPS
+Log 071:20070108.02:59:40:  GPS lock started
+Log 072:20070108.04:46:02:  Holdover started, not tracking GPS
+Log 073:20070108.04:54:46:  GPS lock started
+Log 074:20070108.07:59:20:  Holdover started, not tracking GPS
+Log 075:20070108.08:12:08:  GPS lock started
+Log 076:20070108.08:57:56:  Holdover started, not tracking GPS
+Log 077:20070108.09:01:04:  GPS lock started
+Log 078:20070108.09:17:41:  Holdover started, not tracking GPS
+Log 079:20070108.09:25:49:  GPS lock started
+Log 080:20070108.11:43:08:  Holdover started, not tracking GPS
+Log 081:20070108.12:04:16:  GPS lock started
+Log 082:20070108.14:55:09:  Holdover started, not tracking GPS
+Log 083:20070108.15:07:57:  GPS lock started
+Log 084:20070108.16:30:20:  Holdover started, not tracking GPS
+Log 085:20070108.16:35:28:  GPS lock started
+Log 086:20070108.19:52:32:  Holdover started, not tracking GPS
+Log 087:20070108.20:08:00:  GPS lock started
+Log 088:20070108.22:40:38:  Holdover started, not tracking GPS
+Log 089:20070108.23:04:32:  GPS lock started
+Log 090:20070109.04:44:51:  Holdover started, not tracking GPS
+Log 091:20070109.04:50:37:  GPS lock started
+Log 092:20070109.07:55:28:  Holdover started, not tracking GPS
+Log 093:20070109.08:06:46:  GPS lock started
+Log 094:20070109.09:11:14:  Holdover started, not tracking GPS
+Log 095:20070109.09:21:30:  GPS lock started
+>>> :DIAG:TEST:RES?
+>>> :PTIM:TCOD:FORM?
+rted
+Log 100:20070109.16:26:30:  Holdover started, not tracking GPS
+Log 101:20070109.16:30:28:  GPS lock started
+Log 102:20070109.19:49:09:  Holdover started, not tracking GPS
+Log 103:20070109.20:05:17:  GPS lock started
+Log 104:20070109.22:44:00:  Holdover started, not tracking GPS
+Log 105:20070109.22:57:25:  GPS lock started
+Log 106:20070110.02:47:02:  Holdover started, not tracking GPS
+Log 107:20070110.02:51:20:  GPS lock started
+Log 108:20070110.04:37:50:  Holdover started, not tracking GPS
+Log 109:20070110.04:46:54:  GPS lock started
+Log 110:20070110.07:50:56:  Holdover started, not tracking GPS
+Log 111:20070110.08:03:34:  GPS lock started
+Log 112:20070110.09:07:21:  Holdover started, not tracking GPS
+Log 113:20070110.09:17:29:  GPS lock started
+Log 114:20070110.10:44:26:  Holdover started, not tracking GPS
+Log 115:20070110.10:49:30:  GPS lock started
+Log 116:20070110.11:41:45:  Holdover started, not tracking GPS
+Log 117:20070110.11:52:01:  GPS lock started
+Log 118:20070110.14:46:36:  Holdover started, not tracking GPS
+Log 119:20070110.14:59:16:  GPS lock started
+Log 120:20070110.16:20:56:  Holdover started, not tracking GPS
+Log 121:20070110.16:25:44:  GPS lock started
+Log 122:20070110.19:44:56:  Holdover started, not tracking GPS
+Log 123:20070110.19:59:34:  GPS lock started
+Log 124:20070111.02:41:44:  Holdover started, not tracking GPS
+Log 125:20070111.02:47:12:  GPS lock started
+Log 126:20070111.04:34:02:  Holdover started, not tracking GPS
+Log 127:20070111.04:44:04:  GPS lock started
+Log 128:20070111.07:46:26:  Holdover started, not tracking GPS
+Log 129:20070111.07:57:54:  GPS lock started
+Log 130:20070111.09:07:01:  Holdover started, not tracking GPS
+Log 131:20070111.09:13:19:  GPS lock started
+Log 132:20070111.10:40:34:  Holdover started, not tracking GPS
+Log 133:20070111.10:45:14:  GPS lock started
+Log 134:20070111.11:41:23:  Holdover started, not tracking GPS
+Log 135:20070111.11:46:21:  GPS lock started
+Log 136:20070111.14:50:51:  Holdover started, not tracking GPS
+Log 137:20070111.14:55:39:  GPS lock started
+Log 138:20070111.16:15:38:  Holdover started, not tracking GPS
+Log 139:20070111.16:22:16:  GPS lock started
+Log 140:20070111.19:40:27:  Holdover started, not tracking GPS
+Log 141:20070111.19:55:55:  GPS lock started
+Log 142:20070111.22:31:02:  Holdover started, not tracking GPS
+Log 143:20070111.22:50:56:  GPS lock started
+Log 144:20070112.00:04:08:  Holdover started, not tracking GPS
+Log 145:20070112.00:13:16:  GPS lock started
+Log 146:20070112.02:39:28:  Holdover started, not tracking GPS
+Log 147:20070112.02:43:36:  GPS lock started
+Log 148:20070112.03:07:21:  Holdover started, not tracking GPS
+Log 149:20070112.03:21:09:  GPS lock started
+Log 150:20070112.03:28:01:  Position hold started.  [MSL Hgt =    +3796 cm]
+Log 151:20070112.03:28:01:       [Lat = +171078822 ms, Lon = -439942151 ms]
+Log 152:20070112.03:32:25:  Position hold started.  [MSL Hgt =    +3796 cm]
+Log 153:20070112.03:32:25:       [Lat = +171078822 ms, Lon = -439942151 ms]
+Log 154:20070112.03:55:47:  Position hold started.  [MSL Hgt =    +3796 cm]
+Log 155:20070112.03:55:47:       [Lat = +171078822 ms, Lon = -439942151 ms]
+Log 156:20070112.04:43:27:  Position hold started.  [MSL Hgt =    +3796 cm]
+Log 157:20070112.04:43:27:       [Lat = +171078822 ms, Lon = -439942151 ms]
+Log 158:20070112.00:00:00:  Power on
+Log 159:20070112.00:00:59:  GPS reference valid at 20070112.05:10:23
+Log 160:20070112.05:12:15:  GPS lock started
+Log 161:20070112.07:10:24:  Position hold started.  [MSL Hgt =    +2517 cm]
+Log 162:20070112.07:10:24:       [Lat = +171078585 ms, Lon = -439942091 ms]
+Log 163:20070112.15:52:51:  Holdover started, not tracking GPS
+Log 164:20070112.16:10:49:  GPS lock started
+Log 165:20070112.19:03:23:  Position hold started.  [MSL Hgt =    +2517 cm]
+Log 166:20070112.19:03:23:       [Lat = +171078585 ms, Lon = -439942091 ms]
+Log 167:20070112.00:00:00:  Power on
+Log 168:20070112.00:02:51:  GPS reference valid at 20070112.19:07:02
+Log 169:20070112.19:08:01:  GPS lock started
+Log 170:20070112.19:11:18:  Position hold started.  [MSL Hgt =    +2517 cm]
+Log 171:20070112.19:11:18:       [Lat = +171078585 ms, Lon = -439942091 ms]
+Log 172:20070112.00:00:00:  Power on
+Log 173:20070112.00:08:13:  Position hold started.  [MSL Hgt =    +2262 cm]
+Log 174:20070112.00:08:13:       [Lat = +171078448 ms, Lon = -439941993 ms]
+Log 175:20070112.00:08:28:  GPS reference valid at 20070112.19:41:43
+Log 176:20070112.19:42:42:  GPS lock started
+Log 177:20070112.00:00:00:  Power on
+Log 178:20070112.00:00:58:  GPS reference valid at 20070112.20:12:59
+Log 179:20070112.20:14:51:  GPS lock started
+Log 180:20070112.00:00:00:  Power on
+Log 181:20070112.00:07:46:  Position hold started.  [MSL Hgt =    +3801 cm]
+Log 182:20070112.00:07:46:       [Lat = +171078545 ms, Lon = -439942126 ms]
+Log 183:20070112.00:12:19:  GPS reference valid at 20070112.20:46:45
+Log 184:20070112.20:47:44:  GPS lock started
+Log 185:20070113.01:21:50:  GPS reference valid at 20070113.01:21:49
+Log 186:20070113.01:21:56:  GPS reference valid at 20070113.01:21:55
+Log 187:20070113.01:22:00:  GPS reference valid at 20070113.01:21:59
+Log 188:20070113.01:22:04:  GPS reference valid at 20070113.01:22:03
+>>> :PTIM:TCOD?
+T220070129041127300003D
+>>> :DIAG:LOG:COUN?
++222
+>>> :DIAG:LIF:COUN?
++36866
+>>> :DIAG:IDEN:GPS?
+"--","SFTW P/N # 4850266","SOFTWARE VER # 005","--","--","MODEL # FURUNO GT-80","--","--","--","--"
+>>> :SYNC:HOLD:DUR?
++1.44800E+003,0
+>>> :SYNC:HOLD:DUR:THR?
++86400
+>>> :SYNC:HOLD:DUR:THR:EXC?
+0
+>>> :SYNC:HOLD:TUNC:PRED?
++1.5E-006,0
+>>> :SYNC:HOLD:TUNC:PRES?
+>>> :PTIM:DATE?
++2007,+1,+29
+>>> :PTIM:TIME?
++4,+11,+27
+>>> :PTIM:TIME:STR?
+"04:11:28"
+>>> :PTIM:TZON?
++0,+0
+>>> :PTIM:LEAP:ACC?
++18
+>>> :PTIM:LEAP:DATE?
+>>> :PTIM:LEAP:DUR?
+>>> :PTIM:LEAP:STAT?
+0
+>>> :GPS:SAT:TRAC:EMAN?
++10
+>>> :GPS:REF:ADEL?
++6.00000E-008
+>>> :STAT:OPER:COND?
++90
+>>> :STAT:OPER:EVEN?
++0
+>>> :STAT:OPER:ENAB?
++36
+>>> :STAT:OPER:PTR?
++127
+>>> :STAT:OPER:NTR?
++0
+>>> :STAT:OPER:HARD:COND?
++0
+>>> :STAT:OPER:HARD:EVEN?
++0
+>>> :STAT:OPER:HARD:ENAB?
++8191
+>>> :STAT:OPER:HARD:PTR?
++5119
+>>> :STAT:OPER:HARD:NTR?
++0
+>>> :STAT:OPER:HOLD:COND?
++0
+>>> :STAT:OPER:HOLD:EVEN?
++0
+>>> :STAT:OPER:HOLD:ENAB?
++8
+>>> :STAT:OPER:HOLD:PTR?
++15
+>>> :STAT:OPER:HOLD:NTR?
++0
+>>> :STAT:OPER:POW:COND?
++7
+>>> :STAT:OPER:POW:EVEN?
++0
+>>> :STAT:OPER:POW:ENAB?
++7
+>>> :STAT:OPER:POW:PTR?
++7
+>>> :STAT:OPER:POW:NTR?
++0
+>>> :STAT:QUES:COND?
++0
+>>> :STAT:QUES:EVEN?
++0
+>>> :STAT:QUES:ENAB?
++3
+>>> :STAT:QUES:PTR?
++2
+>>> :STAT:QUES:NTR?
++0
+>>> :GPS:SAT:TRAC:IGN?
++0
+>>> :GPS:POS:SURV:PROG?
+>>> :GPS:POS:SURV:STAT?
+0
+>>> :GPS:POS:SURV:STAT:POW?
+1
+>>> *ESE?
++0
+>>> *ESR?
++16
+>>> *SRE?
++136
+>>> *STB?
++0
+>>> :SYST:STAT:LENG?
++23
+>>> :SYST:DATE?
++2007,+1,+29
+>>> :SYST:TIME?
++4,+11,+36
+>>> :SYST:COMM?
+SER1
+>>> :SYNC:HOLD:WAIT?
+NONE
+>>> :GPS:REF:VAL?
+1
+>>> :GPS:POS?
+N,+47,+31,+1.85450E+001,W,+122,+12,+2.21260E+001,+3.80100E+001
+>>> :GPS:POS:ACT?
+N,+47,+31,+1.85460E+001,W,+122,+12,+2.21280E+001,+3.80000E+001
+>>> :GPS:POS:HOLD:LAST?
+N,+47,+31,+1.85450E+001,W,+122,+12,+2.21260E+001,+3.80100E+001
+>>> :GPS:POS:HOLD:STAT?
+1
+>>> :GPS:SAT:TRAC?
++1,+14,+15,+17,+19,+20,+22,+24
+>>> :GPS:SAT:VIS:PRED?
++1,+2,+14,+15,+17,+19,+20,+22,+24,+30
+>>> :GPS:SAT:VIS:PRED:COUN?
++10
+>>> :GPS:SAT:TRAC:IGN:COUN?
++0
+>>> :GPS:SAT:TRAC:INCL?
++1,+2,+3,+4,+5,+6,+7,+8,+9,+10,+11,+12,+13,+14,+15,+16,+17,+18,+19,+20,+21,+22,+23,+24,+25,+26,+27,+28,+29,+30,+31,+32
+>>> :GPS:SAT:TRAC:INCL:COUN?
++32
+>>> :LED:ALAR?
+0
+>>> :LED:GPSL?
+1
+>>> :LED:HOLD?
+0
+>>> :LED:ACT?
+0
+>>> :LED:ENAB?
+0
+>>> :DIAG:QUER:RESP?
+0

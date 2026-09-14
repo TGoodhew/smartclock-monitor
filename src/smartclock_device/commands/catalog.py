@@ -723,6 +723,245 @@ EXPERIMENTAL: Final[tuple[ScpiCommand, ...]] = (
     ),
 )
 
+
+# ---- §8.2's remainder, added by #118 -------------------------------------------------------------
+#
+# **Thirty entries §8.2 lists that this catalogue did not have.** §10.11's Advanced Console is a
+# picker over the allowlist and there is no free-text path, so a command missing from here is a
+# command this application cannot send at all, by anyone. That is what made the gap worth closing
+# rather than noting.
+#
+# Every one below **answered on the bench Z3805A on 13 Sep 2026**, with the error queue drained
+# before each and read after, so nothing here rests on a manual alone —
+# `tests/fixtures/smartclock/catalogue-gap-13sep2026` is the sitting. Three of the summaries
+# differ from the ones upstream carries, and they differ because the receiver said so; the
+# divergences are named on the entries themselves.
+
+#: IEEE 488.2's four status-reporting queries. They read the registers behind §10.10's page rather
+#: than the SCPI-defined ones, and none of them is a receiver setting.
+EVENT_ENABLE_MASK: Final = ScpiCommand(
+    mnemonic="*ESE?",
+    summary="Standard event status enable mask",
+    response=ResponseFormat.INTEGER,
+)
+
+#: **Reading it clears it**, which is IEEE 488.2's own contract for an event register and not a
+#: quirk. Catalogued as safe anyway: the register exists to be read, and nothing in this
+#: application or any other holds state that a clear would lose.
+EVENT_STATUS: Final = ScpiCommand(
+    mnemonic="*ESR?",
+    summary="Standard event status register — reading it clears it",
+    response=ResponseFormat.INTEGER,
+)
+
+SERVICE_REQUEST_MASK: Final = ScpiCommand(
+    mnemonic="*SRE?",
+    summary="Service request enable mask",
+    response=ResponseFormat.INTEGER,
+)
+
+STATUS_BYTE: Final = ScpiCommand(
+    mnemonic="*STB?",
+    summary="Status byte summary register",
+    response=ResponseFormat.INTEGER,
+)
+
+#: **What it counts is not established.** Upstream reads it as "how many lines the status screen
+#: occupies"; the bench answers `+23` to a screen that arrives as 27 lines, 22 of them non-blank.
+#: So the summary says what the receiver calls it and not what it means, which is the honest
+#: position until a second reading in another state settles it (#119).
+STATUS_SCREEN_LENGTH: Final = ScpiCommand(
+    mnemonic=":SYST:STAT:LENG?",
+    summary="The length the receiver reports for its status screen",
+    response=ResponseFormat.INTEGER,
+)
+
+#: The same instant as :data:`RECEIVER_DATE` and :data:`RECEIVER_TIME`, by the other spelling the
+#: manual documents — confirmed on the bench, which answered both pairs identically to the second.
+#: Catalogued because §8.2 lists them and a console user reading a manual should find what it names.
+SYSTEM_DATE: Final = ScpiCommand(
+    mnemonic=":SYST:DATE?",
+    summary="The receiver's date, as year, month and day",
+    response=ResponseFormat.INTEGER_LIST,
+)
+
+SYSTEM_TIME: Final = ScpiCommand(
+    mnemonic=":SYST:TIME?",
+    summary="The receiver's time, as hours, minutes and seconds",
+    response=ResponseFormat.INTEGER_LIST,
+)
+
+#: **Which port, not how it is configured.** Upstream reads this as the serial configuration; the
+#: bench answers `SER1`, which names the port the receiver is talking on. The configuration is
+#: under `:SYST:COMM:SER1:` and every one of those is a tier C setter.
+SERIAL_PORT: Final = ScpiCommand(
+    mnemonic=":SYST:COMM?",
+    summary="Which serial port the receiver is communicating on",
+    response=ResponseFormat.KEYWORD,
+)
+
+#: §11.1 names *waiting to recover* as a state no capture has ever produced, and this is the query
+#: that would report it. The bench answers `NONE` — a keyword, where upstream expects a boolean.
+HOLDOVER_WAIT: Final = ScpiCommand(
+    mnemonic=":SYNC:HOLD:WAIT?",
+    summary="Why the receiver is waiting before it recovers from holdover",
+    response=ResponseFormat.KEYWORD,
+)
+
+REFERENCE_VALID: Final = ScpiCommand(
+    mnemonic=":GPS:REF:VAL?",
+    summary="Whether the GPS reference is currently valid",
+    response=ResponseFormat.BOOLEAN,
+)
+
+#: Three positions, and they are **not the same reading**. The bench answered all three within one
+#: sitting and `:GPS:POS:ACT?` differed from the other two in its last digits: the held position is
+#: what the receiver is using for its timing solution, and the actual one is what the satellites
+#: currently say. On a surveyed unit sitting still they agree to a few centimetres; on a unit
+#: holding a position from another site they would not, which is the case worth being able to see.
+POSITION: Final = ScpiCommand(
+    mnemonic=":GPS:POS?",
+    summary="The position the receiver is using for its timing solution",
+    response=ResponseFormat.VALUE_LIST,
+)
+
+ACTUAL_POSITION: Final = ScpiCommand(
+    mnemonic=":GPS:POS:ACT?",
+    summary="The position currently computed from the satellites",
+    response=ResponseFormat.VALUE_LIST,
+)
+
+LAST_HELD_POSITION: Final = ScpiCommand(
+    mnemonic=":GPS:POS:HOLD:LAST?",
+    summary="The last position the receiver held",
+    response=ResponseFormat.VALUE_LIST,
+)
+
+POSITION_HOLD_STATE: Final = ScpiCommand(
+    mnemonic=":GPS:POS:HOLD:STAT?",
+    summary="Whether a fixed position is being held",
+    response=ResponseFormat.BOOLEAN,
+)
+
+#: The satellite table without the screen. §10.5 reads its rows from `:SYST:STAT?` because only the
+#: screen carries elevation, azimuth and signal strength — these carry the PRNs alone, which is the
+#: part a console user can check a parse against.
+TRACKED_SATELLITES: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC?",
+    summary="Which satellites the receiver is tracking",
+    response=ResponseFormat.INTEGER_LIST,
+)
+
+PREDICTED_SATELLITES: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:VIS:PRED?",
+    summary="Which satellites the receiver expects to be visible",
+    response=ResponseFormat.INTEGER_LIST,
+)
+
+PREDICTED_SATELLITE_COUNT: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:VIS:PRED:COUN?",
+    summary="How many satellites the receiver expects to be visible",
+    response=ResponseFormat.INTEGER,
+)
+
+EXCLUDED_SATELLITE_COUNT: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:IGN:COUN?",
+    summary="How many satellites are excluded from tracking",
+    response=ResponseFormat.INTEGER,
+)
+
+#: One satellite, by PRN. The bounds are §8.3's own: 1 to 32, the GPS constellation's numbering.
+IS_SATELLITE_EXCLUDED: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:IGN:STAT?",
+    summary="Whether one satellite is excluded from tracking",
+    response=ResponseFormat.BOOLEAN,
+    argument=ArgumentKind.INTEGER,
+    minimum=1,
+    maximum=32,
+)
+
+INCLUDED_SATELLITES: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:INCL?",
+    summary="Which satellites are on the tracking inclusion list",
+    response=ResponseFormat.INTEGER_LIST,
+)
+
+INCLUDED_SATELLITE_COUNT: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:INCL:COUN?",
+    summary="How many satellites are on the inclusion list",
+    response=ResponseFormat.INTEGER,
+)
+
+IS_SATELLITE_INCLUDED: Final = ScpiCommand(
+    mnemonic=":GPS:SAT:TRAC:INCL:STAT?",
+    summary="Whether one satellite is on the inclusion list",
+    response=ResponseFormat.BOOLEAN,
+    argument=ArgumentKind.INTEGER,
+    minimum=1,
+    maximum=32,
+)
+
+#: The four front-panel lamps. Two of them — Active and Enabled — are under software control and
+#: their setters are §8.2 actions rather than queries; the other two report what the receiver is
+#: doing. All four answer `0` or `1` on the bench, where upstream expects a keyword.
+ALARM_LAMP: Final = ScpiCommand(
+    mnemonic=":LED:ALAR?",
+    summary="The front-panel Alarm indicator",
+    response=ResponseFormat.BOOLEAN,
+)
+
+GPS_LOCK_LAMP: Final = ScpiCommand(
+    mnemonic=":LED:GPSL?",
+    summary="The front-panel GPS Lock indicator",
+    response=ResponseFormat.BOOLEAN,
+)
+
+HOLDOVER_LAMP: Final = ScpiCommand(
+    mnemonic=":LED:HOLD?",
+    summary="The front-panel Holdover indicator",
+    response=ResponseFormat.BOOLEAN,
+)
+
+ACTIVE_LAMP: Final = ScpiCommand(
+    mnemonic=":LED:ACT?",
+    summary="The front-panel Active indicator",
+    response=ResponseFormat.BOOLEAN,
+)
+
+ENABLED_LAMP: Final = ScpiCommand(
+    mnemonic=":LED:ENAB?",
+    summary="The front-panel Enabled indicator",
+    response=ResponseFormat.BOOLEAN,
+)
+
+#: **It repeats the previous query's answer.** Upstream carries it as *"reads a fixed response, used
+#: to prove the link is alive"*, and the bench says otherwise: asked after `:SYNC:TFOM?` it answers
+#: `+3`, after `:LED:GPSL?` it answers `1`, after `:GPS:SAT:VIS:PRED:COUN?` it answers `+10`, and
+#: asked twice in a row it answers the same thing twice. A `*CLS` in between does not disturb it,
+#: so what it holds is the last *query* response rather than the last reply of any kind.
+#:
+#: That still makes it a link test, which is presumably how it earned its name — but a console user
+#: told it returns a fixed response would read a stale `+3` as the response and conclude nothing was
+#: wrong. Four readings, four different values (#118).
+LAST_QUERY_RESPONSE: Final = ScpiCommand(
+    mnemonic=":DIAG:QUER:RESP?",
+    summary="Repeats the answer to the previous query",
+    response=ResponseFormat.TEXT,
+)
+
+#: One entry of the diagnostic log. The whole-log form is :data:`DIAGNOSTIC_LOG`, which is why this
+#: takes a required entry number where upstream's takes an optional one: §8.1 catalogues a header
+#: and the two forms are two headers, so an optional argument would make one entry mean two
+#: commands.
+LOG_ENTRY: Final = ScpiCommand(
+    mnemonic=":DIAG:LOG:READ?",
+    summary="One entry of the diagnostic log, by number",
+    response=ResponseFormat.MULTI_LINE,
+    argument=ArgumentKind.INTEGER,
+    minimum=1,
+    maximum=999,
+)
+
 #: Every catalogued command. **The allowlist.**
 ALL: Final[tuple[ScpiCommand, ...]] = (
     IDENTITY,
@@ -777,6 +1016,35 @@ ALL: Final[tuple[ScpiCommand, ...]] = (
     RESTORE_LAST_POSITION,
     SET_POSITION,
     SET_SURVEY_ON_POWER_UP,
+    EVENT_ENABLE_MASK,
+    EVENT_STATUS,
+    SERVICE_REQUEST_MASK,
+    STATUS_BYTE,
+    STATUS_SCREEN_LENGTH,
+    SYSTEM_DATE,
+    SYSTEM_TIME,
+    SERIAL_PORT,
+    HOLDOVER_WAIT,
+    REFERENCE_VALID,
+    POSITION,
+    ACTUAL_POSITION,
+    LAST_HELD_POSITION,
+    POSITION_HOLD_STATE,
+    TRACKED_SATELLITES,
+    PREDICTED_SATELLITES,
+    PREDICTED_SATELLITE_COUNT,
+    EXCLUDED_SATELLITE_COUNT,
+    IS_SATELLITE_EXCLUDED,
+    INCLUDED_SATELLITES,
+    INCLUDED_SATELLITE_COUNT,
+    IS_SATELLITE_INCLUDED,
+    ALARM_LAMP,
+    GPS_LOCK_LAMP,
+    HOLDOVER_LAMP,
+    ACTIVE_LAMP,
+    ENABLED_LAMP,
+    LAST_QUERY_RESPONSE,
+    LOG_ENTRY,
     *EXPERIMENTAL,
 )
 
