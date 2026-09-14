@@ -49,6 +49,7 @@ class Capability(Enum):
     GPS_ENGINE = "what GPS receiver is inside the instrument"
     ERROR_QUEUE = "the error queue"
     HARDWARE_CONDITION = "the hardware status register"
+    OPERATION_CONDITION = "the operation status register"
     TIME_CODE_FORMAT = "the time-code output format"
     LEAP_ACCUMULATED = "accumulated leap seconds"
     LEAP_DATE = "the announced leap second's date"

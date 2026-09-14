@@ -38,6 +38,21 @@ class StatusBit:
     #: same way would put a red mark against a locked receiver.
     is_fault: bool = False
 
+    #: Which label on §10.4's health monitor covers this bit, or ``None`` when none does.
+    #:
+    #: The health block prints six labels and the Hardware register has twelve bits, so the card
+    #: cannot be a bit-for-bit rendering of the register and never was. What this records is the
+    #: **other direction**: given a bit the receiver has set, is there a label on the card that
+    #: would already be showing it as failed? Two bits answer no, and a receiver with either
+    #: reports `HEALTH MONITOR ... [ OK ]` while the fault is real (#112).
+    #:
+    #: **A hypothesis, and marked as one.** No capture in the corpus has ever carried a failing
+    #: health monitor — a bench receiver in good health is the only kind there is — so the pairing
+    #: is read off the label names and the manual's bit meanings, corroborated by Lady Heather
+    #: grouping the same bits the same way (#98). The consequence of a wrong pairing is a duplicate
+    #: line about a fault, in a state no unit here has ever reached.
+    health_label: str | None = None
+
 
 @dataclass(frozen=True, slots=True)
 class StatusRegisterMap:
@@ -97,18 +112,18 @@ HARDWARE: Final = StatusRegisterMap(
         "present."
     ),
     bits=(
-        StatusBit(0, "Self-test failure", is_fault=True),
-        StatusBit(1, "+15 V supply out of tolerance", is_fault=True),
-        StatusBit(2, "−15 V supply out of tolerance", is_fault=True),
-        StatusBit(3, "+5 V supply out of tolerance", is_fault=True),
-        StatusBit(4, "Oven supply out of tolerance", is_fault=True),
-        StatusBit(6, "EFC voltage near full scale", is_fault=True),
-        StatusBit(7, "EFC voltage at full scale", is_fault=True),
-        StatusBit(8, "GPS 1 PPS failure", is_fault=True),
-        StatusBit(9, "GPS failure", is_fault=True),
+        StatusBit(0, "Self-test failure", is_fault=True, health_label="Self Test"),
+        StatusBit(1, "+15 V supply out of tolerance", is_fault=True, health_label="Int Pwr"),
+        StatusBit(2, "−15 V supply out of tolerance", is_fault=True, health_label="Int Pwr"),
+        StatusBit(3, "+5 V supply out of tolerance", is_fault=True, health_label="Int Pwr"),
+        StatusBit(4, "Oven supply out of tolerance", is_fault=True, health_label="Oven Pwr"),
+        StatusBit(6, "EFC voltage near full scale", is_fault=True, health_label="EFC"),
+        StatusBit(7, "EFC voltage at full scale", is_fault=True, health_label="EFC"),
+        StatusBit(8, "GPS 1 PPS failure", is_fault=True, health_label="GPS Rcv"),
+        StatusBit(9, "GPS failure", is_fault=True, health_label="GPS Rcv"),
         StatusBit(10, "Time interval measurement failed", is_event=True, is_fault=True),
         StatusBit(11, "EEPROM write failed", is_event=True, is_fault=True),
-        StatusBit(12, "Internal reference failure", is_fault=True),
+        StatusBit(12, "Internal reference failure", is_fault=True, health_label="OCXO"),
     ),
 )
 
@@ -155,6 +170,33 @@ QUESTIONABLE: Final = StatusRegisterMap(
         StatusBit(1, "User-reported"),
     ),
 )
+
+
+def faults_with_no_health_label(condition: int) -> tuple[StatusBit, ...]:
+    """The Hardware faults a set register reports that §10.4's health block cannot show.
+
+    Bits 10 and 11 — *time interval measurement failed* and *EEPROM write failed* — have no label
+    on the health monitor, so a receiver with either prints `[ OK ]` across all six and this
+    application draws six green ticks. #112, and #98's audit against Lady Heather is what found it:
+    she surfaces the EEPROM bit as an alarm of its own, which is what drew attention to a bit with
+    nowhere to go.
+
+    **Undocumented bits count too.** A bit the map has no entry for is by definition a bit no label
+    covers, and a firmware that sets one is saying something this port cannot name — which is worth
+    reporting as exactly that rather than dropping. `test_registers_against_screen.py` asserts the
+    bench receiver sets none.
+    """
+    named = []
+    for bit in range(16):
+        if not condition & (1 << bit):
+            continue
+        meaning = HARDWARE.bit_at(bit)
+        if meaning is None:
+            named.append(StatusBit(bit, f"Hardware bit {bit} (see documentation)", is_fault=True))
+        elif meaning.health_label is None:
+            named.append(meaning)
+    return tuple(named)
+
 
 #: Every register, in the order §10.10's picker lists them.
 ALL: Final[tuple[StatusRegisterMap, ...]] = (

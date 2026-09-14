@@ -22,7 +22,7 @@ reading it.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import ClassVar, Final
 
@@ -45,7 +45,9 @@ from PySide6.QtWidgets import (
 from smartclock_device.commands.scpi_command import ScpiCommand
 from smartclock_device.drivers.base import ReceiverDriver
 from smartclock_device.drivers.capability import Capability, CommandGroup, ReceiverReading
+from smartclock_device.models import status_register_map as registers
 from smartclock_device.models.diagnostic_log_entry import DiagnosticLogEntry
+from smartclock_device.models.status_register_map import faults_with_no_health_label
 from smartclock_device.parsing import gps_engine
 from smartclock_device.parsing.diagnostic_log import parse_all
 from smartclock_device.parsing.scalars import parse_integer
@@ -57,7 +59,7 @@ from smartclock_monitor.services.session import CommandOutcome
 from smartclock_monitor.themes.severity import Severity
 from smartclock_monitor.themes.spacing import Spacing
 from smartclock_monitor.themes.tokens import LIGHT, Palette
-from smartclock_monitor.views.capability import command_for, gate
+from smartclock_monitor.views.capability import command_for, explain, gate
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.pages import DASH, Page, card, label
 from smartclock_monitor.widgets.severity_pill import SeverityPill
@@ -68,6 +70,12 @@ from smartclock_monitor.widgets.severity_pill import SeverityPill
 #: queue is drained first, and the sixth answers normally. Matched on the number rather than the
 #: words, because the words are the receiver's and a firmware may phrase them differently.
 UNDEFINED_HEADER: Final = "-113"
+
+#: The Operation register's only fault bit: *diagnostic log almost full* (#110).
+#:
+#: Named rather than written as a literal at the test, and taken from the map rather than typed,
+#: so a correction to the map reaches the reading instead of leaving the two to disagree.
+_LOG_ALMOST_FULL: Final = next(bit.bit for bit in registers.OPERATION.bits if bit.is_fault)
 
 #: §10.9: about fourteen entries. The log alternates *GPS lock started* and *Holdover started* as
 #: the receiver cycles, so fourteen is roughly six events — enough to see a pattern without the
@@ -99,6 +107,7 @@ class DiagnosticsPage(Page):
         layout.setSpacing(Spacing.MEDIUM)
         layout.addWidget(self._build_self_test())
         layout.addWidget(self._build_log())
+        layout.addWidget(self._build_conditions())
         layout.addWidget(self._build_queue())
         layout.addWidget(self._build_lifetime())
         layout.addWidget(self._build_gps_engine())
@@ -171,7 +180,48 @@ class DiagnosticsPage(Page):
 
         self._log_summary = label("", "caption")
         holder_layout.addWidget(self._log_summary)
+
+        #: The count is a number; this is the receiver's own verdict on it (#110).
+        #:
+        #: Three states, because "not read" and "read and fine" are different claims and a pill
+        #: that appeared only on the fault would make them look the same.
+        self._log_condition = SeverityPill(
+            Severity.NEUTRAL, "Log condition not read", self._palette
+        )
+        holder_layout.addWidget(self._log_condition)
         return holder
+
+    def _build_conditions(self) -> QWidget:
+        """§10.4's health monitor has six labels; the Hardware register has twelve bits (#112).
+
+        This card is for the difference. *Time interval measurement failed* and *EEPROM write
+        failed* have no label on the health block, so a receiver with either prints
+        `HEALTH MONITOR ... [ OK ]` and the Overview page draws six green ticks — the fault is real,
+        the register has it, and the page a user watches cannot say so.
+
+        **Here rather than on §10.4**, which is where a user would see it soonest, because §10.4 is
+        filled by the poll and the poll's full tier reads one command. Moving the register into it
+        is a poll-plan change, and poll-plan changes are measured rather than argued (#58a).
+        """
+        holder, holder_layout = card("Hardware conditions")
+        holder_layout.addWidget(
+            label(
+                "What the hardware register reports that the health monitor has no label for.",
+                "tertiary",
+            )
+        )
+        self._conditions_layout = holder_layout
+        self._condition_pills: list[SeverityPill] = []
+        self._show_conditions([SeverityPill(Severity.NEUTRAL, "Not read", self._palette)])
+        return holder
+
+    def _show_conditions(self, pills: list[SeverityPill]) -> None:
+        for pill in self._condition_pills:
+            pill.setParent(None)
+            pill.deleteLater()
+        self._condition_pills = pills
+        for pill in pills:
+            self._conditions_layout.addWidget(pill)
 
     def _build_queue(self) -> QWidget:
         holder, holder_layout = card("Error queue")
@@ -468,13 +518,32 @@ class DiagnosticsPage(Page):
         gate(self._refresh_log, driver, Capability.DIAGNOSTIC_LOG)
         gate(self._read_errors, driver, Capability.ERROR_QUEUE)
 
+        if driver is not None and driver.command(Capability.OPERATION_CONDITION) is None:
+            self._decline_conditions()
+
         self._rebuild_experimental(driver)
         self._refill_subsystems(command_for(self._runner, Capability.RUN_SELF_TEST))
+
+    def set_palette_tokens(self, palette: Palette) -> None:
+        """Repaint the pills this page owns.
+
+        Custom widgets take their colours from a palette object rather than from QSS, so a theme
+        change has to reach each one. The page had no override at all, which left the self-test
+        verdict painted in the old theme until it was re-run.
+        """
+        super().set_palette_tokens(palette)
+        for pill in (self._test_result, self._log_condition, *self._condition_pills):
+            pill.set_palette_tokens(palette)
 
     # -- Reading ---------------------------------------------------------------------------------
 
     def refresh(self) -> None:
-        """The on-demand read: the log, its count, and the lifetime counter together."""
+        """The on-demand read: the log, its count, the lifetime counter and the two condition
+        registers, together.
+
+        The registers are here rather than in the poll because they are read on demand with
+        everything else this page shows, and because the full tier reads one command (#58a).
+        """
         runner = self._runner
         if runner is None or not runner.is_connected:
             return
@@ -485,6 +554,8 @@ class DiagnosticsPage(Page):
                 (Capability.LOG_COUNT, None),
                 (Capability.LIFETIME_HOURS, None),
                 (Capability.GPS_ENGINE, None),
+                (Capability.OPERATION_CONDITION, None),
+                (Capability.HARDWARE_CONDITION, None),
             ],
             self._absorb,
         )
@@ -507,6 +578,8 @@ class DiagnosticsPage(Page):
         # claim about the hardware where a dash is a statement about the read.
         self._lifetime.setText(DASH if value is None else f"{value:,} h")
 
+        self._absorb_conditions(answered)
+
         engine = answered.get(Capability.GPS_ENGINE)
         self._show_gps_engine(
             gps_engine.parse(engine.transaction.first_line)
@@ -522,6 +595,64 @@ class DiagnosticsPage(Page):
         self._log_summary.setText(
             f"{len(self._entries):,} entries shown"
             + (f", {reported:,} reported by the receiver." if reported is not None else ".")
+        )
+
+    def _decline_conditions(self) -> None:
+        """§9.11: a family with no status registers is told so, where the reading would be.
+
+        A talker has no register to read and never will, which is a different sentence from "not
+        read yet" and has to stay a different sentence — the first is about the receiver and the
+        second is about this application.
+        """
+        sentence = explain(None if self._runner is None else self._runner.driver)
+        self._log_condition.set_state(Severity.NEUTRAL, sentence)
+        self._show_conditions([SeverityPill(Severity.NEUTRAL, sentence, self._palette)])
+
+    def _absorb_conditions(self, answered: Mapping[Capability, CommandOutcome]) -> None:
+        """What the two condition registers said, as sentences rather than as numbers.
+
+        #110 and #112. Both registers are already documented bit by bit in
+        `status_register_map.py` and already have a page that shows them raw (§10.10); what was
+        missing is anything that **reads** them and says what they mean where a user would look.
+        """
+        if _declined(answered.get(Capability.OPERATION_CONDITION)):
+            # The runner answers a capability the connected family has no command for with a
+            # refusal rather than silence, and the two mean different things: this family will
+            # never have this reading, where silence is a read that has not happened yet.
+            self._decline_conditions()
+            return
+
+        operation = _register_reading(answered.get(Capability.OPERATION_CONDITION))
+        if operation is None:
+            self._log_condition.set_state(Severity.NEUTRAL, "Log condition not read")
+        elif operation & (1 << _LOG_ALMOST_FULL):
+            # §9.13: colour, shape and text, and the text says what to do about it. CAUTION rather
+            # than CRITICAL — the log is still recording, and the receiver is still disciplining.
+            self._log_condition.set_state(
+                Severity.CAUTION, "Log almost full — clear it to keep recording"
+            )
+        else:
+            self._log_condition.set_state(Severity.SUCCESS, "Log has room")
+
+        hardware = _register_reading(answered.get(Capability.HARDWARE_CONDITION))
+        if hardware is None:
+            self._show_conditions([SeverityPill(Severity.NEUTRAL, "Not read", self._palette)])
+            return
+
+        unlabelled = faults_with_no_health_label(hardware)
+        if not unlabelled:
+            self._show_conditions(
+                [
+                    SeverityPill(
+                        Severity.SUCCESS,
+                        "Nothing the health monitor cannot show",
+                        self._palette,
+                    )
+                ]
+            )
+            return
+        self._show_conditions(
+            [SeverityPill(Severity.CRITICAL, bit.meaning, self._palette) for bit in unlabelled]
         )
 
     def _redraw_log(self) -> None:
@@ -664,6 +795,19 @@ class DiagnosticsPage(Page):
         return self._test_result
 
     @property
+    def log_condition(self) -> tuple[Severity, str]:
+        """The receiver's verdict on its own log, as both channels §9.13 requires."""
+        return self._log_condition.severity, self._log_condition.text
+
+    @property
+    def hardware_conditions(self) -> list[tuple[Severity, str]]:
+        """What the hardware register reports that §10.4's health monitor has no label for."""
+        return [(pill.severity, pill.text) for pill in self._condition_pills]
+
+    def palette_of_condition_pills(self) -> list[Palette]:
+        return [pill.palette_tokens for pill in (self._log_condition, *self._condition_pills)]
+
+    @property
     def test_detail_text(self) -> str:
         return self._test_detail.text()
 
@@ -698,6 +842,18 @@ def _experimental_answer(transaction: Transaction) -> str:
     if token:
         return f"no answer; the receiver's error queue reported {token}"
     return "no answer"
+
+
+def _declined(outcome: CommandOutcome | None) -> bool:
+    """Whether the connected family answered *I have no command for that*."""
+    return outcome is not None and outcome.command is None
+
+
+def _register_reading(outcome: CommandOutcome | None) -> int | None:
+    """One register's condition as a number, or ``None`` when it was not read or did not parse."""
+    if outcome is None or outcome.transaction is None or not outcome.transaction.succeeded:
+        return None
+    return parse_integer(outcome.transaction.first_line)
 
 
 def _severity_of(entry: DiagnosticLogEntry) -> Severity:
