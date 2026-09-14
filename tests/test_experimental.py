@@ -10,7 +10,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 from collections.abc import Callable, Sequence
 
-from PySide6.QtWidgets import QApplication, QLabel
+from PySide6.QtWidgets import QApplication, QLabel, QPushButton
 
 from conftest import NOW
 from smartclock_device.clock import FixedClock
@@ -332,3 +332,71 @@ def _command(mnemonic: str) -> ScpiCommand:
     found = catalog.find(mnemonic)
     assert found is not None, f"{mnemonic} is not catalogued"
     return found
+
+
+# ---- #114: a third answer, beside an answer and an undefined header ------------------------------
+
+
+def _button_for(page: DiagnosticsPage, mnemonic: str) -> QPushButton:
+    for button, command in zip(page._experimental_buttons, page._experimental_shown, strict=False):
+        if command.mnemonic == mnemonic:
+            return button
+    raise KeyError(mnemonic)
+
+
+def test_stale_data_is_worded_as_not_yet_rather_than_never(application: QApplication) -> None:
+    """**Measured on the bench Z3805A**, 13 Sep 2026: `:PTIM:LEAP:GPST?` answers
+    `-230,"Data corrupt or stale"` — the receiver has the mnemonic and has nothing to answer with.
+
+    That is a different fact from `-113`, and the difference is the whole point: `-113` means never
+    and this means *not yet*. §10.14 records the same code from `:PTIM:LEAP:DATE?` and `:DUR?`
+    whenever no leap second is announced, which is most of the time and never permanently.
+    """
+    del application
+    page = DiagnosticsPage()
+    page.set_command_runner(_FakeRunner({":DIAG:STAC?": ("", '-230,"Data corrupt or stale"')}))
+    page._rebuild_experimental(SmartClockDriver(clock=FixedClock(NOW)))
+
+    page._run_experimental(_command(":DIAG:STAC?"))
+
+    assert "no data for it yet" in page._experimental_rows[":DIAG:STAC?"].text()
+
+
+def test_a_stale_answer_leaves_the_button_offering(application: QApplication) -> None:
+    """The behavioural half, and the one that matters. The same query may answer perfectly an hour
+    later; disabling it would be the `-113` treatment applied to the opposite fact."""
+    del application
+    page = DiagnosticsPage()
+    page.set_command_runner(_FakeRunner({":DIAG:STAC?": ("", '-230,"Data corrupt or stale"')}))
+    page._rebuild_experimental(SmartClockDriver(clock=FixedClock(NOW)))
+
+    page._run_experimental(_command(":DIAG:STAC?"))
+
+    assert _button_for(page, ":DIAG:STAC?").isEnabled() is True
+
+
+def test_an_undefined_header_still_stops_offering(application: QApplication) -> None:
+    """The control for the test above: the two codes must part company, and a change that worded
+    `-230` by widening the `-113` branch would pass one of these and fail this one."""
+    del application
+    page = DiagnosticsPage()
+    page.set_command_runner(_FakeRunner({":DIAG:STAC?": ("", '-113,"Undefined header"')}))
+    page._rebuild_experimental(SmartClockDriver(clock=FixedClock(NOW)))
+
+    page._run_experimental(_command(":DIAG:STAC?"))
+
+    assert _button_for(page, ":DIAG:STAC?").isEnabled() is False
+
+
+def test_any_other_error_is_shown_in_the_receivers_own_words(application: QApplication) -> None:
+    """Two codes are worded and no more. Inventing sentences for codes nobody has seen is how a
+    catalogue of wrong explanations gets built, so everything else is quoted rather than
+    interpreted."""
+    del application
+    page = DiagnosticsPage()
+    page.set_command_runner(_FakeRunner({":DIAG:STAC?": ("", '-221,"Settings conflict"')}))
+    page._rebuild_experimental(SmartClockDriver(clock=FixedClock(NOW)))
+
+    page._run_experimental(_command(":DIAG:STAC?"))
+
+    assert "Settings conflict" in page._experimental_rows[":DIAG:STAC?"].text()

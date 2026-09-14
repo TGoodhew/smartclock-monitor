@@ -72,6 +72,19 @@ from smartclock_monitor.widgets.severity_pill import SeverityPill
 #: words, because the words are the receiver's and a firmware may phrase them differently.
 UNDEFINED_HEADER: Final = "-113"
 
+#: SCPI's code for *data corrupt or stale*: the receiver **has** the mnemonic and has nothing to
+#: answer with (#114).
+#:
+#: A third outcome beside an answer and an undefined header, and the distinction is the whole point:
+#: `-113` means never, and this means not yet. Measured on the bench 13 Sep 2026 —
+#: `:PTIM:LEAP:GPST?` answers it, and §10.14 records `:PTIM:LEAP:DATE?` and `:DUR?` doing the same
+#: whenever no leap second is announced.
+#:
+#: **Only these two codes are worded.** Every other one falls through to the receiver's own text,
+#: because inventing sentences for codes nobody has seen is how a catalogue of wrong explanations
+#: gets built.
+STALE_DATA: Final = "-230"
+
 #: The Operation register's only fault bit: *diagnostic log almost full* (#110).
 #:
 #: Named rather than written as a literal at the test, and taken from the map rather than typed,
@@ -437,6 +450,13 @@ class DiagnosticsPage(Page):
             self._experimental_absent.add(asked.mnemonic)
             row.setText("This receiver does not have this query.")
             self._retune_experimental_buttons()
+            return
+
+        if STALE_DATA in raised:
+            # **Not yet, rather than never — so the button stays** (#114). The same query may
+            # answer perfectly an hour later, once the receiver has the data it is being asked
+            # about. Disabling it here would be the `-113` treatment applied to the opposite fact.
+            row.setText("The receiver has this query and no data for it yet.")
             return
 
         row.setText(raised or _experimental_answer(answered.transaction))
