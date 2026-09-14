@@ -47,6 +47,11 @@ class ResponseFormat(Enum):
     #: A comma-separated list whose first field is the value of interest.
     VALUE_LIST = 5
 
+    #: A comma-separated list of whole numbers, every one of which matters — a date as
+    #: ``+2007,+1,+29``, or a list of PRNs. Distinct from :attr:`VALUE_LIST` precisely because
+    #: taking the first field of one of these would be reading a year as a date (#118).
+    INTEGER_LIST = 9
+
     #: Free text on one line.
     TEXT = 6
 

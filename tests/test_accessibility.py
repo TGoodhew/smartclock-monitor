@@ -400,7 +400,6 @@ def test_no_two_markers_overlap_at_the_plot_s_minimum_size() -> None:
     """
     import itertools
     import math
-    from pathlib import Path
 
     from smartclock_device.clock import SystemClock
     from smartclock_device.drivers.smartclock import SmartClockDriver
@@ -408,15 +407,27 @@ def test_no_two_markers_overlap_at_the_plot_s_minimum_size() -> None:
     from smartclock_monitor.themes.spacing import SKY_PLOT_POINTER_TARGET
     from smartclock_monitor.widgets.sky_plot import SkyPlot
     from smartclock_monitor.widgets.sky_plot_geometry import disc_for, position
+    from test_parser_fuzz import fixture_paths
 
     smallest = float(SkyPlot().minimumWidth())
     driver = SmartClockDriver(clock=SystemClock())
-    # **rglob.** Nine of the ten captures live in ``fixtures/captured/``, and a flat glob found
-    # only the one at the top — so this walked a tenth of its oracle while asserting it had one.
-    # The non-empty assertion below did not catch that: one fixture is not none.
-    fixtures = sorted((Path(__file__).resolve().parent / "fixtures").rglob("*.txt"))
-    assert len(fixtures) >= 10, (
-        f"found only {len(fixtures)} captures; the fixtures are the oracle and there are ten"
+    # **The ten status screens, and only those** — taken from the one function that defines the
+    # corpus rather than from a glob of this file's own.
+    #
+    # This was `rglob("*.txt")` over the whole fixtures tree, for a good reason: nine of the ten
+    # live in `captured/` and a flat glob found only the one at the top, so it walked a tenth of
+    # its oracle while asserting it had one. The over-broad fix then swept up two other corpora —
+    # the UCCM sittings and, on 13 Sep 2026, the SCPI transcripts (#118) — and a transcript is not
+    # a status screen. `test_parser_fuzz` learned the same lesson from the same directory and its
+    # `fixture_paths` is now the single definition of what the corpus is.
+    #
+    # **A real sky went with it, and it is not lost.** The sweep transcript holds two satellites
+    # 21.6 px apart at this plot's minimum size, inside the 24 px target — so this criterion is not
+    # a property a sky plot can guarantee, only one this corpus happens to satisfy. #121 records
+    # that with the measurement.
+    fixtures = fixture_paths()
+    assert len(fixtures) == 10, (
+        f"found {len(fixtures)} captures; the fixtures are the oracle and there are ten"
     )
 
     closest = math.inf

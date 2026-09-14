@@ -349,6 +349,26 @@ catalogued — so that path rests on the citation alone, and its tests say so.
 
 #113. `tools/capture_registers.py` takes the sitting; `tests/test_time_code.py` asserts against it.
 
+### Three summaries the receiver corrected
+
+§8.1's catalogue is ported entry for entry, and three of them say something different here because
+the bench Z3805A contradicted the original (#118, 13 Sep 2026):
+
+| | WinZ3805A | Here |
+|---|---|---|
+| `:SYST:COMM?` | *"the current serial port configuration"* | **which port** the receiver is on — it answers `SER1` |
+| `:SYNC:HOLD:WAIT?` | a boolean | a **keyword** — it answers `NONE`, which `parse_boolean` reads as *absent* |
+| `:DIAG:QUER:RESP?` | *"reads a fixed response, used to prove the link is alive"* | it **repeats the previous query's answer** |
+
+The third is the one that matters. Four readings put four different values through it — `+3` after
+`:SYNC:TFOM?`, `1` after `:LED:GPSL?`, `+10` after `:GPS:SAT:VIS:PRED:COUN?` — and asked twice in a
+row it repeats itself rather than advancing. It is still a link test, which is presumably how it
+earned its name, but a user told it returns a *fixed* response would read a stale value as the
+response and conclude the link was fine.
+
+All three are asserted in `tests/test_catalogue_gap.py` against the sitting, because a corrected
+summary that nothing checks is a comment that gets re-corrected back one day.
+
 ### Three platforms
 
 The whole reason the repository exists. WinUI 3 is Windows-only by definition.
