@@ -381,7 +381,7 @@ left out. This page is for finding out why a summary bit is set; most people nev
 
 #### Time — `Ctrl+8`
 
-![The Time page: a Receiver clock card showing 20:52:20, "PDT · 27 Aug 2026", a Show times in picker set to This computer, time scale UTC and the raw date the receiver reported, 12 Jan 2007 03:52:20; a Week rollover correction card; a Leap second card reading None announced; and a Time code output card](images/how-to-use/page-time.png)
+![The Time page: a Receiver clock card showing 20:52:20, "PDT · 27 Aug 2026", a Show times in picker set to This computer, time scale UTC and the raw date the receiver reported, 12 Jan 2007 03:52:20; a Week rollover correction card; a Leap second card reading None announced; and a Time code output card with a Read button](images/how-to-use/page-time.png)
 
 - **Receiver clock** — the receiver's time, in the zone chosen with **Show times in**: *This
   computer* or *UTC*, and always named, because a time that does not say which zone it is in cannot
@@ -400,8 +400,18 @@ left out. This page is for finding out why a summary bit is set; most people nev
   rejects those questions otherwise.
 - **Time code output** — the receiver sends a message about half a second before each 1 PPS naming
   the time that pulse will carry. The **format** says the same thing in different notations, so
-  whatever decodes it has to be told which one the receiver is set to. The code itself is emitted
-  on the receiver's own 1 Hz cadence and is not requested here.
+  whatever decodes it has to be told which one the receiver is set to; it is read when you open the
+  page.
+
+  **Read** fetches one message and decodes it: the time of the next pulse, both figures of merit,
+  whether a leap second is announced, whether the receiver is asking to be serviced, and whether it
+  considers its own time valid. The receiver's own date is shown beside the corrected one, as
+  everywhere else. The message ends in a checksum and the card says whether it matched — a
+  mismatch means the line garbled it, not that the receiver is wrong.
+
+  It is a button rather than something the page keeps up to date because **the receiver only
+  emits this once a second**, so asking for one blocks the link for up to a second. That is a fine
+  price to pay once and a poor one to pay every time a page refreshes.
 
 #### Settings — `Ctrl+9`
 

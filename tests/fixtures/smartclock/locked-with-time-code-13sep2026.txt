@@ -1,0 +1,68 @@
+# taken 2026-09-14T01:47:41+00:00 from /dev/ttyUSB0
+# lines are verbatim; '>>> ' opens what was sent
+>>> :SYST:STAT?
+------------------------------- Receiver Status -------------------------------
+SYNCHRONIZATION ............................................. [ Outputs Valid ]
+SmartClock Mode ___________________________   Reference Outputs _______________
+>> Locked to GPS                              TFOM     3             FFOM     0
+   Recovery                                   1PPS TI -1.4 ns relative to GPS
+   Holdover                                   HOLD THR 1.000 us
+   Power-up                                   Holdover Uncertainty ____________
+                                              Predict  1.4 us/initial 24 hrs
+                                                
+ACQUISITION ................................................ [ GPS 1PPS Valid ]
+Tracking: 8 ____   Not Tracking: 5 ________   Time ____________________________
+PRN  El  Az  C/N   PRN  El  Az                UTC      01:47:42     29 Jan 2007
+  5  17 277   36     2   7  90                GPS 1PPS Synchronized to UTC
+  7  53  97   39     9  12 161                ANT DLY  60 ns
+  8  33  56   37    15   6 324                Position ________________________
+ 14  63 237   40    17  15 177                MODE     Hold
+ 20  34 308   39    27   5  32                
+ 21  13 243   36                              LAT      N  47:31:18.546
+ 22  42 233   40                              LON      W 122:12:22.128
+ 30  -- ---   --                              HGT               +38.00 m  (MSL)
+                                              
+                                              
+                                              
+                                              
+ELEV MASK 10 deg                              
+HEALTH MONITOR ......................................................... [ OK ]
+Self Test: OK    Int Pwr: OK   Oven Pwr: OK   OCXO: OK   EFC: OK   GPS Rcv: OK 
+>>> :STAT:OPER:COND?
++90
+>>> :STAT:OPER:HARD:COND?
++0
+>>> :STAT:OPER:HOLD:COND?
++0
+>>> :STAT:OPER:POW:COND?
++7
+>>> :STAT:QUES:COND?
++0
+>>> :SYNC:TFOM?
++3
+>>> :SYNC:FFOM?
++0
+>>> :SYNC:HOLD:DUR?
++1.44800E+003,0
+>>> :DIAG:LOG:COUN?
++222
+>>> :DIAG:LIF:COUN?
++36865
+>>> :PTIM:TCOD:FORM?
+F2
+>>> :PTIM:TCOD?
+T2200701290147493000047
+>>> :PTIM:TCOD?
+T220070129014750300003F
+>>> :PTIM:TCOD?
+T2200701290147513000040
+>>> :PTIM:TCOD?
+T2200701290147523000041
+>>> :PTIM:TCOD?
+T2200701290147533000042
+>>> :PTIM:TCOD?
+T2200701290147543000043
+>>> :PTIM:TCOD?
+T2200701290147553000044
+>>> :PTIM:TCOD?
+T2200701290147563000045

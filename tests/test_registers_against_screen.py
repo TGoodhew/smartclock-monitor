@@ -48,11 +48,15 @@ SENT: Final = ">>> "
 NOW: Final = datetime(2026, 9, 14, 0, 52, 38, tzinfo=UTC)
 
 
-def transcript() -> dict[str, tuple[str, ...]]:
-    """The sitting, as a mnemonic to the lines it answered with."""
+def transcript(path: Path = SITTING) -> dict[str, tuple[str, ...]]:
+    """A sitting, as a mnemonic to the lines it answered with.
+
+    A mnemonic asked more than once — the time code is, eight times over (#113) — accumulates its
+    answers in order, so a repeated command reads as the series it was.
+    """
     replies: dict[str, list[str]] = {}
     current: list[str] | None = None
-    for line in SITTING.read_bytes().decode("latin-1").split("\r\n"):
+    for line in path.read_bytes().decode("latin-1").split("\r\n"):
         if line.startswith("#"):
             continue
         if line.startswith(SENT):

@@ -32,6 +32,7 @@ its reasoning in [`platform-decisions.md`](platform-decisions.md) and its argume
 | **Main window minimum height** | 240 px (§9.6.2) | **285 px**, measured | Different — see below |
 | **Compact mode, in and out** | Double-click the medallion, or `Ctrl+Shift+M` | `Ctrl+Shift+M` and `Esc` only | *Reduction* — see below |
 | **The user's guide** | One document | **Forked** — same receiver half, rewritten window half | Different — see below |
+| **The time code itself** | Format only (§10.14) | **Read on request**, decoded | *Addition* — see below |
 | **Multiple receivers (P2-1)** | Not built | Not built | Same |
 
 ---
@@ -318,6 +319,35 @@ The old shape worked, and that was the problem: `driver.supports(catalog.RUN_SEL
 SmartClock's command object to whichever driver is connected, and reads as decoupled only because
 the other one answers `False`. `tests/test_layering.py` now forbids a view importing the command
 catalog at all.
+
+### The Time page reads the time code, on request
+
+§10.14's wireframe shows the time-code card carrying the **format** and not the message, and that
+was the right call for the reason it gives: `:PTIM:TCOD?` answers on the receiver's own 1 Hz
+cadence, so a request lands in the next emission slot and blocks for the best part of a second —
+*"a cost a read-only page has no reason to pay, and one charged again on every refresh."*
+
+**Both halves of that sentence are about refreshing.** This port re-measured the cost on the bench
+on 13 Sep 2026 and found it as described: 0.4 to 1.0 s against 0.2 s for an ordinary scalar query on
+the same link in the same minute, and the checksum rule #37 established held on 14 of 14 further
+messages. So the ruling stands where it was aimed — nothing polls it, and arriving on the page does
+not ask — and a **Read** button buys one message when a user wants one.
+
+What that message carries is why it is worth a button: the time of the next 1 PPS, both figures of
+merit, whether a leap second is announced, whether the receiver is asking for service, and whether
+it considers its own time valid. Twenty-three characters against a page and a half of status
+screen. It is also the **first independent route this port has had to a receiver date** — §7.4's
+rollover correction had only ever been checked against the screen it was written for, and the time
+code reaches the same rolled-over date through a different query and a different encoding.
+
+The decode is Lady Heather's field widths (#98) confirmed by arithmetic: `time_code_format.py`,
+written here from the Z3801A guide months earlier and without reference to her, records the two
+message lengths as 19 and 23 characters, and her layout comes to exactly those totals. The bench
+then agrees on the two fields that can be checked independently. **T1 is decoded and has never been
+seen** — the bench receiver is in T2 and the setter that would change it is deliberately not
+catalogued — so that path rests on the citation alone, and its tests say so.
+
+#113. `tools/capture_registers.py` takes the sitting; `tests/test_time_code.py` asserts against it.
 
 ### Three platforms
 

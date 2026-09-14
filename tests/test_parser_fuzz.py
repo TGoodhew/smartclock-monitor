@@ -38,6 +38,7 @@ from smartclock_device.parsing.scalars import (
 )
 from smartclock_device.parsing.self_test import SelfTestResult
 from smartclock_device.parsing.status_screen import StatusScreenParser
+from smartclock_device.parsing.time_code import parse as parse_time_code
 
 FIXTURES = Path(__file__).resolve().parent / "fixtures"
 
@@ -258,3 +259,24 @@ def test_the_diagnostic_log_parser_survives_a_mangled_log() -> None:
 def test_the_self_test_parser_raises_on_nothing() -> None:
     for candidate in fuzz_strings("self-test"):
         assert SelfTestResult.parse(candidate).passed in (True, False, None)
+
+
+def test_the_time_code_parser_raises_on_nothing() -> None:
+    """Fixed-offset decoding over a line off the wire, which is the shape §11.1 is least forgiving
+    about: every field is a slice, and a slice of a short string is silently empty rather than an
+    error. The seeded corruption below is the same alphabet the screen fuzz uses, plus messages of
+    every length from nothing to twice a real one."""
+    rng = random.Random("time-code")
+    real = "T2200701290147493000047"
+    candidates = fuzz_strings("time-code") + [real[:n] for n in range(len(real) * 2)]
+
+    for _ in range(2000):
+        corrupted = list(real)
+        for _ in range(rng.randint(1, 6)):
+            corrupted[rng.randrange(len(corrupted))] = rng.choice(_NOISE)
+        candidates.append("".join(corrupted))
+
+    for candidate in candidates:
+        code = parse_time_code(candidate)
+        assert isinstance(code.text, str)
+        assert isinstance(code.notes, tuple)

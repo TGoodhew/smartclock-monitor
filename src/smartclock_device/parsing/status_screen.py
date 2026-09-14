@@ -783,22 +783,11 @@ def _apply_week_rollover(
     if device_time is None:
         return 0, None
 
-    delta = now - device_time
-    # Both C#'s Math.Round(double) and Python's round() are banker's rounding, so this needs no
-    # adjustment — unlike the coordinate seconds, where C# asks for AwayFromZero explicitly.
-    epochs = round(delta / gps_week_rollover.EPOCH)
-
-    if epochs <= 0:
-        return 0, device_time
-
-    residual = delta - gps_week_rollover.EPOCH * epochs
-    if abs(residual) > gps_week_rollover.TOLERANCE:
-        # A large gap that is not a multiple of the epoch is a receiver with the wrong date set,
-        # not a rollover, and inventing a correction for it would be worse than showing what the
-        # device said.
-        return 0, device_time
-
-    return epochs, device_time + gps_week_rollover.EPOCH * epochs
+    # The detection itself lives in the rollover module, because the time code reaches the same
+    # rolled-over date by a different query (#113) and §7.4 answered two ways is §7.4 answered
+    # once wrongly.
+    epochs = gps_week_rollover.epochs_behind(device_time, now)
+    return epochs, gps_week_rollover.correct(device_time, epochs) or device_time
 
 
 def _parse_clock_advisory(lines: list[str], warnings: list[str]) -> ClockAdvisory:
