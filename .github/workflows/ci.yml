@@ -139,12 +139,23 @@ jobs:
       # *system* installation — `flatpak --system install ... flathub` — which a runner's account
       # cannot authorise and which has no flathub remote anyway. `--user` is the whole difference,
       # and it is one flag rather than a container image.
+      # **On a pull request, build the code under test; on a tag, build the tag.** The manifest
+      # names a tag because a release has to be reproducible from one — and a pull request comes
+      # *before* the tag it will be released under exists, so building the manifest as written
+      # would fail on a revision nobody has pushed yet. The substitution is one line and it is the
+      # only difference between the two.
       - name: Build the bundle
         if: steps.changed.outputs.build == 'yes'
         run: |
+          manifest=packaging/flatpak/io.github.tgoodhew.SmartClockMonitor.yml
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            sed "s|^        tag: .*|        commit: ${{ github.event.pull_request.head.sha }}|" \
+              "$manifest" > /tmp/manifest.yml
+            manifest=/tmp/manifest.yml
+            grep -A3 'type: git' "$manifest"
+          fi
           flatpak-builder --user --force-clean --disable-rofiles-fuse \
-            --repo=repo build-dir \
-            packaging/flatpak/io.github.tgoodhew.SmartClockMonitor.yml
+            --repo=repo build-dir "$manifest"
           flatpak build-bundle repo smartclock-monitor.flatpak \
             io.github.tgoodhew.SmartClockMonitor
       - uses: actions/upload-artifact@v4
