@@ -21,7 +21,7 @@ its reasoning in [`platform-decisions.md`](platform-decisions.md) and its argume
 | **Taskbar overlay badge (P1-13)** | Yes | No | *Reduction* — D5 |
 | **UI typeface** | Segoe UI Variable | Noto Sans | Neutral — D4 |
 | **Device-literal typeface** | Cascadia Mono | Cascadia Mono | **Same** — D4 |
-| **Packaging** | MSIX, Microsoft Store | **AppImage**, built from PyInstaller | Different — D2, #27 |
+| **Packaging** | MSIX, Microsoft Store | **AppImage and Flatpak** | Different — D2, D10, #27, #93 |
 | **Platforms** | Windows | Linux, Windows, macOS | *Addition* |
 | **Receiver families** | SmartClock, NMEA 0183, UCCM | SmartClock, NMEA 0183, **UCCM (permanently untested)** | Same set — D7 |
 | **How pages name commands** | SCPI mnemonics | `Capability` enum | Different — see below |

@@ -82,6 +82,45 @@ jobs:
           BODY: ${{ github.event.pull_request.body }}
         run: python tools/closing_keywords.py --text "$BODY"
 
+  flatpak:
+    name: Flatpak
+    runs-on: ubuntu-latest
+    # **Only when the packaging changes, or on a tag.** A flatpak-builder run installs a 1.5 GB
+    # runtime and takes minutes, which is the wrong tax on a pull request that changed a docstring
+    # — and the manifest builds the application from a **tag**, so a PR's own code is not what it
+    # would be testing anyway. What it does test is the thing that actually breaks: a manifest that
+    # has drifted from the wheels, the runtime or the identity files.
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        # Tags and full history, because the version is derived from them (#33). Actions
+        # checks out a shallow clone with no tags by default, and hatch-vcs then falls back
+        # to 0.0.0 rather than failing — so every artefact would report the same wrong
+        # number, silently. tests/test_versioning.py fails if this line goes.
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: The pinned wheels are the ones this repository tests against
+        run: |
+          pip install -e ".[dev]"
+          python tools/flatpak_requirements.py --check
+      - name: Only build when the manifest or its pins changed
+        id: changed
+        run: |
+          git fetch --no-tags --depth=2 origin "${{ github.base_ref || github.ref_name }}" || true
+          if [ "${{ github.event_name }}" != "pull_request" ] \
+            || ! git diff --quiet HEAD^ -- packaging/ tools/flatpak_requirements.py; then
+            echo "build=yes" >> "$GITHUB_OUTPUT"
+          fi
+      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+        if: steps.changed.outputs.build == 'yes'
+        with:
+          bundle: smartclock-monitor.flatpak
+          manifest-path: packaging/flatpak/io.github.tgoodhew.SmartClockMonitor.yml
+          cache-key: flatpak-builder-${{ github.sha }}
+
   types:
     name: Types
     runs-on: ubuntu-latest

@@ -527,6 +527,65 @@ was someone trying to use the application.
 
 ---
 
+## D10 — The Flatpak runtime, and whose Qt a user gets
+
+**Status: Settled** (14 Sep 2026, [#93](https://github.com/TGoodhew/smartclock-monitor/issues/93)).
+**`org.freedesktop.Platform//24.08`, with PySide6 installed from the wheels this repository tests
+against.**
+
+D2 names Flatpak and AppImage as the Linux targets, and #93 spotted the decision hiding inside the
+first: **the runtime fixes which Qt a user gets**, and that is not a packaging detail. §9.12's
+accessibility criteria — contrast floors, focus visuals, pointer targets — are measured against a
+Qt, and shipping a different one would make those measurements claims about somebody else's build.
+
+### The choice
+
+| | |
+|---|---|
+| `org.kde.Platform` | Ships Qt 6, and is the obvious home for a Qt application |
+| `org.freedesktop.Platform` | Ships no Qt; the application brings its own |
+
+**The obvious one is wrong here, and for a reason particular to PySide6: the wheel carries its own
+Qt.** `pip install PySide6` does not bind to a system Qt, it unpacks one. So on the KDE runtime a
+bundle would carry *two* — KDE's, unused, and the wheel's, used — and the one a user actually ran
+would be the wheel's either way. All KDE's runtime would buy is 700 MB of Qt nothing loads, and the
+temptation to match the wheel to it, which means shipping a PySide6 nothing here has tested.
+
+So: the freedesktop runtime, which is the smallest thing that provides a desktop, and **the same
+wheels CI installs**, pinned by version and hash. What a user runs is what the suite ran.
+
+### What follows from it
+
+- **The Qt version moves when this repository's does**, not when a runtime does. `PySide6 6.11.2`
+  today, pinned in `tools/flatpak_requirements.py`, and a test fails if it drifts from what is
+  installed.
+- **`PySide6-Essentials`, not the metapackage.** The application imports `QtCore`, `QtGui` and
+  `QtWidgets`; all three are in Essentials, which is 80 MB against several hundred. A gate asserts
+  no import strays outside it, because such an import would work in CI and fail in the bundle.
+- **Python is the runtime's**, 3.12 in 24.08 — which is the floor `pyproject.toml` names and the
+  version the whole suite was developed against. The wheels are `cp310-abi3`, so they do not care.
+- **24.08 rather than the newest.** It is the runtime a user is most likely to already have, and
+  this application is worth less than the 1.5 GB download it would otherwise cost them.
+
+### The permission this needs, and why it is the blunt one
+
+`--device=all`. **Flatpak has no narrower permission for a serial port** — `--device=dri` is the
+graphics card, and a USB adapter appears as `/dev/ttyUSB0`, which only `all` covers. An application
+that monitors a receiver over RS-232 and cannot open a port is one nobody can use.
+
+It grants nothing the user does not already have: the port is still owned by `dialout` on the host,
+so an account outside that group is refused by the kernel exactly as it is outside the sandbox.
+`--doctor` says both things, inside the sandbox and out, and says them separately because they are
+two different failures with two different fixes.
+
+### Reversing it
+
+Cheap, and the cost is a measurement rather than a rewrite: changing to `org.kde.Platform` means
+re-taking §9.12's contrast and focus figures against that Qt, because the numbers in §9.4.5 would
+no longer be about the Qt anybody runs.
+
+---
+
 ## What is still owed
 
 | # | Decision | Status | Issue | Reversing it costs |
@@ -540,6 +599,7 @@ was someone trying to use the application.
 | D7 | Third family — **UCCM ported, permanently untested** | **Settled** | [#63](https://github.com/TGoodhew/smartclock-monitor/issues/63) | Cheap in principle; no bench is in prospect, so in practice it does not come off. |
 | D8 | Broadcast transmit — **taken, under three gates** | **Settled** | [#64](https://github.com/TGoodhew/smartclock-monitor/issues/64) | Expensive: a structural guarantee was traded for a rule, and it cannot be traded back without removing the send path. |
 | D9 | Accessibility — **seven criteria gated, six deferred** | **Settled** | [#94](https://github.com/TGoodhew/smartclock-monitor/issues/94) | Cheap to reverse in principle; the gated half means it would not start from nothing. |
+| D10 | Flatpak runtime — **freedesktop, with this repository's own PySide6** | **Settled** | [#93](https://github.com/TGoodhew/smartclock-monitor/issues/93) | Cheap, but §9.12's contrast and focus figures would have to be re-taken against another Qt. |
 
 **Every provisional row was chosen to be cheap to reverse**, which is the only honest way to take a
 decision on someone else's behalf — and all five were reviewed on 1 Sep 2026. Two were reversed
