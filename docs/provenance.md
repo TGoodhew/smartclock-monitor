@@ -213,6 +213,32 @@ If a receiver ever does start failing its own self-test, that is the moment to c
 belongs in both repositories.** `captured/capture-log.md` is the shared record; keep it that
 way rather than letting each repository grow its own.
 
+## Lady Heather 5.00, which was read and not copied
+
+**Nothing from Lady Heather is in this repository, and nothing may be.** `heather.cpp` and its
+siblings carry `Copyright (C) Mark S. Sims - all rights reserved.` and no licence. She is on the
+bench machine because she drives these receivers and has done for twenty years, and the audit in
+#98 read her for one thing only: **what the hardware does**.
+
+That line is not a formality, so here is where it falls:
+
+- **Fact, and fair to use.** That a receiver answers a particular mnemonic; that a register bit
+  means a particular condition; that a reply carries two fields rather than one. These are facts
+  about hardware neither implementation owns.
+- **Expression, and not ours to take.** Her code, her tables, her structure, her comments. None of
+  it is here, in any paraphrase, including in a test fixture or a docstring.
+
+**The operative rule is stronger than the licence requires: prefer a capture to a citation,
+always.** WinZ3805A settled this first - her claims are *hypotheses with citations until a
+receiver says otherwise* - and the UCCM sitting on 13 Sep 2026 is why it is worded that way.
+That capture put five of her Trimble time-code transitions to a real module: four held, and the
+fifth was refuted.
+
+What the audit against her actually produced is in #98's record. Four of her HP hardware-register
+masks match `status_register_map.py` bit for bit, which is two implementations agreeing
+independently; one claim of hers about a lifetime counter was checked against the manual and
+rejected; and the rest became bench sittings, which became #110 to #114.
+
 ## Naming
 
 The port plan written over there uses `winz3805a_device` and `winz3805a` as the package
