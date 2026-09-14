@@ -79,7 +79,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest]
-        python: ["3.12", "3.13"]
+        python: ["3.12", "3.13", "3.14"]
     env:
       # Qt needs a platform plugin even for tests that never open a window.
       QT_QPA_PLATFORM: offscreen
@@ -102,4 +102,12 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0
       - run: pip install -e ".[dev]"
+
+      # **Asserted rather than skipped on the newest version.** `importorskip` in the widget tests
+      # is right for a build machine missing libEGL — a packaging problem, not a defect — and is
+      # *wrong* as a way of passing a Python whose PySide6 wheels do not exist yet. Without this a
+      # 3.14 job would report green having drawn nothing, which reads as coverage.
+      - name: Qt is importable, not merely optional
+        run: python -c "import PySide6.QtWidgets; print(PySide6.__version__)"
+
       - run: pytest -v
