@@ -145,7 +145,7 @@ class SerialTransport:
         while True:
             port = self._require_open()
             try:
-                data = await asyncio.to_thread(port.read, _READ_SIZE)
+                data = await asyncio.to_thread(self._read_once, port)
             except Exception as exception:
                 raise TransportError(
                     self._fault_for(exception), f"Reading {self._port} failed: {exception}"
@@ -156,6 +156,28 @@ class SerialTransport:
 
             # Nothing this window. Yield, then check the port is still there before waiting again.
             await asyncio.sleep(0)
+
+    @staticmethod
+    def _read_once(port: serial.Serial) -> bytes:
+        """Whatever has arrived, waiting for the first byte and no longer.
+
+        **This is the loop's whole latency, and it used to be a fifth of a second per
+        transaction.** ``read(4096)`` against a port with a 200 ms timeout does not return when the
+        answer arrives — pyserial blocks until it has 4,096 bytes *or* the timeout expires, and a
+        scalar reply is nine. So every query cost the full window no matter how fast the receiver
+        was, and the receiver answers in about thirty milliseconds.
+
+        Measured on the bench, 14 Sep 2026 (#112): §7.3's fast sweep of six queries took **1.213 s**
+        against a tier that runs once a second — so the sweep could not fit inside its own cadence,
+        and the poll was delivering a reading every two seconds and more while reporting itself as
+        1 Hz.
+
+        Asking for ``in_waiting`` bytes returns as soon as the driver has any; the ``or 1`` is what
+        makes the call still *wait* rather than spin, because ``read(0)`` returns immediately and
+        the loop above would busy-wait through the whole transaction deadline. The timeout is still
+        the bound on how long a close can be stuck behind a read.
+        """
+        return bytes(port.read(min(port.in_waiting or 1, _READ_SIZE)))
 
     async def write(self, data: bytes) -> None:
         port = self._require_open()
