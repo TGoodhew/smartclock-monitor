@@ -142,8 +142,9 @@ jobs:
             --repo=repo build-dir \
             packaging/flatpak/io.github.tgoodhew.SmartClockMonitor.yml || {
               echo '::group::what the build installed'
-              find build-dir/files/share -maxdepth 4 \( -name '*.desktop' -o -name '*.xml' \
-                -o -name '*.svg' \) -printf '%M %s %p\n'
+              find build-dir/files/share -type f -printf '%M %s %p\n' | grep -vE '/lib/|site-packages' | head -40
+              echo '--- the desktop file, verbatim ---'
+              od -c build-dir/files/share/applications/*.desktop | head -8
               echo '::endgroup::'
               echo '::group::appstreamcli compose, by hand and verbose'
               appstreamcli compose --verbose --origin=flatpak --prefix=/ \
