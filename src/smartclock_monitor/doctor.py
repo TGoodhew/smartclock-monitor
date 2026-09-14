@@ -82,14 +82,56 @@ def _pyside() -> Finding:
 #: **Both checks share it because a QApplication can only exist once**, and because the interesting
 #: failure kills whichever process attempts it.
 _PROBE: Final = """
-import json, sys
-from PySide6.QtWidgets import QApplication
+from smartclock_monitor.doctor import run_gui_probe
 
-application = QApplication([sys.argv[0]])
-from smartclock_monitor.themes import fonts
-
-print("PROBE " + json.dumps({"platform": application.platformName(), "fonts": list(fonts.load())}))
+run_gui_probe()
 """
+
+#: The hidden flag the **frozen** builds answer this question with.
+#:
+#: See :func:`_probe_argv` for why a flag exists at all. Hidden from ``--help`` because it is a
+#: diagnostic talking to itself: nobody types it, and an interface listing it would be describing
+#: an implementation detail as a feature.
+GUI_PROBE_FLAG: Final = "--gui-probe"
+
+
+def run_gui_probe() -> None:
+    """Start Qt, register the fonts, and print one line saying what happened.
+
+    **The child half of :func:`_probe_gui`**, and a function rather than a source string so that
+    the two ways of reaching it cannot drift: an interpreter runs it through :data:`_PROBE`, and a
+    frozen bundle — which has no interpreter to hand — runs it through :data:`GUI_PROBE_FLAG`.
+
+    Never called in the parent process. A ``QApplication`` can exist once, and the failure this
+    exists to survive is an ``abort()``.
+    """
+    import json
+    import sys
+
+    from PySide6.QtWidgets import QApplication
+
+    application = QApplication([sys.argv[0]])
+    from smartclock_monitor.themes import fonts
+
+    answer = {"platform": application.platformName(), "fonts": list(fonts.load())}
+    print("PROBE " + json.dumps(answer))
+
+
+def _probe_argv() -> list[str]:
+    """How to start the child, which is not the same question in a frozen bundle.
+
+    **``sys.executable`` is only an interpreter when there is one.** PyInstaller sets it to the
+    launcher, so ``[sys.executable, "-c", _PROBE]`` re-invokes *the application* with an argument
+    its own parser has never heard of: argparse exits 2 before Qt is reached, on every machine,
+    however healthy the display. The AppImage therefore reported ``cannot start a GUI`` and
+    prescribed four apt packages on a desktop where ``--demo`` opened its window perfectly (#147).
+
+    A flag the launcher understands is the way in, and it keeps the child-process property this
+    whole design rests on — a ``qFatal()`` in the child is an exit status to the parent.
+    """
+    if getattr(sys, "frozen", False):
+        return [sys.executable, GUI_PROBE_FLAG]
+    return [sys.executable, "-c", _PROBE]
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,7 +165,7 @@ def _probe_gui() -> _GuiProbe:
     """
     try:
         finished = subprocess.run(
-            [sys.executable, "-c", _PROBE],
+            _probe_argv(),
             capture_output=True,
             text=True,
             check=False,
@@ -138,10 +180,20 @@ def _probe_gui() -> _GuiProbe:
             return _GuiProbe(answer["platform"], tuple(answer["fonts"]), "")
 
     # Qt's own complaint is the useful half of stderr, and it names the missing library.
+    #
+    # **Quoted as Qt's only when it is Qt's.** This took the last line of stderr whatever it was,
+    # so when the probe never reached Qt at all the report attributed somebody else's words to it:
+    # in the AppImage it printed a line of the probe's own source as though the platform plugin had
+    # said it (#147). The last line is still worth having — it is usually the exception — but as
+    # what it is, which is output nobody has identified.
     noise = [line for line in finished.stderr.splitlines() if line.strip()]
-    said = next((line for line in noise if "qt.qpa" in line.lower()), noise[-1] if noise else "")
     died = f"the probe exited {finished.returncode}"
-    return _GuiProbe(None, (), f"{died}: {said}" if said else died)
+    qt_said = next((line for line in noise if "qt.qpa" in line.lower()), None)
+    if qt_said is not None:
+        return _GuiProbe(None, (), f"{died}: {qt_said}")
+    if noise:
+        return _GuiProbe(None, (), f"{died}, saying nothing about Qt. Its last output: {noise[-1]}")
+    return _GuiProbe(None, (), f"{died} silently")
 
 
 def _qt_platform(probe: _GuiProbe) -> Finding:
