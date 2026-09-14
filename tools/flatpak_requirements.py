@@ -41,12 +41,26 @@ BACKEND_DESTINATION: Final = _FLATPAK / "python3-build-backend.yml"
 #:
 #: `shiboken6` first because PySide6 imports it at load; the two pure-Python serial packages last,
 #: because they are small and depend on nothing.
+#:
+#: **Every runtime dependency in `pyproject.toml` must appear here**, and
+#: `test_the_flatpak_pins_every_runtime_dependency` is what says so. It did not, once: v1.2.1
+#: shipped without `qasync` and could not reach its own event loop, while every gate stayed green
+#: because each of them only ever looked at what this tuple already named (#144).
 PINNED: Final[tuple[tuple[str, str], ...]] = (
     ("shiboken6", "6.11.2"),
     ("PySide6_Essentials", "6.11.2"),
+    ("qasync", "0.28.0"),
     ("pyserial", "3.5"),
     ("pyserial-asyncio", "0.6"),
 )
+
+#: The one dependency whose distribution name is not what the bundle installs.
+#:
+#: `pyproject.toml` asks for `PySide6`; the Flatpak installs `PySide6-Essentials`, which carries the
+#: same binaries for every module this application imports at a fraction of the size. The
+#: substitution is deliberate, and the Qt-module gate in `test_packaging.py` is what keeps it safe,
+#: so the coverage gate is told about it rather than tripping over it.
+SUBSTITUTED: Final[dict[str, str]] = {"pyside6": "pyside6-essentials"}
 
 #: What builds the wheel, and is **not** installed into the bundle.
 #:
