@@ -131,12 +131,23 @@ jobs:
             https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y --noninteractive flathub \
             org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08
-      - uses: flatpak/flatpak-github-actions/flatpak-builder@v6
+      # **flatpak-builder directly, rather than the action.** The action runs it against the
+      # *system* installation — `flatpak --system install ... flathub` — which a runner's account
+      # cannot authorise and which has no flathub remote anyway. `--user` is the whole difference,
+      # and it is one flag rather than a container image.
+      - name: Build the bundle
+        if: steps.changed.outputs.build == 'yes'
+        run: |
+          flatpak-builder --user --force-clean --disable-rofiles-fuse \
+            --repo=repo build-dir \
+            packaging/flatpak/io.github.tgoodhew.SmartClockMonitor.yml
+          flatpak build-bundle repo smartclock-monitor.flatpak \
+            io.github.tgoodhew.SmartClockMonitor
+      - uses: actions/upload-artifact@v4
         if: steps.changed.outputs.build == 'yes'
         with:
-          bundle: smartclock-monitor.flatpak
-          manifest-path: packaging/flatpak/io.github.tgoodhew.SmartClockMonitor.yml
-          cache-key: flatpak-builder-${{ github.sha }}
+          name: smartclock-monitor-flatpak
+          path: smartclock-monitor.flatpak
 
   types:
     name: Types
