@@ -126,7 +126,11 @@ jobs:
         # system installation again.
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder
+          # librsvg2-common is the gdk-pixbuf loader for SVG. Without it appstreamcli's compose
+          # step cannot render the scalable icon into the 64 and 128 px versions AppStream wants,
+          # and reports `file-read-error` against the component — which names neither the file nor
+          # the reason, and cost four builds to find.
+          sudo apt-get install -y flatpak flatpak-builder librsvg2-common
           flatpak remote-add --user --if-not-exists flathub \
             https://dl.flathub.org/repo/flathub.flatpakrepo
           flatpak install --user -y --noninteractive flathub \
