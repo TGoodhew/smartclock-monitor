@@ -42,6 +42,7 @@ class Capability(Enum):
     ELEVATION_MASK = "elevation mask"
     EXCLUDED_SATELLITES = "which satellites are excluded"
     SURVEY_ON_POWER_UP = "whether a survey runs at power-up"
+    HOLDOVER_DURATION = "how long holdover has lasted"
     HOLDOVER_DURATION_THRESHOLD = "the holdover uncertainty threshold"
     DIAGNOSTIC_LOG = "the diagnostic log"
     LOG_COUNT = "how many log entries there are"

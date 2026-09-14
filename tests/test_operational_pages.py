@@ -838,3 +838,56 @@ def test_the_position_page_names_the_kind_of_fix(application: QApplication) -> N
 
     page.show_reading(Reading(status=ReceiverStatus(captured_at=NOW)))
     assert page.fields.value_of("Fix quality") == DASH
+
+
+# ---- §10.8's Duration row, and the flag the query carries (#111) ---------------------------------
+
+
+def holdover_page(answer: str) -> HoldoverPage:
+    page = HoldoverPage()
+    page.set_command_runner(
+        FakeRunner(
+            {
+                catalog.HOLDOVER_DURATION_THRESHOLD.mnemonic: "+86400",
+                catalog.HOLDOVER_DURATION.mnemonic: answer,
+            }
+        )
+    )
+    return page
+
+
+def test_the_duration_row_uses_the_screen_while_the_receiver_is_holding() -> None:
+    """The screen prints a duration only while holding, and while it does it is the live one. The
+    query would answer the same thing; the screen is already in hand."""
+    page = holdover_page("+1.44800E+003,1")
+    page.show_reading(reading(mode=SmartClockMode.HOLDOVER, holdover_duration=timedelta(minutes=3)))
+
+    assert page.fields.value_of("Duration") == "0:03:00"
+
+
+def test_the_duration_row_falls_back_to_the_query_when_the_screen_is_silent() -> None:
+    """#111. Locked, the screen prints no duration and this row was a dash — while
+    ``:SYNC:HOLD:DUR?`` sat on the allowlist answering twenty-four minutes and a flag saying the
+    holdover had ended."""
+    page = holdover_page("+1.44800E+003,0")
+    page.show_reading(reading(mode=SmartClockMode.LOCKED))
+
+    assert page.fields.value_of("Duration") == "0:24:08 — the previous holdover"
+
+
+def test_a_figure_without_its_flag_is_not_called_previous() -> None:
+    """The flag chooses the words, so an answer that carries no flag gets no claim about which
+    holdover it describes — the figure, and nothing asserted about it."""
+    page = holdover_page("+1.44800E+003")
+    page.show_reading(reading(mode=SmartClockMode.LOCKED))
+
+    assert page.fields.value_of("Duration") == "0:24:08"
+
+
+def test_an_unasked_duration_is_still_a_dash() -> None:
+    """§11.1: the dash means *did not parse*, and a receiver that was never asked has not answered
+    anything for it to mean something else."""
+    page = HoldoverPage()
+    page.show_reading(reading(mode=SmartClockMode.LOCKED))
+
+    assert page.fields.value_of("Duration") == DASH

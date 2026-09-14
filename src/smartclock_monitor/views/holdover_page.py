@@ -44,8 +44,8 @@ from PySide6.QtWidgets import (
 )
 
 from smartclock_device.drivers.capability import Capability, ReceiverReading
-from smartclock_device.models.receiver_status import SmartClockMode
-from smartclock_device.parsing.scalars import parse_decimal
+from smartclock_device.models.receiver_status import ReceiverStatus, SmartClockMode
+from smartclock_device.parsing.scalars import parse_decimal, parse_flagged_value
 from smartclock_monitor.services.commands import CommandRunner
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.session import CommandOutcome
@@ -78,6 +78,10 @@ class HoldoverPage(Page):
         self._runner: CommandRunner | None = None
         self._mode: SmartClockMode = SmartClockMode.UNKNOWN
         self._connected_at: datetime | None = None
+        #: What `:SYNC:HOLD:DUR?` last answered: the seconds, and whether they are
+        #: the holdover the receiver is **in** or the last one it was in (#111).
+        self._duration_seconds: float | None = None
+        self._duration_current: bool | None = None
         self._now: datetime | None = None
 
         #: The last value this page wrote into the editor. A re-read compares against it to decide
@@ -196,9 +200,7 @@ class HoldoverPage(Page):
         self._state.set_state(*_state_of(status.mode))
         self._fields.set("Predicted 24 h uncertainty", _micro(status.holdover_predicted_seconds))
         self._fields.set("Present time error", _micro(status.holdover_present_seconds))
-        self._fields.set(
-            "Duration", DASH if status.holdover_duration is None else str(status.holdover_duration)
-        )
+        self._fields.set("Duration", self._duration_words(status))
         # §10.8: the *Waiting reason* row shows the status screen's own mode detail, not an answer
         # to :SYNC:HOLD:WAIT?, which nothing sends.
         self._fields.set("Waiting reason", status.mode_detail or DASH)
@@ -209,6 +211,26 @@ class HoldoverPage(Page):
 
         self._redraw_guard()
         self._retune()
+
+    def _duration_words(self, status: ReceiverStatus) -> str:
+        """How long holdover has lasted, from whichever source has an answer (#111).
+
+        **The screen prints a duration only while the receiver is holding.** Locked, it prints
+        none, and this row was a dash — while `:SYNC:HOLD:DUR?` sat on the allowlist answering
+        `+1.44800E+003,0`: twenty-four minutes of a holdover that had ended, and a flag saying it
+        had ended.
+
+        So the query fills the row when the screen cannot, **and the flag chooses the words**. A
+        figure in a row labelled *Duration* on a locked receiver would be worse than the dash it
+        replaced, because a reader would take it for the holdover they are in rather than the one
+        they are out of.
+        """
+        if status.holdover_duration is not None:
+            return str(status.holdover_duration)
+        if self._duration_seconds is None:
+            return DASH
+        span = timedelta(seconds=round(self._duration_seconds))
+        return f"{span} — the previous holdover" if self._duration_current is False else str(span)
 
     def _retune(self) -> None:
         live = self._runner is not None and self._runner.is_connected
@@ -231,13 +253,30 @@ class HoldoverPage(Page):
         runner = self._runner
         if runner is None or not runner.is_connected:
             return
-        runner.run([(Capability.HOLDOVER_DURATION_THRESHOLD, None)], self._absorb_limit)
+        runner.run(
+            [
+                (Capability.HOLDOVER_DURATION_THRESHOLD, None),
+                (Capability.HOLDOVER_DURATION, None),
+            ],
+            self._absorb_limit,
+        )
 
     def _absorb_limit(self, outcomes: Sequence[CommandOutcome]) -> None:
-        if not outcomes or outcomes[0].transaction is None:
+        # Keyed by capability, which is what was asked for — a page that keyed by mnemonic would
+        # be holding the connected family's spelling of its own question (§12, #304).
+        answered = {outcome.capability: outcome for outcome in outcomes if outcome.capability}
+
+        duration = answered.get(Capability.HOLDOVER_DURATION)
+        if duration is not None and duration.transaction is not None:
+            self._duration_seconds, self._duration_current = parse_flagged_value(
+                duration.transaction.first_line
+            )
+
+        limit = answered.get(Capability.HOLDOVER_DURATION_THRESHOLD)
+        if limit is None or limit.transaction is None:
             return
 
-        seconds = parse_decimal(outcomes[0].transaction.first_line)
+        seconds = parse_decimal(limit.transaction.first_line)
         if seconds is None:
             # An unread field stays empty — on a read that fails, on a driver whose catalog has no
             # such query, and before the first read.

@@ -244,6 +244,7 @@ _BY_CAPABILITY: Final[dict[Capability, ScpiCommand]] = {
     Capability.ELEVATION_MASK: catalog.ELEVATION_MASK,
     Capability.EXCLUDED_SATELLITES: catalog.EXCLUDED_SATELLITES,
     Capability.SURVEY_ON_POWER_UP: catalog.SURVEY_ON_POWER_UP,
+    Capability.HOLDOVER_DURATION: catalog.HOLDOVER_DURATION,
     Capability.HOLDOVER_DURATION_THRESHOLD: catalog.HOLDOVER_DURATION_THRESHOLD,
     Capability.DIAGNOSTIC_LOG: catalog.DIAGNOSTIC_LOG,
     Capability.LOG_COUNT: catalog.LOG_COUNT,
