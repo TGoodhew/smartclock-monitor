@@ -342,3 +342,46 @@ def test_the_holdover_reads_are_value_lists_rather_than_bare_decimals() -> None:
 
     assert parse_decimal("+2.5E-006,0") is None
     assert parse_first_of_list("+2.5E-006,0") == pytest.approx(2.5e-06)
+
+
+# ---- §8.3's field-list arguments (#118) ----------------------------------------------------------
+
+
+def test_a_field_list_renders_the_receivers_own_form() -> None:
+    """§10.11 gives the form literally: `:GPS:INIT:DATE 1994,7,4`."""
+    assert catalog.INITIAL_DATE.rendered([1994, 7, 4]) == ":GPS:INIT:DATE 1994,7,4"
+    assert catalog.SET_TIME_ZONE.rendered([-5, 30]) == ":PTIM:TZONe -5,30"
+
+
+def test_a_field_list_checks_each_field_against_its_own_range() -> None:
+    """Which is the whole reason this is not an integer list. One pair of bounds wide enough for a
+    year is wide enough for month thirty-one."""
+    assert catalog.INITIAL_DATE.rendered([1994, 13, 4]) is None
+    assert catalog.INITIAL_DATE.rendered([1994, 7, 32]) is None
+    assert catalog.INITIAL_TIME.rendered([24, 0, 0]) is None
+    assert catalog.SET_TIME_ZONE.rendered([0, 60]) is None
+
+
+def test_a_field_list_of_the_wrong_length_is_refused() -> None:
+    """A short list would send a date with no day. §8.3's sentence says these are valid only
+    before the first satellite is tracked, so a misunderstood one is not something a user gets to
+    watch fail."""
+    assert catalog.INITIAL_DATE.rendered([1994, 7]) is None
+    assert catalog.INITIAL_DATE.rendered([1994, 7, 4, 0]) is None
+    assert catalog.INITIAL_DATE.rendered(None) is None
+    assert catalog.INITIAL_DATE.rendered("1994,7,4") is None
+
+
+def test_a_boolean_is_not_a_field() -> None:
+    """``bool`` is an ``int`` and ``True`` would render as month one."""
+    assert catalog.INITIAL_DATE.rendered([1994, True, 4]) is None
+
+
+def test_every_field_list_names_its_fields() -> None:
+    """§10.11 puts one editor per parameter in the receiver's order, and an editor with no label is
+    a box a user has to count their way to."""
+    for command in catalog.ALL:
+        if command.argument is ArgumentKind.FIELD_LIST:
+            assert command.fields, f"{command.mnemonic} takes fields and names none"
+            for field in command.fields:
+                assert field.name and field.minimum <= field.maximum, command.mnemonic

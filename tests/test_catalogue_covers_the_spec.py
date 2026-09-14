@@ -36,18 +36,6 @@ _SECTION: Final = "### 8.2 Tier S"
 #: trailing ``?``. Parameters are written ``<PRN>`` beside the mnemonic and are not part of it.
 _MNEMONIC: Final = re.compile(r"^[:*][A-Za-z:*]+\??$")
 
-#: The one entry in §8.2 that is **not catalogued**, excluded for a stated reason rather than
-#: because the gate was inconvenient.
-#:
-#: ``*TST?`` is a query in spelling and a self-test in effect. §10.9 measured what running one costs
-#: — the receiver leaves GPS lock and takes minutes to recover — and §8.3 gives `:DIAG:TEST?` a
-#: confirmation for exactly that. §8.2 classing `*TST?` as Safe therefore contradicts §10.9's own
-#: warning about the same operation, and cataloguing it as Safe would put an unconfirmed way to
-#: unlock the receiver in the console beside the confirmed one. **Surfaced, not resolved** (#120).
-#:
-#: ``:LED:ACTive`` was here too until #118's second batch catalogued it.
-_NOT_QUERIES: Final[frozenset[str]] = frozenset({"*TST?"})
-
 
 def inventory() -> list[str]:
     """Every mnemonic in §8.2's fenced block, in the order the document lists them."""
@@ -95,16 +83,117 @@ def test_the_inventory_is_found_and_is_the_size_it_looks() -> None:
     assert ":PTIM:TCOD?" in found
 
 
-@pytest.mark.parametrize("mnemonic", sorted(set(inventory()) - _NOT_QUERIES))
-def test_every_query_the_specification_lists_can_be_sent(mnemonic: str) -> None:
+@pytest.mark.parametrize("mnemonic", sorted(set(inventory())))
+def test_every_command_the_specification_lists_can_be_sent(mnemonic: str) -> None:
+    """**Every one of them, with no exclusions left.**
+
+    There were two. `:LED:ACTive` was §8.2's Safe setter, catalogued in #118's second batch.
+    `*TST?` looked like a conflict — §8.2 lists it under a heading saying *"all queries plus
+    non-disruptive actions"* while §8.3 and §10.9 give the same self-test a confirmation — and the
+    resolution was that §8.3's table carries `*TST?` explicitly, with a sentence naming the
+    consequence. The specific row wins over the general heading, and there was nothing to escalate.
+    """
     assert catalogued(mnemonic), f"§8.2 lists {mnemonic} and the catalogue has no entry for it"
 
 
-def test_the_exclusions_are_still_absent_and_still_have_reasons() -> None:
-    """An exclusion that quietly became true would be a rule enforcing nothing. Both of these are
-    meant to be added later — ``*TST?`` once #120 settles its tier, ``:LED:ACTive`` with the rest of
-    §8.2's setters — and when they are, this test is what says so."""
-    for mnemonic in _NOT_QUERIES:
+# ---- §8.3, the other half ------------------------------------------------------------------------
+
+#: Where §8.3's confirmation table begins.
+_CONFIRM_SECTION: Final = "### 8.3 Tier C"
+
+#: Fragments in §8.3's first column that are not mnemonics: a wildcard, and the tails of a row that
+#: abbreviates a family after naming its head — ``:GPS:SAT:TRAC:IGNore <PRN…> / :IGN:ALL /
+#: :IGN:NONE``. Both forms are covered through the head of their own row.
+_FRAGMENTS: Final[frozenset[str]] = frozenset(
+    {
+        ":STAT:*:ENABle",
+        ":NTRansition",
+        ":PTRansition",
+        ":IGN:ALL",
+        ":IGN:NONE",
+        ":INCL:ALL",
+        ":INCL:NONE",
+    }
+)
+
+#: The one family §8.3 tiers that **neither implementation catalogues** — the serial port's own
+#: settings. Excluded by name and with the question attached (#126): cataloguing them would put a
+#: control in §10.11's console that drops the link it is sent over, and §8.3's own sentence says
+#: the change *"persists through power cycling"*. §15's OQ-3 declined two of the family's other
+#: nodes on related reasoning and said so; the six here have never been decided either way.
+_UNDECIDED: Final[frozenset[str]] = frozenset(
+    {
+        ":SYST:COMM:SER1:BAUD",
+        ":SYST:COMM:SER1:BITS",
+        ":SYST:COMM:SER1:PARity",
+        ":SYST:COMM:SER1:SBITs",
+        ":SYST:COMM:SER1:PACE",
+        ":SYST:COMM:SER1:FDUPlex",
+        ":SYST:COMM:SER1:PRESet",
+    }
+)
+
+
+def confirm_table() -> list[str]:
+    """Every mnemonic in the first column of §8.3's table."""
+    text = SPECIFICATION.read_bytes().decode("utf-8")
+    start = text.index(_CONFIRM_SECTION)
+    rows = [
+        line
+        for line in text[start : text.index("### 8.4", start)].splitlines()
+        if line.startswith("|")
+    ]
+    found = []
+    for row in rows:
+        for quoted in re.findall(r"`([^`]+)`", row.split("|")[1]):
+            # A parameter is written beside the mnemonic — `<s>`, `<PRN…>` — and is not part of it.
+            # A keyword suffix is: `:GPS:POSition LAST` is its own entry in §8.1 for the reason
+            # §8.3 gives it its own sentence.
+            head = re.sub(r"\s*<[^>]*>\s*", "", quoted).strip()
+            if head.startswith((":", "*")):
+                found.append(head)
+    return found
+
+
+def test_the_confirmation_table_is_found_and_is_the_size_it_looks() -> None:
+    found = confirm_table()
+
+    assert len(found) == 36
+    assert ":SYST:PRESet" in found
+    assert "*TST?" in found
+
+
+@pytest.mark.parametrize("mnemonic", sorted(set(confirm_table()) - _FRAGMENTS - _UNDECIDED))
+def test_every_command_the_specification_confirms_is_catalogued_and_confirms(mnemonic: str) -> None:
+    """**Tier and sentence, not just presence.** A command catalogued at the wrong tier is worse
+    than one missing: it is a consequence a user is never warned about, on a control that looks
+    like every other control."""
+    from smartclock_device.commands.scpi_command import SafetyTier
+
+    command = next((c for c in catalog.ALL if _same(c.mnemonic, mnemonic)), None)
+
+    assert command is not None, f"§8.3 confirms {mnemonic} and the catalogue has no entry for it"
+    assert command.tier is SafetyTier.CONFIRM, (
+        f"{mnemonic} is §8.3's and is catalogued {command.tier}"
+    )
+    assert command.confirmation, f"{mnemonic} confirms with no sentence"
+
+
+def test_the_undecided_family_is_still_undecided() -> None:
+    """An exclusion that quietly became true would be a rule enforcing nothing. When the serial
+    settings are catalogued — or ruled out for good — #126 says so and this test is what notices."""
+    for mnemonic in _UNDECIDED:
         assert not catalogued(mnemonic), (
-            f"{mnemonic} is catalogued now: take it out of _NOT_QUERIES and let the gate cover it"
+            f"{mnemonic} is catalogued now: settle #126 and drop it here"
         )
+
+
+def _same(ours: str, theirs: str) -> bool:
+    mine, is_query = nodes(ours)
+    wanted, wanted_is_query = nodes(theirs)
+    if is_query != wanted_is_query or len(mine) != len(wanted):
+        return False
+    return all(
+        min(len(a), len(b)) >= 3 and a[: min(len(a), len(b))] == b[: min(len(a), len(b))]
+        for a, b in zip(mine, wanted, strict=True)
+    )
