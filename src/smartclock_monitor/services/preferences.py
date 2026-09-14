@@ -55,6 +55,11 @@ class Preferences:
     #: rather than about this application, and §9.1's user has a spectrum analyser to look at too.
     always_on_top: bool = False
 
+    #: §10.9's front-panel lamps (#123). Off, and this is the one preference whose default matters
+    #: to something outside this process: it is **the only setting that makes the application
+    #: change something on the receiver by itself**, so it is asked for rather than assumed.
+    drive_the_lamps: bool = False
+
 
 DEFAULTS: Final = Preferences()
 

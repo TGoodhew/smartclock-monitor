@@ -42,7 +42,9 @@ from smartclock_device.transport.settings import (
 )
 from smartclock_monitor.platform.paths import trend_database
 from smartclock_monitor.services import logging as app_log
+from smartclock_monitor.services import preferences
 from smartclock_monitor.services.commands import SessionCommands
+from smartclock_monitor.services.lamps import Lamps
 from smartclock_monitor.services.polling import Reading
 from smartclock_monitor.services.replay import ReplayTransport
 from smartclock_monitor.services.session import DeviceSession
@@ -229,6 +231,9 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
 
     store = _open_store(arguments, clock, window)
 
+    #: §10.9's two front-panel lamps, bound to whichever session is current (#123).
+    lamps = Lamps()
+
     #: What the next attempt should use. Mutable, because §10.12's dialog can change it while the
     #: supervisor is running — the cycle re-reads it on every attempt rather than capturing it
     #: once, which is the difference between a Connect button and a restart.
@@ -275,8 +280,14 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         connect=connect,
         driver=driver,
         clock=clock,
-        on_session=_announce(window, changes, clock, lambda: supervisor_holder[0].stopped_by_user),
-        on_reading=_publish(window, store, changes),
+        on_session=_announce(
+            window,
+            changes,
+            clock,
+            lambda: supervisor_holder[0].stopped_by_user,
+            lamps,
+        ),
+        on_reading=_publish(window, store, changes, lamps),
         on_status=window.set_connection_text,
     )
     supervisor_holder.append(supervisor)
@@ -293,6 +304,9 @@ async def _run(arguments: argparse.Namespace, window: object) -> None:
         raise
     finally:
         if supervisor.session is not None:
+            # **Before the close, not after**: by the time the transport is down there is no wire
+            # left to put a borrowed lamp back over.
+            await lamps.restore()
             await supervisor.session.close()
         if store is not None:
             store.close()
@@ -393,6 +407,7 @@ def _announce(
     changes: app_log.ChangeLog,
     clock: Clock,
     stopped_by_user: Callable[[], bool],
+    lamps: Lamps,
 ) -> Callable[[DeviceSession | None], None]:
     """Rewire the window as sessions come and go.
 
@@ -454,11 +469,25 @@ def _announce(
         # *Receiver* card is that surface, and until this line nothing filled it.
         window.set_identity(identity, session.identity_text)
 
+        # §10.9's two lamps (#123), **and only when a person has asked**. This is the one setting
+        # that makes the application change something on the receiver by itself, so both are under
+        # the same opt-in — arming one of them unconditionally would quietly make that sentence
+        # false.
+        #
+        # **Not awaited.** A `:LED:` write costs about a second, because the receiver services the
+        # node on its own 1 Hz tick, and nothing about the connection depends on the answer. The
+        # preference is read here rather than held, so turning the switch off and reconnecting does
+        # what it says without anything having to be notified.
+        lamps.forget()
+        if preferences.load().drive_the_lamps:
+            lamps.adopt(session)
+            lamps.arming = asyncio.create_task(lamps.arm())
+
     return announce
 
 
 def _publish(
-    window: object, store: TrendStore | None, changes: app_log.ChangeLog
+    window: object, store: TrendStore | None, changes: app_log.ChangeLog, lamps: Lamps
 ) -> Callable[[Reading], None]:
     """One callback that files the reading and then draws it.
 
@@ -472,6 +501,9 @@ def _publish(
 
     def publish(reading: Reading) -> None:
         changes.observed(reading)
+        # §10.9's Active lamp follows the receiver's lock state, and writes **only when it
+        # changes** — which is what makes a second-a-write affordable (#123).
+        lamps.follow(reading.status.mode)
         if store is not None:
             # Suppressed deliberately, and this is the one place it is right to: a failed write
             # costs a pixel of history, and letting it out of a poll-loop callback would cost the

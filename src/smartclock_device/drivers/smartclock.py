@@ -292,6 +292,8 @@ _BY_CAPABILITY: Final[dict[Capability, ScpiCommand]] = {
     Capability.OPERATION_CONDITION: catalog.OPERATION_CONDITION,
     Capability.ACTIVE_LAMP: catalog.ACTIVE_LAMP,
     Capability.SET_ACTIVE_LAMP: catalog.SET_ACTIVE_LAMP,
+    Capability.ENABLED_LAMP: catalog.ENABLED_LAMP,
+    Capability.SET_ENABLED_LAMP: catalog.SET_ENABLED_LAMP,
     Capability.TIME_CODE_FORMAT: catalog.TIME_CODE_FORMAT,
     Capability.TIME_CODE: catalog.TIME_CODE,
     Capability.LEAP_ACCUMULATED: catalog.LEAP_ACCUMULATED,
