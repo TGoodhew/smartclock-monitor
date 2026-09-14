@@ -77,6 +77,71 @@ def test_the_dialout_check_asks_about_this_session_not_the_file() -> None:
     assert "os.getgroups()" in source, "membership is read from the file rather than the process"
 
 
+def test_the_dialout_check_can_fail_inside_a_sandbox(monkeypatch: pytest.MonkeyPatch) -> None:
+    """**v1.2.1's could not, which is how a broken bundle passed its own doctor.**
+
+    A Flatpak's ``/etc/group`` is the runtime's and carries no ``dialout``, so the name lookup
+    raised ``KeyError`` and was reported as "no dialout group on this system" — an ``ok`` that no
+    host configuration could turn into a failure, on precisely the machine the check exists to
+    diagnose (#144). This asserts the outcome that used to be unreachable.
+    """
+    from types import SimpleNamespace
+
+    from serial.tools import list_ports
+
+    adapter = SimpleNamespace(
+        device="/dev/ttyUSB0", vid=0x067B, pid=0x2303, description="USB-Serial Controller"
+    )
+    monkeypatch.setattr(doctor, "_is_flatpak", lambda: True)
+    monkeypatch.setattr(list_ports, "comports", lambda: [adapter])
+    monkeypatch.setattr("os.access", lambda *_: False)
+
+    finding = doctor._dialout()
+
+    assert not finding.ok
+    assert "/dev/ttyUSB0" in finding.detail
+    assert "usermod -aG dialout" in finding.remedy
+    assert "chmod" in finding.remedy, "the remedy does not warn off the wrong fix"
+
+
+def test_the_sandbox_dialout_check_reports_a_port_the_kernel_allows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The other half: a pass has to remain reachable, or the check above is just an inverted
+    version of the bug it replaced."""
+    from types import SimpleNamespace
+
+    from serial.tools import list_ports
+
+    adapter = SimpleNamespace(
+        device="/dev/ttyUSB0", vid=0x067B, pid=0x2303, description="USB-Serial Controller"
+    )
+    monkeypatch.setattr(doctor, "_is_flatpak", lambda: True)
+    monkeypatch.setattr(list_ports, "comports", lambda: [adapter])
+    monkeypatch.setattr("os.access", lambda *_: True)
+
+    finding = doctor._dialout()
+
+    assert finding.ok
+    assert "/dev/ttyUSB0" in finding.detail
+
+
+def test_the_sandbox_dialout_check_does_not_claim_an_answer_it_has_not_got(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With nothing attached there is no port to try, and saying so is the honest report. The
+    detail has to admit it rather than read as a pass."""
+    from serial.tools import list_ports
+
+    monkeypatch.setattr(doctor, "_is_flatpak", lambda: True)
+    monkeypatch.setattr(list_ports, "comports", lambda: [])
+
+    finding = doctor._dialout()
+
+    assert "not checked" in finding.detail
+    assert finding.remedy, "nothing tells the reader how to get a real answer"
+
+
 def test_it_finds_the_bundled_faces() -> None:
     """Ties the doctor to what D4 settled: if the faces stop being bundled, this says so on every
     machine rather than only on one without them installed.

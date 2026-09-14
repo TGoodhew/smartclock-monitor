@@ -361,6 +361,9 @@ def _dialout() -> Finding:
     if platform.system() != "Linux":
         return Finding("dialout group", True, "not applicable on this platform")
 
+    if _is_flatpak():
+        return _dialout_by_probe()
+
     try:
         import grp
 
@@ -377,6 +380,54 @@ def _dialout() -> Finding:
         "this session is not in it, so opening a port will be refused",
         "sudo usermod -aG dialout $USER — then log out and back in, or run 'newgrp dialout'. "
         "Never chmod the device node.",
+    )
+
+
+def _dialout_by_probe() -> Finding:
+    """The same question inside a sandbox, asked of the kernel instead of of ``/etc/group``.
+
+    **Neither half of the check above survives a Flatpak.** ``/etc/group`` is the runtime's and has
+    no ``dialout``, so ``getgrnam`` raises ``KeyError`` — which the host path reads, correctly, as
+    "this distribution does not use that group". Inside a sandbox it means nothing of the sort, and
+    reporting it as ``ok`` made this check unfailable: v1.2.1 printed ``no dialout group on this
+    system`` and ``Nothing to fix`` on a machine where the answer happened to be yes, and would
+    have printed exactly the same on one where it was no (#144).
+
+    The numbers are no better. Every host gid the process holds is mapped to the overflow id, so
+    ``/dev/ttyUSB0`` and ``/dev/sda`` both report ``gid=65534`` and comparing them proves nothing.
+
+    ``os.access`` is evaluated by the kernel against the real credentials, and answers the question
+    group membership was only ever a proxy for: will this port open.
+    """
+    try:
+        from serial.tools import list_ports
+    except ImportError:
+        return Finding("dialout group", False, "pyserial is not importable", "See above.")
+
+    ports = [
+        port.device
+        for port in sorted(list_ports.comports(), key=lambda port: port.device)
+        if _is_adapter(port)
+    ]
+    if not ports:
+        return Finding(
+            "dialout group",
+            True,
+            "not checked — inside a sandbox this can only be answered by trying a real port, "
+            "and no adapter is attached",
+            "Attach the receiver and run this again before trusting it.",
+        )
+
+    refused = [device for device in ports if not os.access(device, os.R_OK | os.W_OK)]
+    if not refused:
+        return Finding("dialout group", True, f"the kernel allows {', '.join(ports)}")
+
+    return Finding(
+        "dialout group",
+        False,
+        f"the kernel refuses {', '.join(refused)}, so opening a port will fail",
+        "sudo usermod -aG dialout $USER — then log out and back in. No sandbox permission "
+        "substitutes for this, and never chmod the device node.",
     )
 
 
