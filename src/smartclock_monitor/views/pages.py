@@ -82,7 +82,7 @@ from smartclock_monitor.themes.tokens import LIGHT, Palette
 from smartclock_monitor.views.capability import command_for, gate
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.manage_satellites import ask_to_manage, parse_exclusions
-from smartclock_monitor.views.wording import humanise
+from smartclock_monitor.views.wording import humanise, mode_words
 from smartclock_monitor.widgets import sky_image
 from smartclock_monitor.widgets.copy_menu import attach_table_menu, attach_value_menu
 from smartclock_monitor.widgets.severity_pill import SeverityPill
@@ -350,7 +350,8 @@ class OverviewPage(_FieldsExport, Page):
 
     def show_reading(self, reading: Reading) -> None:
         status = reading.status
-        self._fields.set("Mode", humanise(status.mode))
+        # The guide's words, not the enum's name — see `wording.MODE_WORDS` (#99).
+        self._fields.set("Mode", mode_words(status.mode))
         self._fields.set("Detail", status.mode_detail or DASH, device_literal=True)
         self._fields.set("Outputs", OUTPUT_VALIDITY_TEXT[status.outputs])
         self._fields.set("Time scale", humanise(status.time_scale))
@@ -426,6 +427,11 @@ class OverviewPage(_FieldsExport, Page):
     def banner(self) -> QLabel:
         """§10.4's power-on banner, for a test to read."""
         return self._banner
+
+    @property
+    def fields(self) -> FieldGrid:
+        """§10.4's synchronisation card, for a test to read. Matches the other pages'."""
+        return self._fields
 
     def _show_banner(self, lines: tuple[str, ...]) -> None:
         """The power-on banner, if this session ever saw one.

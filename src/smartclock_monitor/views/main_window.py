@@ -57,6 +57,7 @@ from smartclock_monitor.themes.tokens import ALL_THEMES, Theme, palette_for
 from smartclock_monitor.views.connection_dialog import ConnectionChoice, ConnectionDialog
 from smartclock_monitor.views.details_window import DetailsWindow
 from smartclock_monitor.views.help_window import NOT_INSTALLED, HelpWindow, version
+from smartclock_monitor.views.wording import MODE_WORDS
 from smartclock_monitor.widgets.medallion import StatusMedallion
 from smartclock_monitor.widgets.severity_pill import SeverityPill
 
@@ -104,13 +105,9 @@ _MODE_SEVERITY: dict[SmartClockMode, Severity] = {
     SmartClockMode.UNKNOWN: Severity.NEUTRAL,
 }
 
-_MODE_LABEL: dict[SmartClockMode, str] = {
-    SmartClockMode.LOCKED: "Locked to GPS",
-    SmartClockMode.RECOVERY: "Recovering",
-    SmartClockMode.HOLDOVER: "Holdover",
-    SmartClockMode.POWER_UP: "Powering up",
-    SmartClockMode.UNKNOWN: "Unknown",
-}
+#: Moved to `views/wording.py` so §10.4's card can use the same words (#99). Kept as a name here
+#: because the medallion and the pill both read it.
+_MODE_LABEL: dict[SmartClockMode, str] = MODE_WORDS
 
 
 def version_label() -> str:
