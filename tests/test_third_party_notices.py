@@ -18,7 +18,7 @@ CARRIED = ROOT / "licenses"
 
 #: Runtime dependencies that ship a licence inside their own distribution. The bundle collects it
 #: with `copy_metadata`, which PyInstaller does **not** do by itself.
-COLLECTED = ("qasync", "pyserial-asyncio", "markdown-it-py", "mdurl")
+COLLECTED = ("qasync", "pyserial-asyncio")
 
 #: Runtime dependencies that ship no licence text anywhere, so this repository carries it.
 #: `PySide6` covers Qt and shiboken6, which are licensed together.
@@ -46,7 +46,7 @@ def test_there_are_dependencies_to_check() -> None:
     """Guard the guard: a parse returning nothing would make the assertion below vacuous."""
     found = _runtime_dependencies()
 
-    assert len(found) >= 5, f"parsed {found} from pyproject's dependencies"
+    assert len(found) >= 4, f"parsed {found} from pyproject's dependencies"
     assert "PySide6" in found
 
 

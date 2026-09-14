@@ -41,12 +41,10 @@ datas = [
     (str(ROOT / "LICENSE"), "."),
     # **The dependencies' own licences.** PyInstaller does not collect a dependency's .dist-info,
     # so without these lines the bundle carried every one of them and none of their terms. These
-    # four ship a licence inside their distribution and `copy_metadata` brings it along; Qt,
+    # two ship a licence inside their distribution and `copy_metadata` brings it along; Qt,
     # PySide6 and pyserial ship none at all, which is what `licenses/` in the repository is for.
     *copy_metadata("qasync"),
     *copy_metadata("pyserial-asyncio"),
-    *copy_metadata("markdown-it-py"),
-    *copy_metadata("mdurl"),
     (str(ROOT / "licenses"), "licenses"),
     # --demo replays these. Left out, the bundle starts and shows nothing for ever, which reads as
     # a receiver that has not answered rather than as a missing file.

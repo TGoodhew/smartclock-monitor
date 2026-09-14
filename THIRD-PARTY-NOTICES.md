@@ -37,8 +37,6 @@ not the subject of a notice.
 | **qasync** | 0.28.0 | BSD-2-Clause | In the PyInstaller bundle |
 | **pyserial** | 3.5 | BSD-3-Clause | In the PyInstaller bundle |
 | **pyserial-asyncio** | 0.6 | BSD-3-Clause | In the PyInstaller bundle |
-| **markdown-it-py** | 4.2.0 | MIT | In the PyInstaller bundle |
-| **mdurl** (via markdown-it-py) | 0.1.2 | MIT | In the PyInstaller bundle |
 | **Noto Sans** | — | SIL Open Font License 1.1 | **Every channel.** `themes/fonts/NotoSans-Regular.ttf`, `NotoSans-SemiBold.ttf`, licence beside them |
 | **Cascadia Mono** | — | SIL Open Font License 1.1 | **Every channel.** `themes/fonts/CascadiaMono-Regular.ttf`, licence beside it |
 
@@ -72,7 +70,7 @@ and a source release. It becomes real with the first binary.
 The SIL Open Font License 1.1 covering both fonts is reproduced in full beside them, in
 [`src/smartclock_monitor/themes/fonts/`](src/smartclock_monitor/themes/fonts/).
 
-`qasync`, `pyserial-asyncio`, `markdown-it-py` and `mdurl` each carry a licence inside their
+`qasync` and `pyserial-asyncio` each carry a licence inside their
 installed distribution, and the PyInstaller spec now collects it for each of them with
 `copy_metadata`.
 
