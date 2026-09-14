@@ -8,14 +8,21 @@ import pytest
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
+from collections.abc import Callable, Sequence
+
 from PySide6.QtWidgets import QApplication, QLabel
 
+from conftest import NOW
+from smartclock_device.clock import FixedClock
 from smartclock_device.commands import catalog
 from smartclock_device.commands.blocked import is_blocked
-from smartclock_device.commands.scpi_command import ResponseFormat, SafetyTier
+from smartclock_device.commands.scpi_command import ResponseFormat, SafetyTier, ScpiCommand
+from smartclock_device.drivers.capability import Capability
+from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.transport.transaction import Transaction, TransactionOutcome
 from smartclock_monitor.platform.paths import log_directory, trend_database
 from smartclock_monitor.services.preferences import Preferences
+from smartclock_monitor.services.session import CommandOutcome
 from smartclock_monitor.themes.tokens import Theme
 from smartclock_monitor.views.details_window import DetailsWindow
 from smartclock_monitor.views.diagnostics_page import DiagnosticsPage, _experimental_answer
@@ -176,3 +183,152 @@ def test_the_card_names_the_path_and_what_goes_in_it() -> None:
     assert str(log_directory()) in text
     assert "port opening" in text
     assert "connection change" in text
+
+
+# ---- #105: five of the six do not exist on the bench firmware -----------------------------------
+
+
+def test_an_undefined_header_is_reported_as_a_fact_about_the_receiver(
+    application: QApplication,
+) -> None:
+    """**Measured on the bench Z3805A**, `SYMMETRICOM,Z3805A,3625A02931,1.01.03-A`.
+
+    With the error queue drained first, five of §8.5's six answer `-113,"Undefined header"` — the
+    receiver does not have the mnemonic at all — and only `:DIAG:ROSC:EFC:ABS?` answers, with
+    `+437157`. §10.13's opt-in was offering six controls, five of which cannot work.
+
+    "This receiver does not have this query" is the most useful answer a card of undocumented
+    questions can give, and it is only sayable because the queue is read straight after the ask.
+    """
+    del application
+    page = DiagnosticsPage()
+    runner = _FakeRunner(
+        {":DIAG:STAC?": ("", '-113,"Undefined header"')},
+    )
+    page.set_command_runner(runner)
+    page._rebuild_experimental(SmartClockDriver(clock=FixedClock(NOW)))
+
+    page._run_experimental(_command(":DIAG:STAC?"))
+
+    assert "does not have this query" in page._experimental_rows[":DIAG:STAC?"].text()
+
+
+def test_a_query_the_receiver_does_have_shows_its_answer(application: QApplication) -> None:
+    """`:DIAG:ROSC:EFC:ABS?` is the one of the six this firmware answers."""
+    del application
+    page = DiagnosticsPage()
+    page.set_command_runner(_FakeRunner({":DIAG:ROSC:EFC:ABS?": ("+437157", '+0,"No error"')}))
+    page._rebuild_experimental(SmartClockDriver(clock=FixedClock(NOW)))
+
+    page._run_experimental(_command(":DIAG:ROSC:EFC:ABS?"))
+
+    assert page._experimental_rows[":DIAG:ROSC:EFC:ABS?"].text() == "+437157"
+
+
+def test_the_queue_is_drained_before_the_query_is_asked(application: QApplication) -> None:
+    """**Without this the card cannot say anything, and used to say so.**
+
+    §7.2 measured it: with one error queued, three successive commands that each *succeeded* all
+    carried an `E-113` prompt, because the prompt names a queued error rather than a verdict. The
+    card correctly refused to interpret that. Draining first is what makes the reading afterwards
+    this query's.
+    """
+    del application
+    page = DiagnosticsPage()
+    runner = _FakeRunner({":DIAG:MEM?": ("", '-113,"Undefined header"')})
+    page.set_command_runner(runner)
+    page._rebuild_experimental(SmartClockDriver(clock=FixedClock(NOW)))
+
+    page._run_experimental(_command(":DIAG:MEM?"))
+
+    asked = [getattr(c, "mnemonic", c) for c, _ in runner.last_batch]
+    assert asked.count(Capability.ERROR_QUEUE) >= 2, "drained before, and read after"
+    assert asked.index(":DIAG:MEM?") > 0, "the drains come first"
+    assert asked[-1] is Capability.ERROR_QUEUE, "and the attributing read comes last"
+
+
+def test_a_reconnection_forgets_what_the_last_receiver_lacked(application: QApplication) -> None:
+    """§8.5's queries are undocumented, so no model number predicts which a firmware has.
+
+    Carrying one unit's answer to the next would be the singleton defect #61 was about, in a
+    different costume.
+    """
+    del application
+    page = DiagnosticsPage()
+    page.set_command_runner(_FakeRunner({":DIAG:MEM?": ("", '-113,"Undefined header"')}))
+    driver = SmartClockDriver(clock=FixedClock(NOW))
+    page._rebuild_experimental(driver)
+    page._run_experimental(_command(":DIAG:MEM?"))
+    assert page._experimental_absent
+
+    page._rebuild_experimental(None)
+    page._rebuild_experimental(SmartClockDriver(clock=FixedClock(NOW)))
+
+    assert page._experimental_absent == set()
+
+
+class _FakeRunner:
+    """Answers a batch in order, the way `CommandRunner` does."""
+
+    def __init__(self, answers: dict[str, tuple[str, str]]) -> None:
+        self._answers = answers
+        self.last_batch: list[tuple[Capability | ScpiCommand, object]] = []
+        self.driver = SmartClockDriver(clock=FixedClock(NOW))
+        self.is_connected = True
+
+    def run(
+        self,
+        commands: Sequence[tuple[Capability | ScpiCommand, object]],
+        then: Callable[[Sequence[CommandOutcome]], None] | None = None,
+    ) -> None:
+        """Typed to the real `CommandRunner`'s signature rather than to `Any`.
+
+        `mypy --strict` is what makes §11.1's "every consumer handles None" checkable, and a double
+        that satisfies a call by being untyped opts the test out of exactly that.
+        """
+        self.last_batch = list(commands)
+        outcomes = []
+        queued = ""
+        for command, _argument in commands:
+            # The page also asks by **capability** elsewhere, and `refresh()` does so the moment a
+            # runner is set — so a double for this card has to tolerate both kinds of request.
+            if isinstance(command, Capability):
+                body = queued or '+0,"No error"' if command is Capability.ERROR_QUEUE else ""
+                if command is Capability.ERROR_QUEUE:
+                    queued = ""
+                outcomes.append(
+                    CommandOutcome(
+                        command=None,
+                        capability=command,
+                        transaction=Transaction(
+                            command=str(command),
+                            outcome=TransactionOutcome.COMPLETED,
+                            lines=(body,) if body else (),
+                        ),
+                    )
+                )
+                continue
+            # Past the branch above, this is a ScpiCommand — the error queue is only ever asked
+            # for by capability now, which is what `test_layering.py` requires of a page.
+            body, raised = self._answers.get(command.mnemonic, ("", ""))
+            if raised:
+                queued = raised
+            outcomes.append(
+                CommandOutcome(
+                    command=command,
+                    transaction=Transaction(
+                        command=command.mnemonic,
+                        outcome=TransactionOutcome.COMPLETED,
+                        lines=(body,) if body else (),
+                    ),
+                )
+            )
+        if then is not None:
+            then(outcomes)
+
+
+def _command(mnemonic: str) -> ScpiCommand:
+    """One catalogued command, typed. `catalog.find` is `ScpiCommand | None` by design."""
+    found = catalog.find(mnemonic)
+    assert found is not None, f"{mnemonic} is not catalogued"
+    return found

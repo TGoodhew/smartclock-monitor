@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from datetime import datetime
+from typing import ClassVar, Final
 
 from PySide6.QtCore import QUrl
 from PySide6.QtGui import QDesktopServices
@@ -60,6 +61,13 @@ from smartclock_monitor.views.capability import command_for, gate
 from smartclock_monitor.views.confirm_dialog import ask
 from smartclock_monitor.views.pages import DASH, Page, card, label
 from smartclock_monitor.widgets.severity_pill import SeverityPill
+
+#: SCPI's code for a mnemonic the receiver does not have, as its error queue words it.
+#:
+#: Measured on the bench Z3805A: five of §8.5's six answer `-113,"Undefined header"` when the
+#: queue is drained first, and the sixth answers normally. Matched on the number rather than the
+#: words, because the words are the receiver's and a firmware may phrase them differently.
+UNDEFINED_HEADER: Final = "-113"
 
 #: §10.9: about fourteen entries. The log alternates *GPS lock started* and *Holdover started* as
 #: the receiver cycles, so fourteen is roughly six events — enough to see a pattern without the
@@ -240,6 +248,13 @@ class DiagnosticsPage(Page):
         self._experimental_rows: dict[str, QLabel] = {}
         self._experimental_buttons: list[QPushButton] = []
         self._experimental_shown: tuple[ScpiCommand, ...] = ()
+        #: Which queries this receiver has said it does not have, for this session.
+        #:
+        #: Per connection rather than per model: §8.5's queries are undocumented, so no model
+        #: number predicts which a given firmware has. Asking the receiver is the only thing that
+        #: is true of whatever is actually plugged in — and it costs one error read per click.
+        self._experimental_absent: set[str] = set()
+        self._experimental_asked: ScpiCommand | None = None
         self._experimental_layout = holder_layout
 
         holder.setVisible(False)
@@ -278,6 +293,8 @@ class DiagnosticsPage(Page):
         self._experimental_rows.clear()
         self._experimental_buttons.clear()
         self._experimental_shown = offered
+        # A different family, or a reconnection, knows nothing about the last receiver's firmware.
+        self._experimental_absent.clear()
 
         for command in offered:
             row = QHBoxLayout()
@@ -297,27 +314,94 @@ class DiagnosticsPage(Page):
         that is off leaves nothing for a keyboard user to tab into."""
         self._experimental_card.setVisible(shown)
 
+    #: How many queued errors to clear before asking, so the answer afterwards is **this query's**.
+    #:
+    #: §7.2 measured the problem this exists for: with a single error queued, three successive
+    #: commands that each succeeded carried an `E-113` prompt, because the prompt names a queued
+    #: error rather than a verdict on the last command. So the card could show the token and — quite
+    #: correctly — refuse to say what it meant.
+    #:
+    #: **Asked by capability, never by mnemonic.** `test_layering.py` caught the first version of
+    #: this reaching `commands.catalog` directly, which is §12's #304 defect exactly — a page that
+    #: names one family's spelling works only until another family is connected. The gate is right
+    #: and the driver answers the question.
+    #:
+    #: Draining first makes it attributable. Three is chosen because a queue deeper than that has
+    #: not been seen on the bench; if one were, the reading below would name an older error and the
+    #: row would say so wrongly, which is why the queue's own answer is shown rather than a verdict
+    #: invented from it.
+    _DRAIN_BEFORE_ASKING: ClassVar[int] = 3
+
     def _run_experimental(self, command: ScpiCommand) -> None:
+        """Ask one undocumented query, with the error queue cleared first and read straight after.
+
+        **The reading afterwards is what makes this card able to say anything.** Asked cold, five of
+        this receiver's six answer with the prompt alone and the prompt is a queue indicator — so
+        the card could show `E-113` and not know whose it was. Drained and then read, `-113` is
+        this query's, and *undefined header* is a fact about the firmware rather than a token.
+        """
         runner = self._runner
         if runner is None:
             return
         self._experimental_rows[command.mnemonic].setText("Running…")
-        runner.run([(command, None)], self._absorb_experimental)
+        self._experimental_asked = command
+        drains = [(Capability.ERROR_QUEUE, None)] * self._DRAIN_BEFORE_ASKING
+        runner.run(
+            [*drains, (command, None), (Capability.ERROR_QUEUE, None)], self._absorb_experimental
+        )
 
     def _absorb_experimental(self, outcomes: Sequence[CommandOutcome]) -> None:
-        for outcome in outcomes:
-            row = (
-                None
-                if outcome.command is None
-                else self._experimental_rows.get(outcome.command.mnemonic)
-            )
-            if row is None:
-                continue
-            if outcome.transaction is None:
-                row.setText("no answer")
-                continue
-            # Raw text, and any SCPI error displayed rather than swallowed.
-            row.setText(_experimental_answer(outcome.transaction))
+        """The query's own answer, and the error the queue raised **for it**."""
+        asked = self._experimental_asked
+        self._experimental_asked = None
+        if asked is None:
+            return
+
+        answered = next((o for o in outcomes if o.command is asked), None)
+        row = self._experimental_rows.get(asked.mnemonic)
+        if row is None:
+            return
+        if answered is None or answered.transaction is None:
+            row.setText("no answer")
+            return
+
+        body = answered.transaction.text.strip()
+        if body:
+            row.setText(body)
+            return
+
+        # No body, so the answer is whatever the queue raised — and it is attributable because the
+        # queue was drained immediately before.
+        raised = ""
+        for outcome in reversed(outcomes):
+            if outcome.capability is Capability.ERROR_QUEUE and outcome.transaction is not None:
+                raised = (outcome.transaction.first_line or "").strip()
+                break
+
+        if UNDEFINED_HEADER in raised:
+            # **A fact about this firmware, not a failure of the query.** §8.5's whole point is
+            # asking undocumented questions, and "this receiver does not have it" is the most
+            # useful answer available — so the row says it and the button stops offering.
+            self._experimental_absent.add(asked.mnemonic)
+            row.setText("This receiver does not have this query.")
+            self._retune_experimental_buttons()
+            return
+
+        row.setText(raised or _experimental_answer(answered.transaction))
+
+    def _retune_experimental_buttons(self) -> None:
+        """Stop offering a query the receiver has said it does not have.
+
+        Disabled rather than removed: §9.11's rule is that an absent thing is explained where it
+        was, and the row beside it carries the explanation. Removing the button would leave a
+        sentence with nothing to attach to.
+        """
+        for button, command in zip(
+            self._experimental_buttons, self._experimental_shown, strict=False
+        ):
+            if command.mnemonic in self._experimental_absent:
+                button.setEnabled(False)
+                button.setToolTip("This receiver answered 'undefined header' for this query.")
 
     def open_log_folder(self) -> str:
         """Open the log folder in the desktop's file manager, and return the path either way."""
