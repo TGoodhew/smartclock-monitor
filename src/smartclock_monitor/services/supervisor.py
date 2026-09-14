@@ -198,7 +198,13 @@ class Supervisor:
         flight against a transport being closed underneath it is the one ordering that produces an
         exception nobody can act on.
         """
-        service = PollingService(session=session, driver=self.driver, clock=self.clock)
+        # **The session's driver, not this one.** §12 puts the family choice in the session: it
+        # listens, then probes neutrally, then selects — and `self.driver` is the pre-connect
+        # fallback that was only ever a driver to *ask the first question with*. Polling with it
+        # asked SmartClock SCPI of an NMEA talker, which answers nothing, so three consecutive
+        # timeouts tripped §7.2's disconnect and the link reconnected forever without a reading.
+        # It was invisible on a Z3805A, where the fallback happens to be the right family.
+        service = PollingService(session=session, driver=session.driver, clock=self.clock)
         service.on_reading = self.on_reading
         # A late identity has to reach the surfaces that name the receiver, and they were filled in
         # when the session opened — which is precisely the moment it was not yet known (#29).

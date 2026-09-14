@@ -8,14 +8,20 @@ screen looking current, which is the worst of the three things it could have don
 from __future__ import annotations
 
 import asyncio
+import contextlib
 from datetime import timedelta
 
 import pytest
 
 from conftest import NOW
-from smartclock_device.clock import FixedClock
+from smartclock_device.clock import Clock, FixedClock
+from smartclock_device.drivers.base import ReceiverDriver
+from smartclock_device.drivers.nmea.driver import NmeaDriver
+from smartclock_device.drivers.registry import Registry
 from smartclock_device.drivers.smartclock import SmartClockDriver
 from smartclock_device.transport.fake import FakeTransport
+from smartclock_monitor.services import supervisor as supervisor_module
+from smartclock_monitor.services.polling import PollingService
 from smartclock_monitor.services.session import ConnectionState, DeviceSession
 from smartclock_monitor.services.supervisor import (
     FIRST_BACKOFF,
@@ -25,6 +31,12 @@ from smartclock_monitor.services.supervisor import (
 )
 
 PROBE = timedelta(milliseconds=5)
+
+#: Two real sentences, enough for the NMEA family to claim the link by what it heard.
+OVERHEARD = (
+    "$GPGGA,000821.00,4731.31126,N,12212.37609,W,2,12,0.73,29.2,M,-18.8,M,,0000*5B\r\n"
+    "$GPGSA,A,3,10,27,32,48,23,08,,,,,,,4.03,1.44,3.76*06\r\n"
+)
 IDENTITY = "SYMMETRICOM,Z3805A,3625A02931,1.01.03-A"
 
 
@@ -478,3 +490,60 @@ def test_reconnecting_clears_a_stop() -> None:
 
 async def _none() -> DeviceSession | None:
     return None
+
+
+# ---- The family the poll uses ------------------------------------------------------------------
+
+
+def test_the_poll_uses_the_family_the_session_chose() -> None:
+    """§12: the session selects the family, and the poll must ask *that* family's questions.
+
+    The supervisor's own ``driver`` is the pre-connect fallback — the one the first question is
+    asked with, before anything has claimed the link. Polling with it asked SmartClock SCPI of an
+    NMEA talker: every sweep answered nothing, three consecutive timeouts tripped §7.2's
+    disconnect, and the link reconnected forever without ever producing a reading.
+
+    **It could only be seen on a receiver that is not a Z3805A**, because there the fallback is the
+    right family by luck, which is why two u-blox talkers on the bench found it and a year of
+    Z3805A sessions did not.
+    """
+    chosen: list[ReceiverDriver] = []
+
+    async def run() -> None:
+        talker = NmeaDriver(clock=clock())
+        fallback = SmartClockDriver(clock=clock())
+        transport = FakeTransport({}, banner=OVERHEARD, prompt="")
+        session = DeviceSession(transport, fallback, clock(), registry=Registry([fallback, talker]))
+        await session.open(probe=timedelta(seconds=1))
+
+        # The session did its half: it heard a talker and claimed the link for the NMEA family.
+        assert session.driver is talker
+
+        supervisor = Supervisor(connect=lambda: _none(), driver=fallback, clock=clock())
+
+        # The same object the supervisor holds, reached through the module that defines it so
+        # that `--strict`'s no-implicit-reexport rule has nothing to object to.
+        real = PollingService
+
+        def capture(
+            *, session: DeviceSession, driver: ReceiverDriver, clock: Clock
+        ) -> PollingService:
+            chosen.append(driver)
+            return real(session=session, driver=driver, clock=clock)
+
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(supervisor_module, "PollingService", capture)
+            poll = asyncio.ensure_future(supervisor._poll(session))
+            await asyncio.sleep(0.05)
+            poll.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await poll
+
+    asyncio.run(run())
+
+    assert chosen, "the supervisor never built a poll, so this test asserted nothing"
+    assert chosen[0] is not None
+    assert isinstance(chosen[0], NmeaDriver), (
+        "the poll was built with the supervisor's fallback family rather than the one the "
+        "session selected"
+    )
