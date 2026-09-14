@@ -54,6 +54,34 @@ jobs:
             exit 1
           fi
 
+  closing-keywords:
+    name: Closing keywords
+    runs-on: ubuntu-latest
+    # The half of #131 that cannot be checked from the tree. GitHub closes an issue
+    # on merge wherever a closing keyword stands before an issue reference, in the
+    # pull request body as well as in a commit message - and the body is not in the
+    # repository, so tests/test_closing_keywords.py cannot see it. The body is read
+    # from the event payload through the environment rather than interpolated into
+    # the script, because a body is arbitrary text a contributor wrote.
+    #
+    # Same module as the test, so the two halves of the rule cannot drift apart.
+    if: github.event_name == 'pull_request'
+    steps:
+      - uses: actions/checkout@v7
+        # This job needs no history of its own — the body it checks is not in the tree.
+        # It carries the full checkout anyway, because tests/test_versioning.py holds every
+        # checkout in this file to it: one blanket rule that cannot be misapplied beats an
+        # exemption somebody has to be right about.
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: A keyword closes something only where it means to
+        env:
+          BODY: ${{ github.event.pull_request.body }}
+        run: python tools/closing_keywords.py --text "$BODY"
+
   types:
     name: Types
     runs-on: ubuntu-latest
